@@ -7,6 +7,8 @@ namespace ToNRoundCounter.UI
 {
     public class SettingsPanel : UserControl
     {
+      
+
         public NumericUpDown oscPortNumericUpDown { get; private set; }
         // 統計情報表示・デバッグ情報チェック
         public CheckBox ShowStatsCheckBox { get; private set; }
@@ -40,6 +42,10 @@ namespace ToNRoundCounter.UI
         public Button LogBgButton { get; private set; }
         public CheckedListBox autoSuicideRoundListBox { get; internal set; }
         public CheckBox autoSuicideCheckBox { get; internal set; }
+
+        public Label apiKeyLabel { get; private set; }
+        public TextBox apiKeyTextBox { get; private set; }
+
 
         public SettingsPanel()
         {
@@ -292,7 +298,7 @@ namespace ToNRoundCounter.UI
 
             GroupBox grpAutoSuicide = new GroupBox();
             grpAutoSuicide.Text = LanguageManager.Translate("自動自殺モード");
-            grpAutoSuicide.Location = new Point(margin, currentY);  
+            grpAutoSuicide.Location = new Point(margin, currentY);
             grpAutoSuicide.Size = new Size(540, 100);
             this.Controls.Add(grpAutoSuicide);
 
@@ -340,6 +346,54 @@ namespace ToNRoundCounter.UI
 
             currentY += grpAutoSuicide.Height + margin;
             this.Height = currentY + margin;
+
+
+            int innerMargin2 = 10; // ToNRoundCounter-Cloudの設定用の内側のマージン
+            int apiInnerY = 20; // ToNRoundCounter-Cloudの設定用の初期Y座標
+            //apiキー設定
+            GroupBox grpApiKey = new GroupBox();
+            grpApiKey.Text = LanguageManager.Translate("ToNRoundCounter-Cloudの設定");
+            grpApiKey.Location = new Point(margin, currentY);
+            grpApiKey.Size = new Size(540, 300);
+            this.Controls.Add(grpApiKey);
+            //説明
+            Label apiKeyDescription = new Label();
+            apiKeyDescription.Text = LanguageManager.Translate("ToNRoundCounter-Cloudはセーブコードの複数端末間での全自動同期などの機能を持つクラウドサービスです。\n利用にはAPIキーが必要です。\nAPIキーはwebサイトから取得してください。");
+            apiKeyDescription.Size = new Size(grpApiKey.Width - innerMargin2 * 2, 60); // 説明文の幅をグループボックスの幅に合わせる
+            apiKeyDescription.Location = new Point(innerMargin2, apiInnerY);
+            grpApiKey.Controls.Add(apiKeyDescription);
+            apiInnerY += apiKeyDescription.Height + 10; // 説明文の下にスペースを確保
+            grpApiKey.Height = apiInnerY + 50; // グループボックスの高さを調整
+            //ToNRoundCounter-Cloudを開くを追加(https://toncloud.sprink.cloud)
+            Button openCloudButton = new Button();
+            openCloudButton.Text = LanguageManager.Translate("ToNRoundCounter-Cloudを開く");
+            openCloudButton.AutoSize = true;
+            openCloudButton.Location = new Point(innerMargin2, apiInnerY);
+            openCloudButton.Click += (s, e) =>
+            {
+                System.Diagnostics.Process.Start("https://toncloud.sprink.cloud");
+            };
+            grpApiKey.Controls.Add(openCloudButton);
+            apiInnerY += openCloudButton.Height + 10; // ボタンの下にスペースを確保
+
+            // APIキー入力欄
+            apiKeyLabel = new Label();
+            apiKeyLabel.Text = LanguageManager.Translate("APIキー:");
+            apiKeyLabel.AutoSize = true;
+            apiKeyLabel.Location = new Point(innerMargin2, apiInnerY);
+            grpApiKey.Controls.Add(apiKeyLabel);
+            apiKeyTextBox = new TextBox();
+            apiKeyTextBox.Name = "ApiKeyTextBox";
+            apiKeyTextBox.Text = AppSettings.apikey; // AppSettings.apikey の初期値を使用
+            apiKeyTextBox.Location = new Point(apiKeyLabel.Right + 10, apiInnerY);
+            apiKeyTextBox.Width = 400; // テキストボックスの幅を設定
+            grpApiKey.Controls.Add(apiKeyTextBox);
+            apiInnerY += apiKeyTextBox.Height + 10; // テキストボックスの下にスペースを確保
+            // APIキーの保存ボタンはいらない
+            grpApiKey.Height = apiInnerY + 20; // グループボックスの高さを調整
+            // 最後に、パネルの高さを調整
+            this.Height = currentY + grpApiKey.Height + margin;
+
         }
     }
 }

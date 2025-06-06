@@ -5,6 +5,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Runtime.InteropServices;
@@ -12,9 +13,11 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Rug.Osc;
 using ToNRoundCounter.Models;
+using ToNRoundCounter.Properties;
 using ToNRoundCounter.UI;
 using ToNRoundCounter.Utils;
 using WMPLib;
@@ -85,6 +88,8 @@ namespace ToNRoundCounter
         private bool isNotifyActivated = false;
 
         private static readonly string[] testerNames = new string[] { "yussy5373", "Kotetsu Wilde", "tofu_shoyu", "ちよ千夜", "Blackpit", "shari_1928", "MitarashiMochi" };
+
+        private bool isRestarted = false;
         
 
 
@@ -419,6 +424,17 @@ namespace ToNRoundCounter
                         AppSettings.AutoSuicideRoundTypes.Add(item.ToString());
                     }
 
+                    AppSettings.apikey = settingsForm.SettingsPanel.apiKeyTextBox.Text.Trim();
+                    if (string.IsNullOrEmpty(AppSettings.apikey))
+                    {
+                        AppSettings.apikey = string.Empty; // 空文字列に設定
+                    }
+                    else if (AppSettings.apikey.Length < 32)
+                    {
+                        MessageBox.Show(LanguageManager.Translate("APIキーは32文字以上である必要があります。"), LanguageManager.Translate("エラー"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
                     InfoPanel.BackColor = AppSettings.BackgroundColor_InfoPanel;
                     rtbStatsDisplay.BackColor = AppSettings.BackgroundColor_Stats;
                     logPanel.RoundLogTextBox.BackColor = AppSettings.BackgroundColor_Log;
@@ -559,12 +575,12 @@ namespace ToNRoundCounter
                         messageBytes.AddRange(buffer.Take(result.Count));
                     }
                     var message = Encoding.UTF8.GetString(messageBytes.ToArray());
-                    HandleEvent(message);
+                    HandleEventAsync(message);
                 }
             }
         }
 
-        private void HandleEvent(string message)
+        private async Task HandleEventAsync(string message)
         {
             try
             {
@@ -579,6 +595,11 @@ namespace ToNRoundCounter
                 if (eventType == "CONNECTED")
                 {
                     playerDisplayName = json.Value<string>("DisplayName") ?? "";
+                    if (isRestarted == false)
+                    {
+                        UpdateAndRestart();
+                        isRestarted = true;
+                    }
                 }
                 else if (eventType == "ROUND_ACTIVE")
                 {
@@ -664,9 +685,9 @@ namespace ToNRoundCounter
                         //もしroundTypeが自動自殺ラウンド対象なら自動自殺
                         if (AppSettings.AutoSuicideEnabled && AppSettings.AutoSuicideRoundTypes.Contains(roundType))
                         {
-                          
-                             Task.Run(() => PerformAutoSuicide());
-                            
+
+                            Task.Run(() => PerformAutoSuicide());
+
                         }
                     }
                 }
@@ -761,6 +782,57 @@ namespace ToNRoundCounter
                         }
                     }
                 }
+                else if (eventType == "SAVED")
+                {
+                    string savecode = json.Value<string>("Value") ?? String.Empty;
+                    if (savecode != String.Empty && AppSettings.apikey != String.Empty)
+                    {
+                        // https://toncloud.sprink.cloud/api/savecode/create/{apikey} にPOSTリクエストを送信(savecodeを送信)
+                        using (var client = new HttpClient())
+                        {
+                            client.BaseAddress = new Uri("https://toncloud.sprink.cloud/api/savecode/create/" + AppSettings.apikey);
+                            var content = new StringContent("{\"savecode\":\"" + savecode + "\"}", Encoding.UTF8, "application/json");
+                            try
+                            {
+                                var response = await client.PostAsync("", content);
+                                if (response.IsSuccessStatusCode)
+                                {
+                                    EventLogger.LogEvent("SaveCode", "Save code sent successfully.");
+                                }
+                                else
+                                {
+                                    EventLogger.LogEvent("SaveCodeError", $"Failed to send save code: {response.StatusCode}");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                EventLogger.LogEvent("SaveCodeError", $"Exception occurred: {ex.Message}");
+                            }
+                        }
+                    }
+                }
+                else if (eventType == "CUSTOM")
+                {  
+                    string customEvent = json.Value<string>("Name") ?? "";
+                    switch (customEvent)
+                    {
+                        case "InstancePlayersCount":
+                            int playerCount = json.Value<int>("Value");
+                            this.Invoke(new Action(() =>
+                            {
+                                if (currentRound != null)
+                                {
+                                    currentRound.InstancePlayersCount = playerCount;
+                                }
+
+                            }));
+                            break;
+                        default:
+                            EventLogger.LogEvent("CustomEvent", $"Unknown custom event: {customEvent}");
+                            break;
+                    }
+                    
+                }
             }
             catch (Exception)
             {
@@ -854,10 +926,65 @@ namespace ToNRoundCounter
                     AppendRoundLog(currentRound, status);
                     ClearEventDisplays();
                     ClearItemDisplay();
+                    uoloadRoundLog(currentRound, status);
                     lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2}";
                 }));
                 currentRound = null;
             }
+        }
+
+        private void uoloadRoundLog(RoundData round, string status)
+        {
+            // ラウンドログをアップロードする処理を実装
+            /**
+ * POST /api/roundlogs/create/apikey
+ * body = {
+ *   roundType, terror1, terror2, terror3,
+ *   map, item, damage, isAlive, instanceSize, timestamp
+ * }
+ */
+            if (string.IsNullOrEmpty(AppSettings.apikey))
+            {
+                EventLogger.LogEvent("RoundLogUpload", "APIキーが設定されていません。アップロードをスキップします。");
+                return;
+            }
+
+            using (var client = new HttpClient())
+            {
+                client.BaseAddress = new Uri("https://toncloud.sprink.cloud/api/roundlogs/create/" + AppSettings.apikey);
+                var payload = new
+                {
+                    roundType = round.RoundType,
+                    terror1 = round.TerrorKey.Split('&').ElementAtOrDefault(0)?.Trim(),
+                    terror2 = round.TerrorKey.Split('&').ElementAtOrDefault(1)?.Trim(),
+                    terror3 = round.TerrorKey.Split('&').ElementAtOrDefault(2)?.Trim(),
+                    map = round.MapName,
+                    item = round.ItemNames.Count > 0 ? string.Join("、", round.ItemNames) : LanguageManager.Translate("アイテム未使用"),
+                    damage = round.Damage,
+                    isAlive = !round.IsDeath,
+                    instanceSize = round.InstancePlayersCount
+                };
+                var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+                try
+                {
+                    var response = client.PostAsync("", content).Result;
+                    if (response.IsSuccessStatusCode)
+                    {
+                        EventLogger.LogEvent("RoundLogUpload", "ラウンドログのアップロードに成功しました。");
+                    }
+                    else
+                    {
+                        EventLogger.LogEvent("RoundLogUploadError", $"ラウンドログのアップロードに失敗しました: {response.StatusCode}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    EventLogger.LogEvent("RoundLogUploadError", $"ラウンドログのアップロード中にエラーが発生しました: {ex.Message}");
+                }
+            }
+
+
+            EventLogger.LogEvent("RoundLogUpload", $"Round: {round.RoundType}, Status: {status}, Map: {round.MapName}");
         }
 
         private async Task StartOSCListenerAsync(CancellationToken token)
@@ -1359,6 +1486,52 @@ namespace ToNRoundCounter
                     Task.Run(() => SendAlertToTonSprinkAsync((float)setAlertValue));
                 }
             }
+            else if (message.Address == "/avatar/parameters/getlatestsavecode")
+            {
+                bool getLatestSaveCode = false;
+                if (message.Count > 0)
+                {
+                    try { getLatestSaveCode = Convert.ToBoolean(message.ToArray()[0]); } catch { }
+                }
+                // getLatestSaveCodeがtrueなら、最新のセーブコードを取得してクリップボードにコピーする
+                if (getLatestSaveCode)
+                {
+                    // https://toncloud.sprink.cloud/api/savecode/get/{apikey}/latest にGETリクエストを送信して最新のセーブコードを取得、それをクリップボードに
+                    if (!string.IsNullOrEmpty(AppSettings.apikey))
+                    {
+                        using (var client = new HttpClient())
+                        {
+                            client.BaseAddress = new Uri("https://toncloud.sprink.cloud/api/savecode/get/" + AppSettings.apikey + "/latest");
+                            try
+                            {
+                                var response = client.GetAsync("").Result;
+                                if (response.IsSuccessStatusCode)
+                                {
+                                    //jsonを取得して、"savecode"フィールドの値をクリップボードにコピー
+                                    var jsonResponse = response.Content.ReadAsStringAsync().Result;
+                                    var json = JObject.Parse(jsonResponse);
+                                    string saveCode = json.Value<string>("savecode") ?? "";
+                                    Thread thread = new Thread(() => Clipboard.SetText(saveCode));
+                                    thread.SetApartmentState(ApartmentState.STA);
+                                    thread.Start();
+                                    thread.Join();
+                                    EventLogger.LogEvent("SaveCode", "Latest save code copied to clipboard: " + saveCode);
+                                }
+                                else
+                                {
+                                    EventLogger.LogEvent("SaveCodeError", $"Failed to get latest save code: {response.StatusCode}");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                EventLogger.LogEvent("SaveCodeError", $"Exception occurred: {ex.Message}");
+                            }
+                        }
+                    }
+                }
+
+          
+            }
 
             currentVelocity = Math.Abs(receivedVelocityMagnitude);
             EventLogger.LogEvent("Receive: ", $"{message.Address} => Computed Velocity: {currentVelocity:F2}");
@@ -1512,6 +1685,111 @@ namespace ToNRoundCounter
         {
             NativeMethods.press_keys();
 
+        }
+
+        public static void UpdateAndRestart()
+        {
+            try
+            {
+                // 実行中のToNSaveManagerプロセスを取得
+                var process = Process.GetProcessesByName("ToNSaveManager").FirstOrDefault();
+                if (process == null)
+                {
+                    throw new InvalidOperationException("ToNSaveManager.exe が実行されていません。");
+                }
+
+                // 実行ファイルのパスとディレクトリ取得
+                string exePath;
+                try
+                {
+                    exePath = process.MainModule.FileName;
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException("プロセスの実行ファイルパスを取得できませんでした。", ex);
+                }
+
+                string exeDirectory = Path.GetDirectoryName(exePath);
+                if (string.IsNullOrEmpty(exeDirectory))
+                {
+                    throw new InvalidOperationException("実行ファイルのディレクトリが不正です。");
+                }
+
+                // Scriptsフォルダのパス
+                string scriptsDir = Path.Combine(exeDirectory, "scripts");
+                // フォルダが存在しない場合は作成
+                if (!Directory.Exists(scriptsDir))
+                {
+                    try
+                    {
+                        Directory.CreateDirectory(scriptsDir);
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new IOException($"Scriptsフォルダの作成に失敗しました: {scriptsDir}", ex);
+                    }
+                }
+
+                // コピー元のJSファイルパス
+                string sourceJs = Path.Combine(Environment.CurrentDirectory, "ToNRoundCounter.js");
+                if (!File.Exists(sourceJs))
+                {
+                    throw new FileNotFoundException("コピー元のToNRoundCounter.jsが見つかりません。", sourceJs);
+                }
+
+                // コピー先のJSファイルパス
+                string destJs = Path.Combine(scriptsDir, "ToNRoundCounter.js");
+                if (!File.Exists(destJs))
+                {
+                    try
+                    {
+                        File.Copy(sourceJs, destJs);
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new IOException($"JSファイルのコピーに失敗しました: {sourceJs} -> {destJs}", ex);
+                    }
+                }
+                else
+                {
+                    return;
+                }
+
+                    // プロセスの再起動
+                    try
+                    {
+                        process.Kill();
+                        process.WaitForExit();
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new InvalidOperationException("ToNSaveManagerプロセスの停止に失敗しました。", ex);
+                    }
+
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = exePath,
+                        WorkingDirectory = exeDirectory,
+                        UseShellExecute = false
+                    });
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException("ToNSaveManagerプロセスの起動に失敗しました。", ex);
+                }
+            }
+            catch (Exception ex)
+            {
+                // エラー内容を標準出力に表示
+                Console.Error.WriteLine(ex.Message);
+                if (ex.InnerException != null)
+                {
+                    Console.Error.WriteLine(ex.InnerException.Message);
+                }
+                throw;
+            }
         }
     }
 }
