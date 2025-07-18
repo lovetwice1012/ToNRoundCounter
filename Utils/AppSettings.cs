@@ -67,7 +67,7 @@ namespace ToNRoundCounter
                         Filter_SurvivalRate = bool.TryParse(settings.Filter_SurvivalRate.ToString(), out bool filterSurvivalRate) ? filterSurvivalRate : true;
                         RoundTypeStats = settings.RoundTypeStats ?? new List<string>()
                         {
-                            "クラシック", "オルタネイト", "パニッシュ", "サボタージュ", "ブラッドバス", "ミッドナイト", "走れ！", "コールドナイト", "ミスティックムーン", "ブラッドムーン", "トワイライト", "ソルスティス", "霧", "8ページ", "狂気", "ゴースト", "ダブル・トラブル", "EX", "アンバウンド"
+                            "クラシック", "オルタネイト", "パニッシュ", "サボタージュ", "ブラッドバス", "ミッドナイト", "走れ！", "コールドナイト", "ミスティックムーン", "ブラッドムーン", "トワイライト", "ソルスティス", "霧", "8ページ", "狂気", "ゴースト", "ダブルトラブル", "EX", "アンバウンド"
                         };
                         AutoSuicideEnabled = bool.TryParse(settings.AutoSuicideEnabled.ToString(), out bool autoSuicideEnabled) ? autoSuicideEnabled : false;
                         AutoSuicideRoundTypes = settings.AutoSuicideRoundTypes ?? new List<string>();
@@ -117,7 +117,7 @@ namespace ToNRoundCounter
 
     public class AppSettingsData
     {
-        
+
         public int OSCPort { get; set; }
         public bool OSCPortChanged { get; set; }
         public string BackgroundColor_InfoPanel { get; set; }
@@ -137,6 +137,6 @@ namespace ToNRoundCounter
         public bool AutoSuicideEnabled { get; internal set; }
         public List<string> AutoSuicideRoundTypes { get; internal set; }
 
-        public string apikey { get; set; } 
+        public string apikey { get; set; }
     }
 }
