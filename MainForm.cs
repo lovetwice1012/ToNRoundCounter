@@ -841,7 +841,7 @@ namespace ToNRoundCounter
 
                                     this.Invoke(new Action(async () =>
                                     {
-                                        await SendPieSizeOscMessagesAsync(playerCount);
+                                        //await SendPieSizeOscMessagesAsync(playerCount);
                                     }));
                                 }
 
