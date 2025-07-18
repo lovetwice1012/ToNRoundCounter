@@ -1351,8 +1351,8 @@ namespace ToNRoundCounter
         private void LoadTerrorInfo()
         {
 
-
             string path = "./terrorsInfo.json";
+
 
 
             if (File.Exists(path))

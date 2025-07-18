@@ -13,7 +13,6 @@ namespace ToNRoundCounter.UI
         private const int CellWidth = 240;
         private FlowLayoutPanel flow;
 
-
         public TerrorInfoPanel()
         {
             this.BorderStyle = BorderStyle.FixedSingle;
@@ -23,9 +22,9 @@ namespace ToNRoundCounter.UI
             this.Visible = false;
             this.Height = 0;
 
-
             flow = new FlowLayoutPanel();
-            flow.AutoSize = true;
+            flow.AutoSize = false;
+
             flow.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             flow.WrapContents = true;
             flow.FlowDirection = FlowDirection.LeftToRight;
@@ -37,8 +36,7 @@ namespace ToNRoundCounter.UI
         {
             flow.Controls.Clear();
             this.Width = width;
-            flow.Width = width;
-            flow.MaximumSize = new Size(width, 0);
+
 
             if (names == null || names.Count == 0)
             {
@@ -57,7 +55,28 @@ namespace ToNRoundCounter.UI
                 flow.Controls.Add(panel);
             }
 
-            this.Height = flow.PreferredSize.Height;
+
+            int margin = 5;
+            int cellWidth = CellWidth + margin * 2;
+            int neededWidth = names.Count * cellWidth;
+
+            bool fits = width >= neededWidth;
+            if (fits)
+            {
+                flow.FlowDirection = FlowDirection.LeftToRight;
+                flow.WrapContents = false;
+                flow.Width = neededWidth;
+            }
+            else
+            {
+                flow.FlowDirection = FlowDirection.TopDown;
+                flow.WrapContents = false;
+                flow.Width = cellWidth;
+            }
+
+            flow.Location = new Point((width - flow.Width) / 2, 0);
+            flow.Height = flow.PreferredSize.Height;
+            this.Height = flow.Height;
 
         }
 
@@ -103,12 +122,10 @@ namespace ToNRoundCounter.UI
                     {
                         Text = prop.Name,
                         Dock = DockStyle.Fill,
-
                         TextAlign = ContentAlignment.MiddleCenter,
                         ForeColor = Color.White,
                         AutoSize = true,
                         MaximumSize = new Size(CellWidth / 2, 0)
-
                     };
                     var valLabel = new Label
                     {
@@ -116,10 +133,8 @@ namespace ToNRoundCounter.UI
                         Dock = DockStyle.Fill,
                         TextAlign = ContentAlignment.MiddleLeft,
                         ForeColor = Color.White,
-
                         AutoSize = true,
                         MaximumSize = new Size(CellWidth / 2, 0)
-
                     };
                     cell.Controls.Add(keyLabel, 0, row);
                     cell.Controls.Add(valLabel, 1, row);
