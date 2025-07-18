@@ -92,7 +92,7 @@ namespace ToNRoundCounter
         private static readonly string[] testerNames = new string[] { "yussy5373", "Kotetsu Wilde", "tofu_shoyu", "ちよ千夜", "Blackpit", "shari_1928", "MitarashiMochi" };
 
         private bool isRestarted = false;
-        
+
 
 
         // P/Invoke 宣言
@@ -146,11 +146,12 @@ namespace ToNRoundCounter
             public int type;
             public INPUT_UNION ui;
         };
-        internal static unsafe partial class NativeMethods { 
-            [DllImport("ton-self-kill", EntryPoint = "press_keys", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)] 
-            internal static extern void press_keys(); 
-        } 
-        
+        internal static unsafe partial class NativeMethods
+        {
+            [DllImport("ton-self-kill", EntryPoint = "press_keys", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+            internal static extern void press_keys();
+        }
+
 
         private WindowsMediaPlayer notifyPlayer = new WMPLib.WindowsMediaPlayer
         {
@@ -469,7 +470,8 @@ namespace ToNRoundCounter
         private void InitializeOSCRepeater()
         {
             // OSCRepeater.exeが存在し、接続先ポート設定が一度も変更されていない場合のみ実行
-            if (File.Exists("./OscRepeater.exe")) {
+            if (File.Exists("./OscRepeater.exe"))
+            {
                 if (!AppSettings.OSCPortChanged)
                 {
                     int port = 30000;
@@ -825,7 +827,7 @@ namespace ToNRoundCounter
                     }
                 }
                 else if (eventType == "CUSTOM")
-                {  
+                {
                     string customEvent = json.Value<string>("Name") ?? "";
                     switch (customEvent)
                     {
@@ -849,7 +851,7 @@ namespace ToNRoundCounter
                             EventLogger.LogEvent("CustomEvent", $"Unknown custom event: {customEvent}");
                             break;
                     }
-                    
+
                 }
             }
             catch (Exception)
@@ -1158,7 +1160,7 @@ namespace ToNRoundCounter
                 // 追加条件：アイテム未所持 または "Emerald Coil" 所持時、6.4～6.6の範囲
                 bool condition2 = ((string.IsNullOrEmpty(itemText)) ||
                                    (itemText.IndexOf("Emerald Coil", StringComparison.OrdinalIgnoreCase) >= 0))
-                                  && ( currentVelocity == 6.5);
+                                  && (currentVelocity == 6.5);
                 if (condition1 || condition2)
                 {
                     if (velocityInRangeStart == DateTime.MinValue)
@@ -1360,7 +1362,7 @@ namespace ToNRoundCounter
 
         private void LoadTerrorInfo()
         {
-            string path = "./terrosInfo.json";
+            string path = "./terrorsInfo.json";
             if (File.Exists(path))
             {
                 try
@@ -1523,7 +1525,7 @@ namespace ToNRoundCounter
                 float setAlertValue = 0;
                 if (message.Count > 0)
                 {
-                    
+
                     try
                     {
                         setAlertValue = Convert.ToSingle(message.ToArray()[0]);
@@ -1580,7 +1582,7 @@ namespace ToNRoundCounter
                     }
                 }
 
-          
+
             }
 
             currentVelocity = Math.Abs(receivedVelocityMagnitude);
@@ -1646,7 +1648,7 @@ namespace ToNRoundCounter
             {
                 var json = JObject.Parse(message);
                 string type = json.Value<string>("type") ?? "";
-                EventLogger.LogEvent("ReceivedWSType",type);
+                EventLogger.LogEvent("ReceivedWSType", type);
                 if (type == "JoinedMember" || type == "LeavedMember")
                 {
                     connected = json.Value<int>("connected");
@@ -1658,13 +1660,13 @@ namespace ToNRoundCounter
                 }
                 else if (type == "alertIncoming")
                     using (var sender = new OscSender(IPAddress.Parse("127.0.0.1"), 9000))
-                {
+                    {
                         EventLogger.LogEvent("alertIncoming", "start process");
                         float alertNum = json.Value<float>("alertNum");
                         bool isLocal = json.Value<bool>("isLocal");
                         // OSC で /avatar/parameters/alert に対して、3秒間0と alertNum を0.25秒間隔で交互に送信し、その後0を送信
                         Task.Run(() => SendAlertOscMessagesAsync(alertNum, isLocal));
-                }
+                    }
             }
             catch (Exception ex)
             {
@@ -1727,7 +1729,7 @@ namespace ToNRoundCounter
                     bool sendAlert = true;
                     EventLogger.LogEvent("SendPieSizeOscMessagesAsync", "start send");
                     EventLogger.LogEvent("SendPieSizeOscMessagesAsync", "send " + piesizetNum * 1 / 20);
-                    var msg = new OscMessage("/avatar/parameters/Breast_size", piesizetNum * 1/20);
+                    var msg = new OscMessage("/avatar/parameters/Breast_size", piesizetNum * 1 / 20);
                     sender.Send(msg);
                     EventLogger.LogEvent("SendPieSizeOscMessagesAsync", "closing");
                     sender.Close();
@@ -1834,16 +1836,16 @@ namespace ToNRoundCounter
                     return;
                 }
 
-                    // プロセスの再起動
-                    try
-                    {
-                        process.Kill();
-                        process.WaitForExit();
-                    }
-                    catch (Exception ex)
-                    {
-                        throw new InvalidOperationException("ToNSaveManagerプロセスの停止に失敗しました。", ex);
-                    }
+                // プロセスの再起動
+                try
+                {
+                    process.Kill();
+                    process.WaitForExit();
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException("ToNSaveManagerプロセスの停止に失敗しました。", ex);
+                }
 
                 try
                 {
