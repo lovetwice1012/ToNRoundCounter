@@ -7,7 +7,7 @@ namespace ToNRoundCounter.UI
 {
     public class SettingsPanel : UserControl
     {
-      
+
 
         public NumericUpDown oscPortNumericUpDown { get; private set; }
         // 統計情報表示・デバッグ情報チェック
@@ -337,7 +337,7 @@ namespace ToNRoundCounter.UI
             autoSuicideRoundListBox.Items.Add("8ページ");
             autoSuicideRoundListBox.Items.Add("狂気");
             autoSuicideRoundListBox.Items.Add("ゴースト");
-            autoSuicideRoundListBox.Items.Add("ダブル・トラブル");
+            autoSuicideRoundListBox.Items.Add("ダブルトラブル");
             autoSuicideRoundListBox.Items.Add("EX");
             autoSuicideRoundListBox.Items.Add("アンバウンド");
             //autoSuicideRoundListBox.Enabled = false;

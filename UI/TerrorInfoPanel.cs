@@ -9,7 +9,9 @@ namespace ToNRoundCounter.UI
 {
     public class TerrorInfoPanel : Panel
     {
-        private FlowLayoutPanel flow;
+
+private FlowLayoutPanel flow;
+
 
         public TerrorInfoPanel()
         {
@@ -18,6 +20,7 @@ namespace ToNRoundCounter.UI
             this.AutoSize = true;
             this.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             this.Visible = false;
+
 
             flow = new FlowLayoutPanel();
             flow.AutoSize = true;
@@ -33,6 +36,7 @@ namespace ToNRoundCounter.UI
             flow.Controls.Clear();
             this.Width = width;
             flow.MaximumSize = new Size(width, 0);
+
 
             if (names == null || names.Count == 0)
             {
@@ -50,6 +54,7 @@ namespace ToNRoundCounter.UI
             }
 
             this.Height = flow.PreferredSize.Height;
+
         }
 
         private Control CreateCell(string name, JArray infoArray)
