@@ -37,6 +37,8 @@ namespace ToNRoundCounter
 
         // 情報表示パネル
         public InfoPanel InfoPanel { get; private set; }
+        private TerrorInfoPanel terrorInfoPanel;
+        private JObject terrorInfoData;
 
         // 統計情報表示およびラウンドログ表示は SplitContainer で実装（縦に並べる）
         private SplitContainer splitContainerMain;
@@ -208,6 +210,7 @@ namespace ToNRoundCounter
             roundMapNames = new Dictionary<string, string>();
             terrorMapNames = new Dictionary<string, Dictionary<string, string>>();
             roundLogHistory = new List<Tuple<RoundData, string>>();
+            LoadTerrorInfo();
             AppSettings.Load();
             InitializeComponents();
             this.Load += MainForm_Load;
@@ -287,6 +290,13 @@ namespace ToNRoundCounter
             this.Controls.Add(InfoPanel);
             currentY += InfoPanel.Height + margin;
 
+            terrorInfoPanel = new TerrorInfoPanel();
+            terrorInfoPanel.Location = new Point(margin, currentY);
+            terrorInfoPanel.Width = contentWidth;
+            terrorInfoPanel.Height = 0;
+            this.Controls.Add(terrorInfoPanel);
+            currentY += terrorInfoPanel.Height + margin;
+
             // SplitContainer（統計情報表示欄とラウンドログを縦に並べる）
             splitContainerMain = new SplitContainer();
             splitContainerMain.Orientation = Orientation.Horizontal;
@@ -348,6 +358,9 @@ namespace ToNRoundCounter
             InfoPanel.Location = new Point(margin, currentY);
             InfoPanel.Width = contentWidth;
             currentY += InfoPanel.Height + margin;
+            terrorInfoPanel.Location = new Point(margin, currentY);
+            terrorInfoPanel.Width = contentWidth;
+            currentY += terrorInfoPanel.Height + margin;
             splitContainerMain.Location = new Point(margin, currentY);
             splitContainerMain.Width = contentWidth;
             splitContainerMain.Height = this.ClientSize.Height - currentY - margin;
@@ -1345,6 +1358,33 @@ namespace ToNRoundCounter
             InfoPanel.ItemValue.Text = "";
         }
 
+        private void LoadTerrorInfo()
+        {
+            string path = "./terrosInfo.json";
+            if (File.Exists(path))
+            {
+                try
+                {
+                    string json = File.ReadAllText(path, Encoding.UTF8);
+                    terrorInfoData = JObject.Parse(json);
+                }
+                catch
+                {
+                    terrorInfoData = null;
+                }
+            }
+        }
+
+        private void UpdateTerrorInfoPanel(List<string> names)
+        {
+            if (terrorInfoPanel == null)
+                return;
+
+            terrorInfoPanel.UpdateInfo(names, terrorInfoData);
+            // Re-layout controls when height changes
+            MainForm_Resize(this, EventArgs.Empty);
+        }
+
         private Color AdjustColorForVisibility(Color color)
         {
             if (color.GetBrightness() > 0.8f)
@@ -1430,6 +1470,11 @@ namespace ToNRoundCounter
                 {
                     terrorColors[joinedNames] = color;
                 }
+                UpdateTerrorInfoPanel(names);
+            }
+            else
+            {
+                UpdateTerrorInfoPanel(null);
             }
         }
 
