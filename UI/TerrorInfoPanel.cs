@@ -9,6 +9,7 @@ namespace ToNRoundCounter.UI
 {
     public class TerrorInfoPanel : Panel
     {
+
         private const int CellWidth = 240;
         private FlowLayoutPanel flow;
 
@@ -16,12 +17,14 @@ namespace ToNRoundCounter.UI
         {
             this.BorderStyle = BorderStyle.FixedSingle;
             this.BackColor = Color.DarkGray;
+
             this.AutoSize = false;
             this.Visible = false;
             this.Height = 0;
 
             flow = new FlowLayoutPanel();
             flow.AutoSize = false;
+
             flow.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             flow.WrapContents = true;
             flow.FlowDirection = FlowDirection.LeftToRight;
@@ -34,10 +37,12 @@ namespace ToNRoundCounter.UI
             flow.Controls.Clear();
             this.Width = width;
 
+
             if (names == null || names.Count == 0)
             {
                 this.Visible = false;
                 this.Height = 0;
+
                 return;
             }
 
@@ -49,6 +54,7 @@ namespace ToNRoundCounter.UI
                 panel.Margin = new Padding(5);
                 flow.Controls.Add(panel);
             }
+
 
             int margin = 5;
             int cellWidth = CellWidth + margin * 2;
@@ -71,15 +77,18 @@ namespace ToNRoundCounter.UI
             flow.Location = new Point((width - flow.Width) / 2, 0);
             flow.Height = flow.PreferredSize.Height;
             this.Height = flow.Height;
+
         }
 
         private Control CreateCell(string name, JArray infoArray)
         {
             var cell = new TableLayoutPanel();
             cell.AutoSize = true;
+
             cell.MaximumSize = new Size(CellWidth, 0);
             cell.MinimumSize = new Size(CellWidth, 0);
             cell.Width = CellWidth;
+
             cell.Dock = DockStyle.Fill;
             cell.ColumnCount = 2;
             cell.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
@@ -91,8 +100,10 @@ namespace ToNRoundCounter.UI
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleCenter,
                 ForeColor = Color.White,
+
                 AutoSize = true,
                 MaximumSize = new Size(CellWidth, 0)
+
             };
             cell.RowCount = 1;
             cell.Controls.Add(title, 0, 0);
