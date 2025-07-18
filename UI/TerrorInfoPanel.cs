@@ -10,16 +10,18 @@ namespace ToNRoundCounter.UI
     public class TerrorInfoPanel : Panel
     {
 
-private FlowLayoutPanel flow;
+        private const int CellWidth = 240;
+        private FlowLayoutPanel flow;
 
 
         public TerrorInfoPanel()
         {
             this.BorderStyle = BorderStyle.FixedSingle;
             this.BackColor = Color.DarkGray;
-            this.AutoSize = true;
-            this.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+
+            this.AutoSize = false;
             this.Visible = false;
+            this.Height = 0;
 
 
             flow = new FlowLayoutPanel();
@@ -35,12 +37,14 @@ private FlowLayoutPanel flow;
         {
             flow.Controls.Clear();
             this.Width = width;
+            flow.Width = width;
             flow.MaximumSize = new Size(width, 0);
-
 
             if (names == null || names.Count == 0)
             {
                 this.Visible = false;
+                this.Height = 0;
+
                 return;
             }
 
@@ -61,6 +65,11 @@ private FlowLayoutPanel flow;
         {
             var cell = new TableLayoutPanel();
             cell.AutoSize = true;
+
+            cell.MaximumSize = new Size(CellWidth, 0);
+            cell.MinimumSize = new Size(CellWidth, 0);
+            cell.Width = CellWidth;
+
             cell.Dock = DockStyle.Fill;
             cell.ColumnCount = 2;
             cell.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
@@ -72,7 +81,10 @@ private FlowLayoutPanel flow;
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleCenter,
                 ForeColor = Color.White,
-                AutoSize = true
+
+                AutoSize = true,
+                MaximumSize = new Size(CellWidth, 0)
+
             };
             cell.RowCount = 1;
             cell.Controls.Add(title, 0, 0);
@@ -91,9 +103,12 @@ private FlowLayoutPanel flow;
                     {
                         Text = prop.Name,
                         Dock = DockStyle.Fill,
-                        TextAlign = ContentAlignment.MiddleRight,
+
+                        TextAlign = ContentAlignment.MiddleCenter,
                         ForeColor = Color.White,
-                        AutoSize = true
+                        AutoSize = true,
+                        MaximumSize = new Size(CellWidth / 2, 0)
+
                     };
                     var valLabel = new Label
                     {
@@ -101,7 +116,10 @@ private FlowLayoutPanel flow;
                         Dock = DockStyle.Fill,
                         TextAlign = ContentAlignment.MiddleLeft,
                         ForeColor = Color.White,
-                        AutoSize = true
+
+                        AutoSize = true,
+                        MaximumSize = new Size(CellWidth / 2, 0)
+
                     };
                     cell.Controls.Add(keyLabel, 0, row);
                     cell.Controls.Add(valLabel, 1, row);
