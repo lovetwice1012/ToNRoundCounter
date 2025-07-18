@@ -823,6 +823,11 @@ namespace ToNRoundCounter
                                 if (currentRound != null)
                                 {
                                     currentRound.InstancePlayersCount = playerCount;
+
+                                    this.Invoke(new Action(async () =>
+                                    {
+                                        await SendPieSizeOscMessagesAsync(playerCount);
+                                    }));
                                 }
 
                             }));
@@ -1653,6 +1658,35 @@ namespace ToNRoundCounter
                     EventLogger.LogEvent("SendAlertOscMessagesAsync", "closing");
                     sender.Close();
                     EventLogger.LogEvent("SendAlertOscMessagesAsync", "closed");
+                }
+            }
+            finally
+            {
+                sendAlertSemaphore.Release();
+            }
+        }
+
+        private async Task SendPieSizeOscMessagesAsync(float piesizetNum, bool isLocal = true)
+        {
+            await sendAlertSemaphore.WaitAsync();
+            try
+            {
+                EventLogger.LogEvent("SendPieSizeOscMessagesAsync", "start process");
+                using (var sender = new OscSender(IPAddress.Parse("127.0.0.1"), 0, 9000))
+                {
+                    string switchString = isLocal ? "_Local" : "";
+                    EventLogger.LogEvent("SendPieSizeOscMessagesAsync", "start connect");
+                    sender.Connect();
+                    EventLogger.LogEvent("SendPieSizeOscMessagesAsync", "connected");
+                    DateTime startTime = DateTime.Now;
+                    bool sendAlert = true;
+                    EventLogger.LogEvent("SendPieSizeOscMessagesAsync", "start send");
+                    EventLogger.LogEvent("SendPieSizeOscMessagesAsync", "send " + piesizetNum * 1 / 20);
+                    var msg = new OscMessage("/avatar/parameters/Breast_size", piesizetNum * 1/20);
+                    sender.Send(msg);
+                    EventLogger.LogEvent("SendPieSizeOscMessagesAsync", "closing");
+                    sender.Close();
+                    EventLogger.LogEvent("SendPieSizeOscMessagesAsync", "closed");
                 }
             }
             finally
