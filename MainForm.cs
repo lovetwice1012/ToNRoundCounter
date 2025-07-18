@@ -697,12 +697,14 @@ namespace ToNRoundCounter
                         }
 
                         var roundType = InfoPanel.RoundTypeValue.Text;
+                        if (roundType == "ブラッドバス" && names.Any(n => n.Contains("LVL 3")))
+                        {
+                            roundType = "EX";
+                        }
                         //もしroundTypeが自動自殺ラウンド対象なら自動自殺
                         if (AppSettings.AutoSuicideEnabled && AppSettings.AutoSuicideRoundTypes.Contains(roundType))
                         {
-
                             Task.Run(() => PerformAutoSuicide());
-
                         }
                     }
                 }
@@ -1363,6 +1365,7 @@ namespace ToNRoundCounter
         private void LoadTerrorInfo()
         {
             string path = "./terrorsInfo.json";
+            
             if (File.Exists(path))
             {
                 try
@@ -1426,11 +1429,18 @@ namespace ToNRoundCounter
                 }
             }
 
-            if (currentRound != null && AppSettings.AutoSuicideRoundTypes != null &&
-                AppSettings.AutoSuicideRoundTypes.Contains(currentRound.RoundType))
+            if (currentRound != null && AppSettings.AutoSuicideEnabled && AppSettings.AutoSuicideRoundTypes != null)
             {
-                // 自動自殺モードを起動（非同期で実行）
-                Task.Run(() => PerformAutoSuicide());
+                string checkType = currentRound.RoundType;
+                if (checkType == "ブラッドバス" && !string.IsNullOrEmpty(currentRound.TerrorKey) && currentRound.TerrorKey.Contains("LVL 3"))
+                {
+                    checkType = "EX";
+                }
+                if (AppSettings.AutoSuicideRoundTypes.Contains(checkType))
+                {
+                    // 自動自殺モードを起動（非同期で実行）
+                    Task.Run(() => PerformAutoSuicide());
+                }
             }
         }
 
