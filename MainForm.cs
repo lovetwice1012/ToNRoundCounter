@@ -62,7 +62,6 @@ namespace ToNRoundCounter
 
         // 次ラウンド予測用：roundCycle==1 → 通常ラウンド, ==2 → 「通常ラウンド or 特殊ラウンド」, >=3 → 特殊ラウンド
         private int roundCycle = 0;
-        private bool isNextRoundSpecial = false;
         private Random randomGenerator = new Random();
 
         // ラウンドログ内部リスト
@@ -74,7 +73,6 @@ namespace ToNRoundCounter
         private DateTime idleStartTime = DateTime.MinValue;
         private System.Windows.Forms.Timer velocityTimer; // Windows.Forms.Timer
         private float receivedVelocityMagnitude = 0;
-        private float receivedVelocityY = 0;
 
         private bool afkSoundPlayed = false;
         private bool punishSoundPlayed = false;
@@ -216,8 +214,8 @@ namespace ToNRoundCounter
             InitializeComponents();
             this.Load += MainForm_Load;
             cancellationTokenSource = new CancellationTokenSource();
-            Task.Run(() => ConnectWebSocketAsync(cancellationTokenSource.Token));
-            Task.Run(() => StartOSCListenerAsync(cancellationTokenSource.Token));
+            _ = Task.Run(() => ConnectWebSocketAsync(cancellationTokenSource.Token));
+            _ = Task.Run(() => StartOSCListenerAsync(cancellationTokenSource.Token));
 
             velocityTimer = new System.Windows.Forms.Timer();
             velocityTimer.Interval = 50;
@@ -590,7 +588,7 @@ namespace ToNRoundCounter
                         messageBytes.AddRange(buffer.Take(result.Count));
                     }
                     var message = Encoding.UTF8.GetString(messageBytes.ToArray());
-                    HandleEventAsync(message);
+                    await HandleEventAsync(message);
                 }
             }
         }
@@ -704,7 +702,9 @@ namespace ToNRoundCounter
                         //もしroundTypeが自動自殺ラウンド対象なら自動自殺
                         if (AppSettings.AutoSuicideEnabled && AppSettings.AutoSuicideRoundTypes.Contains(roundType))
                         {
-                            Task.Run(() => PerformAutoSuicide());
+
+                        _ = Task.Run(() => PerformAutoSuicide());
+
                         }
                     }
                 }
@@ -758,7 +758,7 @@ namespace ToNRoundCounter
                 {
                     if (!isNotifyActivated)
                     {
-                        Task.Run(() => SendAlertOscMessagesAsync(0.9f, false));
+                        _ = Task.Run(() => SendAlertOscMessagesAsync(0.9f, false));
                         isNotifyActivated = true;
                     }
                     bool optedIn = json.Value<bool?>("Value") ?? true;
@@ -772,13 +772,12 @@ namespace ToNRoundCounter
                     string instanceValue = json.Value<string>("Value") ?? "";
                     if (!string.IsNullOrEmpty(instanceValue))
                     {
-                        Task.Run(() => ConnectToInstance(instanceValue));
+                        _ = Task.Run(() => ConnectToInstance(instanceValue));
                         isNotifyActivated = false; ;
                     }
                 }
                 else if (eventType == "MASTER_CHANGE")
                 {
-                    isNextRoundSpecial = true;
                     roundCycle = 1; // 確定特殊カウントをリセット
                     this.Invoke(new Action(() =>
                     {
@@ -915,29 +914,24 @@ namespace ToNRoundCounter
                 if (normalTypes.Any(type => currentRound.RoundType.Contains(type)))
                 {
                     // 通常ラウンドの場合
-                    if (roundCycle == 1)
-                        isNextRoundSpecial = false;
-                    else if (roundCycle == 2)
-                        isNextRoundSpecial = false; // 表示は「通常ラウンド or 特殊ラウンド」
-                    else
-                        isNextRoundSpecial = true;
+                    if (roundCycle >= 3)
+                    {
+                        // 次ラウンド特殊の可能性を維持
+                    }
                 }
                 else if (overrideSpecialTypes.Contains(currentRound.RoundType))
                 {
                     // "アンバウンド", "8ページ", "ゴースト"の場合：通常を上書き（特殊として確定しない）
-                    isNextRoundSpecial = false;
                     // roundCycle はそのまま維持（特殊カウントはリセットしない）
                 }
                 else if (confirmedSpecialTypes.Contains(currentRound.RoundType))
                 {
                     // "オルタネイト", "パニッシュ", "サボタージュ", "ブラッドバス", "ミッドナイト", "狂気", "ダブル・トラブル", "EX"の場合：特殊抽選が確定
-                    isNextRoundSpecial = true;
                     roundCycle = 1;  // 確定特殊カウントをリセット
                 }
                 else
                 {
                     // その他の場合は特殊ラウンドとみなし、確定特殊カウントをリセット
-                    isNextRoundSpecial = true;
                     roundCycle = 1;
                 }
 
@@ -1038,14 +1032,6 @@ namespace ToNRoundCounter
                                 }
                                 catch { }
                             }
-                            else if (message.Address == "/avatar/parameters/VelocityY")
-                            {
-                                try
-                                {
-                                    receivedVelocityY = float.Parse(message.ToString().Split(',')[1].Split('f')[0]);
-                                }
-                                catch { }
-                            }
                             else if (message.Address == "/avatar/parameters/suside")
                             {
                                 // 自殺用パラメーター: trueなら自殺処理を即実行
@@ -1057,7 +1043,7 @@ namespace ToNRoundCounter
                                 if (suicideFlag)
                                 {
                                     // ラウンド中でなくても、即自殺（自殺キー操作）
-                                    Task.Run(() => PerformAutoSuicide());
+                                    _ = Task.Run(() => PerformAutoSuicide());
                                 }
                             }
                             else if (message.Address == "/avatar/parameters/autosuside")
@@ -1070,7 +1056,7 @@ namespace ToNRoundCounter
                                     AppSettings.AutoSuicideEnabled = autoSuicideOSC;
                                 }
                             }
-                            currentVelocity = Math.Abs(receivedVelocityMagnitude);// - Math.Abs(receivedVelocityY);
+                            currentVelocity = Math.Abs(receivedVelocityMagnitude);
                             EventLogger.LogEvent("Receive: ", $"{message.Address} => Computed Velocity: {currentVelocity:F2}");
                             this.Invoke(new Action(() =>
                             {
@@ -1119,7 +1105,7 @@ namespace ToNRoundCounter
                     {
                         afkPlayer.controls.play();
                         afkSoundPlayed = true;
-                        Task.Run(() => SendAlertOscMessagesAsync(0.1f));
+                          _ = Task.Run(() => SendAlertOscMessagesAsync(0.1f));
                     }
                     // 無操作時間に応じた文字色と点滅の制御
                     if (idleSeconds > 75)
@@ -1364,8 +1350,9 @@ namespace ToNRoundCounter
 
         private void LoadTerrorInfo()
         {
+
             string path = "./terrorsInfo.json";
-            
+
             if (File.Exists(path))
             {
                 try
@@ -1385,7 +1372,10 @@ namespace ToNRoundCounter
             if (terrorInfoPanel == null)
                 return;
 
-            terrorInfoPanel.UpdateInfo(names, terrorInfoData);
+            int margin = 10;
+            int width = this.ClientSize.Width - 2 * margin;
+            terrorInfoPanel.UpdateInfo(names, terrorInfoData, width);
+
             // Re-layout controls when height changes
             MainForm_Resize(this, EventArgs.Empty);
         }
@@ -1439,7 +1429,9 @@ namespace ToNRoundCounter
                 if (AppSettings.AutoSuicideRoundTypes.Contains(checkType))
                 {
                     // 自動自殺モードを起動（非同期で実行）
-                    Task.Run(() => PerformAutoSuicide());
+
+                    _ = Task.Run(() => PerformAutoSuicide());
+
                 }
             }
         }
@@ -1501,14 +1493,6 @@ namespace ToNRoundCounter
                 }
                 catch { }
             }
-            else if (message.Address == "/avatar/parameters/VelocityY")
-            {
-                try
-                {
-                    receivedVelocityY = Convert.ToSingle(message.ToArray()[0]);
-                }
-                catch { }
-            }
             else if (message.Address == "/avatar/parameters/suside")
             {
                 bool suicideFlag = false;
@@ -1518,7 +1502,7 @@ namespace ToNRoundCounter
                 }
                 if (suicideFlag)
                 {
-                    Task.Run(() => PerformAutoSuicide());
+                    _ = Task.Run(() => PerformAutoSuicide());
                 }
             }
             else if (message.Address == "/avatar/parameters/autosuside")
@@ -1545,7 +1529,7 @@ namespace ToNRoundCounter
                 if (setAlertValue != 0)
                 {
                     // OSCで受信した setalert の値が0でなければ、ton.sprink.cloudのwebsocketにAlertメッセージを送信する
-                    Task.Run(() => SendAlertToTonSprinkAsync((float)setAlertValue));
+                    _ = Task.Run(() => SendAlertToTonSprinkAsync((float)setAlertValue));
                 }
             }
             else if (message.Address == "/avatar/parameters/getlatestsavecode")
@@ -1675,8 +1659,10 @@ namespace ToNRoundCounter
                         float alertNum = json.Value<float>("alertNum");
                         bool isLocal = json.Value<bool>("isLocal");
                         // OSC で /avatar/parameters/alert に対して、3秒間0と alertNum を0.25秒間隔で交互に送信し、その後0を送信
-                        Task.Run(() => SendAlertOscMessagesAsync(alertNum, isLocal));
-                    }
+
+                        _ = Task.Run(() => SendAlertOscMessagesAsync(alertNum, isLocal));
+                }
+
             }
             catch (Exception ex)
             {

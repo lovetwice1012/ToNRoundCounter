@@ -9,7 +9,9 @@ namespace ToNRoundCounter.UI
 {
     public class TerrorInfoPanel : Panel
     {
-        private TableLayoutPanel table;
+
+private FlowLayoutPanel flow;
+
 
         public TerrorInfoPanel()
         {
@@ -19,17 +21,22 @@ namespace ToNRoundCounter.UI
             this.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             this.Visible = false;
 
-            table = new TableLayoutPanel();
-            table.AutoSize = true;
-            table.Dock = DockStyle.Fill;
-            table.CellBorderStyle = TableLayoutPanelCellBorderStyle.Single;
-            this.Controls.Add(table);
+
+            flow = new FlowLayoutPanel();
+            flow.AutoSize = true;
+            flow.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            flow.WrapContents = true;
+            flow.FlowDirection = FlowDirection.LeftToRight;
+            flow.Dock = DockStyle.Top;
+            this.Controls.Add(flow);
         }
 
-        public void UpdateInfo(List<string> names, JObject data)
+        public void UpdateInfo(List<string> names, JObject data, int width)
         {
-            table.Controls.Clear();
-            table.ColumnStyles.Clear();
+            flow.Controls.Clear();
+            this.Width = width;
+            flow.MaximumSize = new Size(width, 0);
+
 
             if (names == null || names.Count == 0)
             {
@@ -39,20 +46,15 @@ namespace ToNRoundCounter.UI
 
             this.Visible = true;
 
-            int count = Math.Min(3, names.Count);
-            table.ColumnCount = count;
-            for (int i = 0; i < count; i++)
-            {
-                table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / count));
-            }
-
-            int col = 0;
-            foreach (string name in names.Take(3))
+            foreach (string name in names)
             {
                 var panel = CreateCell(name, data?[name] as JArray);
-                table.Controls.Add(panel, col, 0);
-                col++;
+                panel.Margin = new Padding(5);
+                flow.Controls.Add(panel);
             }
+
+            this.Height = flow.PreferredSize.Height;
+
         }
 
         private Control CreateCell(string name, JArray infoArray)
