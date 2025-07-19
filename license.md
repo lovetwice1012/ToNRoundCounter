@@ -37,6 +37,8 @@ Redistribution and use in source and binary forms, with or without modification,
    generated to support their operation separately from the primary  
    executable.
 
+10. All files included in any distribution, whether in compressed form or directly provided as standalone files (including multiple files), that are necessary for the operation of this software or are related to it (excluding those licensed by parties other than yussy), are subject to the terms of this license.
+
 ---
 
 > **DISCLAIMER**  
