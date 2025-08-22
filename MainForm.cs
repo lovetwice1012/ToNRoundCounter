@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -468,13 +469,33 @@ namespace ToNRoundCounter
                 using (var client = new HttpClient())
                 {
                     var json = await client.GetStringAsync("https://raw.githubusercontent.com/lovetwice1012/ToNRoundCounter/refs/heads/master/version.json");
-                    var latest = JObject.Parse(json)["latest"]?.ToString();
-                    if (!string.IsNullOrEmpty(latest) && IsOlderVersion(version, latest))
+                    var data = JObject.Parse(json);
+                    var latest = data["latest"]?.ToString();
+                    var url = data["url"]?.ToString();
+                    if (!string.IsNullOrEmpty(latest) && !string.IsNullOrEmpty(url) && IsOlderVersion(version, latest))
                     {
-                        var result = MessageBox.Show($"新しいバージョン {latest} が利用可能です。\nBoothから更新しますか？", "アップデート", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                        var result = MessageBox.Show($"新しいバージョン {latest} が利用可能です。\n更新をダウンロードして適用しますか？", "アップデート", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
                         if (result == DialogResult.Yes)
                         {
-                            Process.Start(new ProcessStartInfo("https://yussy.booth.pm/items/6589148") { UseShellExecute = true });
+                            var zipPath = Path.Combine(Path.GetTempPath(), "ToNRoundCounter_update.zip");
+                            var bytes = await client.GetByteArrayAsync(url);
+                            File.WriteAllBytes(zipPath, bytes);
+
+                            try
+                            {
+                                ZipFile.ExtractToDirectory(zipPath, Directory.GetCurrentDirectory(), true);
+                            }
+                            catch (IOException)
+                            {
+                                // ignore extraction errors
+                            }
+                            finally
+                            {
+                                try { File.Delete(zipPath); } catch { }
+                            }
+
+                            Process.Start(new ProcessStartInfo(Application.ExecutablePath) { UseShellExecute = true });
+                            Application.Exit();
                         }
                     }
                 }
