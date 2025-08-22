@@ -464,11 +464,48 @@ namespace ToNRoundCounter
             }
         }
 
-        private void MainForm_Load(object sender, EventArgs e)
+        private async void MainForm_Load(object sender, EventArgs e)
         {
             MainForm_Resize(null, null);
             UpdateDisplayVisibility();
             InitializeOSCRepeater();
+            await CheckForUpdatesAsync();
+        }
+
+        private async Task CheckForUpdatesAsync()
+        {
+            try
+            {
+                using (var client = new HttpClient())
+                {
+                    var json = await client.GetStringAsync("https://raw.githubusercontent.com/lovetwice1012/ToNRoundCounter/refs/heads/master/version.json");
+                    var latest = JObject.Parse(json)["latest"]?.ToString();
+                    if (!string.IsNullOrEmpty(latest) && IsOlderVersion(version, latest))
+                    {
+                        var result = MessageBox.Show($"新しいバージョン {latest} が利用可能です。\nBoothから更新しますか？", "アップデート", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                        if (result == DialogResult.Yes)
+                        {
+                            Process.Start(new ProcessStartInfo("https://yussy.booth.pm/items/6589148") { UseShellExecute = true });
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // ignore errors while checking for updates
+            }
+        }
+
+        private bool IsOlderVersion(string current, string latest)
+        {
+            try
+            {
+                return new Version(current) < new Version(latest);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private void InitializeOSCRepeater()
