@@ -95,7 +95,7 @@ namespace ToNRoundCounter
 
         private bool followAutoSelfKill = false;
 
-        private string version = "1.9.0";
+        private string version = "1.9.1";
 
 
         // P/Invoke 宣言
