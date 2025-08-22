@@ -1,0 +1,40 @@
+name: Build and Release Windows
+
+on:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  build-release:
+    if: startsWith(github.event.head_commit.message, 'release ')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v1
+      - name: Restore NuGet packages
+        run: nuget restore ToNRoundCounter.sln
+      - name: Build
+        run: msbuild ToNRoundCounter.sln /p:Configuration=Release /p:Platform=x64
+      - name: Include shared assets
+        run: |
+          Expand-Archive -Path share_assets.zip -DestinationPath share_assets
+          Copy-Item -Path share_assets/* -Destination .\bin\x64\Release\ -Recurse -Force
+      - name: Package
+        run: Compress-Archive -Path .\bin\x64\Release\* -DestinationPath ToNRoundCounter_latest.zip
+      - name: Extract version
+        id: get_version
+        shell: bash
+        run: |
+          MESSAGE="${{ github.event.head_commit.message }}"
+          VERSION="${MESSAGE#release }"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          name: ${{ steps.get_version.outputs.version }}
+          files: ToNRoundCounter_latest.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
