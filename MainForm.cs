@@ -862,7 +862,7 @@ namespace ToNRoundCounter
                                 {
                                     currentRound.InstancePlayersCount = playerCount;
 
-                                    this.Invoke(new Action(async () =>
+                                    this.Invoke(new Action(() =>
                                     {
                                         //await SendPieSizeOscMessagesAsync(playerCount);
                                     }));
@@ -1793,7 +1793,6 @@ namespace ToNRoundCounter
                     sender.Connect();
                     EventLogger.LogEvent("SendPieSizeOscMessagesAsync", "connected");
                     DateTime startTime = DateTime.Now;
-                    bool sendAlert = true;
                     EventLogger.LogEvent("SendPieSizeOscMessagesAsync", "start send");
                     EventLogger.LogEvent("SendPieSizeOscMessagesAsync", "send " + piesizetNum * 1 / 20);
                     var msg = new OscMessage("/avatar/parameters/Breast_size", piesizetNum * 1 / 20);
