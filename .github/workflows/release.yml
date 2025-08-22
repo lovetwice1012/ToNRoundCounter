@@ -24,7 +24,7 @@ jobs:
       - name: Include shared assets
         run: |
           Expand-Archive -Path share_assets.zip -DestinationPath share_assets
-          Copy-Item -Path share_assets/* -Destination .\bin\x64\Release\ -Recurse -Force
+          Copy-Item -Path share_assets/share_assets/* -Destination .\bin\x64\Release\ -Recurse -Force
       - name: Package
         run: Compress-Archive -Path .\bin\x64\Release\* -DestinationPath ToNRoundCounter_latest.zip
       - name: Extract version
