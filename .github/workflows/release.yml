@@ -19,6 +19,8 @@ jobs:
         run: nuget restore ToNRoundCounter.sln
       - name: Build
         run: msbuild ToNRoundCounter.sln /p:Configuration=Release /p:Platform=x64
+      - name: Include updater
+        run: Copy-Item -Path .\Updater\bin\Release\net48\* -Destination .\bin\x64\Release\ -Recurse -Force
       - name: Include shared assets
         run: |
           Expand-Archive -Path share_assets.zip -DestinationPath share_assets
