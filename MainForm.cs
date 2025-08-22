@@ -91,6 +91,9 @@ namespace ToNRoundCounter
 
         private bool isRestarted = false;
 
+        private bool issetAllSelfKillMode = false;
+
+        private bool followAutoSelfKill = false;
 
 
         // P/Invoke 宣言
@@ -261,6 +264,7 @@ namespace ToNRoundCounter
             this.Controls.Add(lblDebugInfo);
 
             currentY += lblStatus.Height + margin;
+
 
             // 画面最前面固定ボタン
             btnToggleTopMost = new Button();
@@ -639,6 +643,19 @@ namespace ToNRoundCounter
                     {
                         tester_roundStartAlternatePlayer.controls.play();
                     }
+                    //issetAllSelfKillModeがtrueなら13秒後に自殺入力をする
+                    if (AppSettings.AutoSuicideEnabled && AppSettings.AutoSuicideRoundTypes.Contains(roundType) || issetAllSelfKillMode)
+                    {
+                        //13秒後に自動自殺を実行
+
+                        //自動自殺を実行
+                        _ = Task.Run(async () =>
+                        {
+                            await Task.Delay(13000);
+                            PerformAutoSuicide();
+                        });
+                    }
+
                 }
                 else if (eventType == "TRACKER")
                 {
@@ -700,10 +717,10 @@ namespace ToNRoundCounter
                             roundType = "EX";
                         }
                         //もしroundTypeが自動自殺ラウンド対象なら自動自殺
-                        if (AppSettings.AutoSuicideEnabled && AppSettings.AutoSuicideRoundTypes.Contains(roundType))
+                        if (AppSettings.AutoSuicideEnabled && AppSettings.AutoSuicideRoundTypes.Contains(roundType) || issetAllSelfKillMode)
                         {
 
-                        _ = Task.Run(() => PerformAutoSuicide());
+                            _ = Task.Run(() => PerformAutoSuicide());
 
                         }
                     }
@@ -775,6 +792,11 @@ namespace ToNRoundCounter
                         _ = Task.Run(() => ConnectToInstance(instanceValue));
                         isNotifyActivated = false; ;
                     }
+                    followAutoSelfKill = false;
+                    this.Invoke(new Action(async () =>
+                    {
+                        await disableAutoFollofSelfKillOscMessagesAsync();
+                    }));
                 }
                 else if (eventType == "MASTER_CHANGE")
                 {
@@ -1105,7 +1127,7 @@ namespace ToNRoundCounter
                     {
                         afkPlayer.controls.play();
                         afkSoundPlayed = true;
-                          _ = Task.Run(() => SendAlertOscMessagesAsync(0.1f));
+                        _ = Task.Run(() => SendAlertOscMessagesAsync(0.1f));
                     }
                     // 無操作時間に応じた文字色と点滅の制御
                     if (idleSeconds > 75)
@@ -1144,7 +1166,7 @@ namespace ToNRoundCounter
                 string itemText = InfoPanel.ItemValue.Text;
                 bool hasCoil = itemText.IndexOf("Coil", StringComparison.OrdinalIgnoreCase) >= 0;
                 // 既存条件：6～7の範囲
-                bool condition1 = hasCoil && (currentVelocity >= 6 && currentVelocity < 7);
+                bool condition1 = hasCoil && (currentVelocity > 6.4 && currentVelocity < 6.6);
                 // 追加条件：アイテム未所持 または "Emerald Coil" 所持時、6.4～6.6の範囲
                 bool condition2 = ((string.IsNullOrEmpty(itemText)) ||
                                    (itemText.IndexOf("Emerald Coil", StringComparison.OrdinalIgnoreCase) >= 0))
@@ -1580,6 +1602,20 @@ namespace ToNRoundCounter
 
 
             }
+            else if (message.Address == "/avatar/parameters/isAllSelfKill")
+            {
+                if (message.Count > 0)
+                {
+                    try { issetAllSelfKillMode = Convert.ToBoolean(message.ToArray()[0]); } catch { }
+                }
+            }
+            else if (message.Address == "/avatar/parameters/followAutoSelfKill")
+            {
+                if (message.Count > 0)
+                {
+                    try { followAutoSelfKill = Convert.ToBoolean(message.ToArray()[0]); } catch { }
+                }
+            }
 
             currentVelocity = Math.Abs(receivedVelocityMagnitude);
             EventLogger.LogEvent("Receive: ", $"{message.Address} => Computed Velocity: {currentVelocity:F2}");
@@ -1655,6 +1691,7 @@ namespace ToNRoundCounter
                     }));
                 }
                 else if (type == "alertIncoming")
+                {
                     using (var sender = new OscSender(IPAddress.Parse("127.0.0.1"), 9000))
                     {
                         EventLogger.LogEvent("alertIncoming", "start process");
@@ -1663,7 +1700,17 @@ namespace ToNRoundCounter
                         // OSC で /avatar/parameters/alert に対して、3秒間0と alertNum を0.25秒間隔で交互に送信し、その後0を送信
 
                         _ = Task.Run(() => SendAlertOscMessagesAsync(alertNum, isLocal));
+                    }
                 }
+                else if (type == "performFollowAutoSucide")
+                {
+                    if (followAutoSelfKill)
+                    {
+                        // 統率された自動自殺モードが有効なら、websocketで受信した場合も自殺キー操作を実行
+                        _ = Task.Run(() => PerformAutoSuicide());
+                    }
+                }
+
 
             }
             catch (Exception ex)
@@ -1703,6 +1750,28 @@ namespace ToNRoundCounter
                     EventLogger.LogEvent("SendAlertOscMessagesAsync", "closing");
                     sender.Close();
                     EventLogger.LogEvent("SendAlertOscMessagesAsync", "closed");
+                }
+            }
+            finally
+            {
+                sendAlertSemaphore.Release();
+            }
+        }
+
+        private async Task disableAutoFollofSelfKillOscMessagesAsync()
+        {
+            await sendAlertSemaphore.WaitAsync();
+            try
+            {
+                EventLogger.LogEvent("disableAutoFollofSelfKillOscMessagesAsync", "start process");
+                using (var sender = new OscSender(IPAddress.Parse("127.0.0.1"), 0, 9000))
+                {
+                    EventLogger.LogEvent("disableAutoFollofSelfKillOscMessagesAsync", "send false");
+                    var msg0 = new OscMessage("/avatar/parameters/followAutoSelfKill", false);
+                    sender.Send(msg0);
+                    EventLogger.LogEvent("disableAutoFollofSelfKillOscMessagesAsync", "closing");
+                    sender.Close();
+                    EventLogger.LogEvent("disableAutoFollofSelfKillOscMessagesAsync", "closed");
                 }
             }
             finally
