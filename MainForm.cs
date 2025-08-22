@@ -500,9 +500,18 @@ namespace ToNRoundCounter
                                     }
                                 }
                             }
-                            catch (IOException)
+                            catch (IOException ioex)
                             {
                                 // ignore extraction errors
+                                MessageBox.Show(latest + " のアップデートに失敗しました。", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                EventLogger.LogEvent("UpdateError", "Failed to apply update: " + latest);
+                                EventLogger.LogEvent("UpdateError", "IOException: " + ioex.Message);
+                            }
+                            catch (Exception ex)
+                            {
+                                MessageBox.Show(latest + " のアップデートに失敗しました。", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                EventLogger.LogEvent("UpdateError", "Failed to apply update: " + latest);
+                                EventLogger.LogEvent("UpdateError", "Exception: " + ex.Message);
                             }
                             finally
                             {
