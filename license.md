@@ -11,18 +11,18 @@ Redistribution and use in source and binary forms, with or without modification,
    and/or other materials provided with the distribution.
 
 3. Neither the name of the copyright holder nor the names of its contributors  
-   may be used to endorse or promote products derived from this software  
+   may be used to endorse or promote products derived from this software 
    without specific prior written permission.
 
-4. When redistributing software that uses, derives from or modifies this  
-   software, you must include not only this software’s license notice but  
+4. When redistributing software or any files that uses, derives from or modifies this  
+   softwareor text-based files , you must include not only this software or text-based files’s license notice but  
    also the license notices of any third‑party works contained in the  
    distributed materials, and display them prominently in an easily  
    discoverable location within the distribution.
 
-5. Use of this software for political or religious purposes is prohibited.
+5. Use of this software or any files for political or religious purposes is prohibited.
 
-6. Use of this software to harm others or to carry out antisocial activities  
+6. Use of this software or any files to harm others or to carry out antisocial activities  
    is prohibited.
 
 7. If you wish to reuse any text‑based files (e.g. JSON) included with this  
@@ -30,12 +30,14 @@ Redistribution and use in source and binary forms, with or without modification,
    your intended purpose, the name of the target program, and any other  
    information requested by yussy, and obtain explicit permission.
 
-8. All executable files bundled with this software are governed by the terms  
+8. All executable files or any files bundled with this software are governed by the terms  
    of this license.
 
 9. You may not use any bundled executable files or any files automatically  
    generated to support their operation separately from the primary  
    executable.
+
+10. All files included in any distribution, whether in compressed form or directly provided as standalone files (including multiple files), that are necessary for the operation of this software or are related to it (excluding those licensed by parties other than yussy), are subject to the terms of this license.
 
 ---
 
