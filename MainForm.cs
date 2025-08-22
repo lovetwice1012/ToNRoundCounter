@@ -95,6 +95,8 @@ namespace ToNRoundCounter
 
         private bool followAutoSelfKill = false;
 
+        private string version = "1.9.0";
+
 
         // P/Invoke 宣言
         [StructLayout(LayoutKind.Sequential)]
