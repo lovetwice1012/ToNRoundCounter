@@ -20,7 +20,7 @@ using ToNRoundCounter.Models;
 using ToNRoundCounter.Properties;
 using ToNRoundCounter.UI;
 using ToNRoundCounter.Utils;
-using System.Windows.Media;
+using MediaPlayer = System.Windows.Media.MediaPlayer;
 
 namespace ToNRoundCounter
 {
