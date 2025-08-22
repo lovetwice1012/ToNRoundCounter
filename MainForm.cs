@@ -20,7 +20,7 @@ using ToNRoundCounter.Models;
 using ToNRoundCounter.Properties;
 using ToNRoundCounter.UI;
 using ToNRoundCounter.Utils;
-using WMPLib;
+using System.Windows.Media;
 
 namespace ToNRoundCounter
 {
@@ -156,56 +156,45 @@ namespace ToNRoundCounter
         }
 
 
-        private WindowsMediaPlayer notifyPlayer = new WMPLib.WindowsMediaPlayer
+        private static MediaPlayer CreatePlayer(string path)
         {
-            URL = "./audio/notify.mp3"
-        };
+            var player = new MediaPlayer();
+            player.Open(new Uri(path, UriKind.Relative));
+            return player;
+        }
 
-        private WindowsMediaPlayer afkPlayer = new WMPLib.WindowsMediaPlayer
+        private static void PlayFromStart(MediaPlayer player)
         {
-            URL = "./audio/afk70.mp3"
-        };
+            player.Position = TimeSpan.Zero;
+            player.Play();
+        }
 
-        private WindowsMediaPlayer punishPlayer = new WMPLib.WindowsMediaPlayer
-        {
-            URL = "./audio/punish_8page.mp3"
-        };
+        private readonly MediaPlayer notifyPlayer = CreatePlayer("./audio/notify.mp3");
 
-        private WindowsMediaPlayer tester_roundStartAlternatePlayer = new WMPLib.WindowsMediaPlayer
-        {
-            URL = "./audio/testerOnly/RoundStart/alternate.mp3"
-        };
+        private readonly MediaPlayer afkPlayer = CreatePlayer("./audio/afk70.mp3");
 
-        private WindowsMediaPlayer tester_IDICIDEDKILLALLPlayer = new WMPLib.WindowsMediaPlayer
-        {
-            URL = "./audio/testerOnly/RoundStart/IDICIDEDKILLALL.mp3"
-        };
+        private readonly MediaPlayer punishPlayer = CreatePlayer("./audio/punish_8page.mp3");
 
-        private WindowsMediaPlayer tester_BATOU_01Player = new WMPLib.WindowsMediaPlayer
-        {
-            URL = "./audio/testerOnly/Batou/Batou-01.mp3"
-        };
+        private readonly MediaPlayer tester_roundStartAlternatePlayer = CreatePlayer("./audio/testerOnly/RoundStart/alternate.mp3");
 
-        private WindowsMediaPlayer tester_BATOU_02Player = new WMPLib.WindowsMediaPlayer
-        {
-            URL = "./audio/testerOnly/Batou/Batou-02.mp3"
-        };
+        private readonly MediaPlayer tester_IDICIDEDKILLALLPlayer = CreatePlayer("./audio/testerOnly/RoundStart/IDICIDEDKILLALL.mp3");
 
-        private WindowsMediaPlayer tester_BATOU_03Player = new WMPLib.WindowsMediaPlayer
-        {
-            URL = "./audio/testerOnly/Batou/Batou-03.mp3"
-        };
+        private readonly MediaPlayer tester_BATOU_01Player = CreatePlayer("./audio/testerOnly/Batou/Batou-01.mp3");
+
+        private readonly MediaPlayer tester_BATOU_02Player = CreatePlayer("./audio/testerOnly/Batou/Batou-02.mp3");
+
+        private readonly MediaPlayer tester_BATOU_03Player = CreatePlayer("./audio/testerOnly/Batou/Batou-03.mp3");
 
         public MainForm()
         {
-            notifyPlayer.controls.stop();
-            afkPlayer.controls.stop();
-            punishPlayer.controls.stop();
-            tester_roundStartAlternatePlayer.controls.stop();
-            tester_IDICIDEDKILLALLPlayer.controls.stop();
-            tester_BATOU_01Player.controls.stop();
-            tester_BATOU_02Player.controls.stop();
-            tester_BATOU_03Player.controls.stop();
+            notifyPlayer.Stop();
+            afkPlayer.Stop();
+            punishPlayer.Stop();
+            tester_roundStartAlternatePlayer.Stop();
+            tester_IDICIDEDKILLALLPlayer.Stop();
+            tester_BATOU_01Player.Stop();
+            tester_BATOU_02Player.Stop();
+            tester_BATOU_03Player.Stop();
 
             this.Name = "MainForm";
             roundAggregates = new Dictionary<string, RoundAggregate>();
@@ -680,7 +669,7 @@ namespace ToNRoundCounter
                     //もしtesterNamesに含まれているかつオルタネイトなら、オルタネイトラウンド開始の音を鳴らす
                     if (testerNames.Contains(playerDisplayName) && roundType == "オルタネイト")
                     {
-                        tester_roundStartAlternatePlayer.controls.play();
+                        PlayFromStart(tester_roundStartAlternatePlayer);
                     }
                     //issetAllSelfKillModeがtrueなら13秒後に自殺入力をする
                     if (AppSettings.AutoSuicideEnabled && AppSettings.AutoSuicideRoundTypes.Contains(roundType) || issetAllSelfKillMode)
@@ -797,15 +786,15 @@ namespace ToNRoundCounter
                             int randomNum = randomGenerator.Next(1, 4);
                             if (randomNum == 1)
                             {
-                                tester_BATOU_01Player.controls.play();
+                                PlayFromStart(tester_BATOU_01Player);
                             }
                             else if (randomNum == 2)
                             {
-                                tester_BATOU_02Player.controls.play();
+                                PlayFromStart(tester_BATOU_02Player);
                             }
                             else if (randomNum == 3)
                             {
-                                tester_BATOU_03Player.controls.play();
+                                PlayFromStart(tester_BATOU_03Player);
                             }
                         }
                     }
@@ -854,7 +843,7 @@ namespace ToNRoundCounter
                     {
                         if (testerNames.Contains(playerDisplayName) && !punishSoundPlayed)
                         {
-                            tester_IDICIDEDKILLALLPlayer.controls.play();
+                            PlayFromStart(tester_IDICIDEDKILLALLPlayer);
                             punishSoundPlayed = true;
                         }
                     }
@@ -1164,7 +1153,7 @@ namespace ToNRoundCounter
                     // 70秒以上無操作の場合、70秒時点で音声再生（まだ再生していなければ）
                     if (idleSeconds >= 70 && !afkSoundPlayed)
                     {
-                        afkPlayer.controls.play();
+                        PlayFromStart(afkPlayer);
                         afkSoundPlayed = true;
                         _ = Task.Run(() => SendAlertOscMessagesAsync(0.1f));
                     }
@@ -1223,7 +1212,7 @@ namespace ToNRoundCounter
                         if (!punishSoundPlayed)
                         {
                             // パニッシュ・8ページ検出時の音声再生
-                            punishPlayer.controls.play();
+                            PlayFromStart(punishPlayer);
                             punishSoundPlayed = true;
                         }
                     }
@@ -1774,7 +1763,7 @@ namespace ToNRoundCounter
                     DateTime startTime = DateTime.Now;
                     bool sendAlert = true;
                     EventLogger.LogEvent("SendAlertOscMessagesAsync", "start send");
-                    notifyPlayer.controls.play();
+                    PlayFromStart(notifyPlayer);
                     while ((DateTime.Now - startTime).TotalSeconds < 2)
                     {
                         EventLogger.LogEvent("SendAlertOscMessagesAsync", "send " + sendAlert.ToString());
