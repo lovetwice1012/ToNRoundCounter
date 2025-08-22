@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
-using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -481,36 +480,20 @@ namespace ToNRoundCounter
                             var bytes = await client.GetByteArrayAsync(url);
                             File.WriteAllBytes(zipPath, bytes);
 
-                            try
+                            var updaterExe = Path.Combine(Directory.GetCurrentDirectory(), "Updater.exe");
+                            if (File.Exists(updaterExe))
                             {
-                                using (var archive = ZipFile.OpenRead(zipPath))
+                                Process.Start(new ProcessStartInfo(updaterExe)
                                 {
-                                    foreach (var entry in archive.Entries)
-                                    {
-                                        var destinationPath = Path.Combine(Directory.GetCurrentDirectory(), entry.FullName);
-                                        if (string.IsNullOrEmpty(entry.Name))
-                                        {
-                                            Directory.CreateDirectory(destinationPath);
-                                        }
-                                        else
-                                        {
-                                            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath));
-                                            entry.ExtractToFile(destinationPath, true);
-                                        }
-                                    }
-                                }
+                                    Arguments = $"\"{zipPath}\" \"{Application.ExecutablePath}\"",
+                                    UseShellExecute = false
+                                });
+                                Application.Exit();
                             }
-                            catch (IOException)
+                            else
                             {
-                                // ignore extraction errors
+                                MessageBox.Show("Updater.exe が見つかりません。", "アップデート", MessageBoxButtons.OK, MessageBoxIcon.Error);
                             }
-                            finally
-                            {
-                                try { File.Delete(zipPath); } catch { }
-                            }
-
-                            Process.Start(new ProcessStartInfo(Application.ExecutablePath) { UseShellExecute = true });
-                            Application.Exit();
                         }
                     }
                 }
