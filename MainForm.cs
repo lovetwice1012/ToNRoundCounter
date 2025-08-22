@@ -483,7 +483,22 @@ namespace ToNRoundCounter
 
                             try
                             {
-                                ZipFile.ExtractToDirectory(zipPath, Directory.GetCurrentDirectory(), true);
+                                using (var archive = ZipFile.OpenRead(zipPath))
+                                {
+                                    foreach (var entry in archive.Entries)
+                                    {
+                                        var destinationPath = Path.Combine(Directory.GetCurrentDirectory(), entry.FullName);
+                                        if (string.IsNullOrEmpty(entry.Name))
+                                        {
+                                            Directory.CreateDirectory(destinationPath);
+                                        }
+                                        else
+                                        {
+                                            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath));
+                                            entry.ExtractToFile(destinationPath, true);
+                                        }
+                                    }
+                                }
                             }
                             catch (IOException)
                             {
