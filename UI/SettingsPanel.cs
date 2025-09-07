@@ -542,6 +542,21 @@ namespace ToNRoundCounter.UI
                 }
                 var sb = new StringBuilder();
 
+                Func<int, string> GetActionText = value =>
+                {
+                    switch (value)
+                    {
+                        case 1:
+                            return "自動自爆を行います";
+                        case 2:
+                            return "遅延自爆を行います";
+                        default:
+                            return "自動自爆を行いません";
+                    }
+                };
+
+                Func<List<string>, bool> ShouldBullet = items => items.Count > 3 || string.Join(",", items).Length > 20;
+
                 var globalGroups = rulesCheck.Where(r => r.Round == null && r.Terror == null)
                                            .GroupBy(r => r.Value);
                 foreach (var g in globalGroups)
@@ -657,21 +672,6 @@ namespace ToNRoundCounter.UI
                         }
                     }
                 }
-
-                Func<List<string>, bool> ShouldBullet = items => items.Count > 3 || string.Join(",", items).Length > 20;
-
-                Func<int, string> GetActionText = value =>
-                {
-                    switch (value)
-                    {
-                        case 1:
-                            return "自動自爆を行います";
-                        case 2:
-                            return "遅延自爆を行います";
-                        default:
-                            return "自動自爆を行いません";
-                    }
-                };
 
                 MessageBox.Show(sb.ToString().Trim(), LanguageManager.Translate("設定内容"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             };
