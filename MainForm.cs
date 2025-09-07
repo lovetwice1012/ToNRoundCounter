@@ -97,6 +97,9 @@ namespace ToNRoundCounter
 
         private string version = "1.9.1";
 
+        private CancellationTokenSource autoSuicideTokenSource = null;
+        private DateTime autoSuicideRoundStartTime;
+
 
         // P/Invoke 宣言
         [StructLayout(LayoutKind.Sequential)]
@@ -693,14 +696,7 @@ namespace ToNRoundCounter
                     //issetAllSelfKillModeがtrueなら13秒後に自殺入力をする
                     if (AppSettings.AutoSuicideEnabled && AppSettings.AutoSuicideRoundTypes.Contains(roundType) || issetAllSelfKillMode)
                     {
-                        //13秒後に自動自殺を実行
-
-                        //自動自殺を実行
-                        _ = Task.Run(async () =>
-                        {
-                            await Task.Delay(13000);
-                            PerformAutoSuicide();
-                        });
+                        ScheduleAutoSuicide(TimeSpan.FromSeconds(13), true);
                     }
 
                 }
@@ -1481,6 +1477,19 @@ namespace ToNRoundCounter
                         InfoPanel.DamageValue.Text = "0";
                     }));
                 }
+
+                if (currentRound != null && AppSettings.AutoSuicideEnabled && AppSettings.AutoSuicideRoundTypes != null)
+                {
+                    string checkType = currentRound.RoundType;
+                    if (checkType == "ブラッドバス" && !string.IsNullOrEmpty(currentRound.TerrorKey) && currentRound.TerrorKey.Contains("LVL 3"))
+                    {
+                        checkType = "EX";
+                    }
+                    if ((AppSettings.AutoSuicideRoundTypes.Contains(checkType) || issetAllSelfKillMode) && autoSuicideTokenSource == null)
+                    {
+                        ScheduleAutoSuicide(TimeSpan.FromSeconds(13), true);
+                    }
+                }
             }
             else
             {
@@ -1488,28 +1497,47 @@ namespace ToNRoundCounter
                 {
                     FinalizeCurrentRound(currentRound.IsDeath ? "☠" : "✅");
                 }
+                autoSuicideTokenSource?.Cancel();
+                autoSuicideTokenSource = null;
             }
+        }
 
-            if (currentRound != null && AppSettings.AutoSuicideEnabled && AppSettings.AutoSuicideRoundTypes != null)
+        private void ScheduleAutoSuicide(TimeSpan delay, bool resetStartTime)
+        {
+            autoSuicideTokenSource?.Cancel();
+            if (resetStartTime || autoSuicideRoundStartTime == default)
             {
-                string checkType = currentRound.RoundType;
-                if (checkType == "ブラッドバス" && !string.IsNullOrEmpty(currentRound.TerrorKey) && currentRound.TerrorKey.Contains("LVL 3"))
-                {
-                    checkType = "EX";
-                }
-                if (AppSettings.AutoSuicideRoundTypes.Contains(checkType))
-                {
-                    // 自動自殺モードを起動（非同期で実行）
-
-                    _ = Task.Run(() => PerformAutoSuicide());
-
-                }
+                autoSuicideRoundStartTime = DateTime.UtcNow;
             }
+            var cts = new CancellationTokenSource();
+            autoSuicideTokenSource = cts;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(delay, cts.Token);
+                    if (!cts.IsCancellationRequested)
+                    {
+                        PerformAutoSuicide();
+                    }
+                }
+                catch (TaskCanceledException)
+                {
+                }
+                finally
+                {
+                    if (autoSuicideTokenSource == cts)
+                    {
+                        autoSuicideTokenSource = null;
+                    }
+                }
+            });
         }
 
         private void PerformAutoSuicide()
         {
-
+            autoSuicideTokenSource?.Cancel();
+            autoSuicideTokenSource = null;
             EventLogger.LogEvent("Suicide", "Performing Suside");
             LaunchSuicideInputIfExists();
             EventLogger.LogEvent("Suicide", "finish");
@@ -1583,6 +1611,35 @@ namespace ToNRoundCounter
                 {
                     try { autoSuicideOSC = Convert.ToBoolean(message.ToArray()[0]); } catch { }
                     AppSettings.AutoSuicideEnabled = autoSuicideOSC;
+                }
+            }
+            else if (message.Address == "/avatar/parameters/abortAutoSuside")
+            {
+                bool abortFlag = true;
+                if (message.Count > 0)
+                {
+                    try { abortFlag = Convert.ToBoolean(message.ToArray()[0]); } catch { }
+                }
+                if (abortFlag && autoSuicideTokenSource != null)
+                {
+                    autoSuicideTokenSource.Cancel();
+                    autoSuicideTokenSource = null;
+                }
+            }
+            else if (message.Address == "/avatar/parameters/delayAutoSuside")
+            {
+                bool delayFlag = true;
+                if (message.Count > 0)
+                {
+                    try { delayFlag = Convert.ToBoolean(message.ToArray()[0]); } catch { }
+                }
+                if (delayFlag && autoSuicideTokenSource != null)
+                {
+                    TimeSpan remaining = TimeSpan.FromSeconds(40) - (DateTime.UtcNow - autoSuicideRoundStartTime);
+                    if (remaining > TimeSpan.Zero)
+                    {
+                        ScheduleAutoSuicide(remaining, false);
+                    }
                 }
             }
             else if (message.Address == "/avatar/parameters/setalert")
