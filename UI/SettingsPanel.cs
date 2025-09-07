@@ -2,6 +2,7 @@
 using System.Drawing;
 using System.Windows.Forms;
 using ToNRoundCounter.Utils;
+using System.Collections.Generic;
 
 namespace ToNRoundCounter.UI
 {
@@ -42,6 +43,9 @@ namespace ToNRoundCounter.UI
         public Button LogBgButton { get; private set; }
         public CheckedListBox autoSuicideRoundListBox { get; internal set; }
         public CheckBox autoSuicideCheckBox { get; internal set; }
+        public ComboBox autoSuicidePresetComboBox { get; private set; }
+        public Button autoSuicidePresetSaveButton { get; private set; }
+        public Button autoSuicidePresetLoadButton { get; private set; }
 
         public Label apiKeyLabel { get; private set; }
         public TextBox apiKeyTextBox { get; private set; }
@@ -342,7 +346,64 @@ namespace ToNRoundCounter.UI
             autoSuicideRoundListBox.Items.Add("アンバウンド");
             //autoSuicideRoundListBox.Enabled = false;
             grpAutoSuicide.Controls.Add(autoSuicideRoundListBox);
-            grpAutoSuicide.Height = autoSuicideRoundListBox.Bottom + 10;
+
+            Label autoSuicidePresetLabel = new Label();
+            autoSuicidePresetLabel.Text = LanguageManager.Translate("プリセット:");
+            autoSuicidePresetLabel.AutoSize = true;
+            autoSuicidePresetLabel.Location = new Point(innerMargin, autoSuicideRoundListBox.Bottom + 10);
+            grpAutoSuicide.Controls.Add(autoSuicidePresetLabel);
+
+            autoSuicidePresetComboBox = new ComboBox();
+            autoSuicidePresetComboBox.Name = "AutoSuicidePresetComboBox";
+            autoSuicidePresetComboBox.Location = new Point(autoSuicidePresetLabel.Right + 10, autoSuicideRoundListBox.Bottom + 5);
+            autoSuicidePresetComboBox.Width = 200;
+            foreach (var key in AppSettings.AutoSuicidePresets.Keys)
+            {
+                autoSuicidePresetComboBox.Items.Add(key);
+            }
+            grpAutoSuicide.Controls.Add(autoSuicidePresetComboBox);
+
+            autoSuicidePresetSaveButton = new Button();
+            autoSuicidePresetSaveButton.Text = LanguageManager.Translate("保存");
+            autoSuicidePresetSaveButton.AutoSize = true;
+            autoSuicidePresetSaveButton.Location = new Point(autoSuicidePresetComboBox.Right + 10, autoSuicideRoundListBox.Bottom + 5);
+            autoSuicidePresetSaveButton.Click += (s, e) =>
+            {
+                string name = autoSuicidePresetComboBox.Text.Trim();
+                if (!string.IsNullOrEmpty(name))
+                {
+                    var list = new List<string>();
+                    foreach (var item in autoSuicideRoundListBox.CheckedItems)
+                        list.Add(item.ToString());
+                    AppSettings.AutoSuicidePresets[name] = list;
+                    if (!autoSuicidePresetComboBox.Items.Contains(name))
+                        autoSuicidePresetComboBox.Items.Add(name);
+                    AppSettings.Save();
+                    MessageBox.Show(LanguageManager.Translate("プリセットを保存しました。"), LanguageManager.Translate("情報"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            };
+            grpAutoSuicide.Controls.Add(autoSuicidePresetSaveButton);
+
+            autoSuicidePresetLoadButton = new Button();
+            autoSuicidePresetLoadButton.Text = LanguageManager.Translate("読み込み");
+            autoSuicidePresetLoadButton.AutoSize = true;
+            autoSuicidePresetLoadButton.Location = new Point(autoSuicidePresetSaveButton.Right + 10, autoSuicideRoundListBox.Bottom + 5);
+            autoSuicidePresetLoadButton.Click += (s, e) =>
+            {
+                string name = autoSuicidePresetComboBox.Text.Trim();
+                if (!string.IsNullOrEmpty(name) && AppSettings.AutoSuicidePresets.ContainsKey(name))
+                {
+                    var list = AppSettings.AutoSuicidePresets[name];
+                    for (int i = 0; i < autoSuicideRoundListBox.Items.Count; i++)
+                    {
+                        string item = autoSuicideRoundListBox.Items[i].ToString();
+                        autoSuicideRoundListBox.SetItemChecked(i, list.Contains(item));
+                    }
+                }
+            };
+            grpAutoSuicide.Controls.Add(autoSuicidePresetLoadButton);
+
+            grpAutoSuicide.Height = autoSuicidePresetLoadButton.Bottom + 10;
 
             currentY += grpAutoSuicide.Height + margin;
             this.Height = currentY + margin;

@@ -31,6 +31,7 @@ namespace ToNRoundCounter
         public static bool Filter_SurvivalRate { get; set; } = true;
 
         public static List<string> AutoSuicideRoundTypes { get; set; } = new List<string>();
+        public static Dictionary<string, List<string>> AutoSuicidePresets { get; set; } = new Dictionary<string, List<string>>();
 
         public static List<string> RoundTypeStats { get; set; } = new List<string>()
         {
@@ -71,6 +72,7 @@ namespace ToNRoundCounter
                         };
                         AutoSuicideEnabled = bool.TryParse(settings.AutoSuicideEnabled.ToString(), out bool autoSuicideEnabled) ? autoSuicideEnabled : false;
                         AutoSuicideRoundTypes = settings.AutoSuicideRoundTypes ?? new List<string>();
+                        AutoSuicidePresets = settings.AutoSuicidePresets ?? new Dictionary<string, List<string>>();
                         apikey = !string.IsNullOrEmpty(settings.apikey) ? settings.apikey : string.Empty; // APIキーの読み込み
                         EventLogger.LogEvent("AppSettings", "Settings loaded successfully from " + settingsFile);
 
@@ -108,6 +110,7 @@ namespace ToNRoundCounter
                 RoundTypeStats = RoundTypeStats,
                 AutoSuicideEnabled = AutoSuicideEnabled,
                 AutoSuicideRoundTypes = AutoSuicideRoundTypes,
+                AutoSuicidePresets = AutoSuicidePresets,
                 apikey = apikey // APIキーの保存
             };
             string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
@@ -136,6 +139,7 @@ namespace ToNRoundCounter
         public List<string> RoundTypeStats { get; set; }
         public bool AutoSuicideEnabled { get; internal set; }
         public List<string> AutoSuicideRoundTypes { get; internal set; }
+        public Dictionary<string, List<string>> AutoSuicidePresets { get; set; }
 
         public string apikey { get; set; }
     }
