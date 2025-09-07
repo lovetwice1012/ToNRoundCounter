@@ -399,6 +399,7 @@ namespace ToNRoundCounter
                     settingsForm.SettingsPanel.RoundTypeStatsListBox.SetItemChecked(i, AppSettings.RoundTypeStats.Contains(item));
                 }
                 settingsForm.SettingsPanel.autoSuicideCheckBox.Checked = AppSettings.AutoSuicideEnabled;
+                settingsForm.SettingsPanel.autoSuicideUseDetailCheckBox.Checked = AppSettings.AutoSuicideUseDetail;
                 for (int i = 0; i < settingsForm.SettingsPanel.autoSuicideRoundListBox.Items.Count; i++)
                 {
                     string item = settingsForm.SettingsPanel.autoSuicideRoundListBox.Items[i].ToString();
@@ -435,6 +436,7 @@ namespace ToNRoundCounter
                         AppSettings.RoundTypeStats.Add(item.ToString());
                     }
                     AppSettings.AutoSuicideEnabled = settingsForm.SettingsPanel.autoSuicideCheckBox.Checked;
+                    AppSettings.AutoSuicideUseDetail = settingsForm.SettingsPanel.autoSuicideUseDetailCheckBox.Checked;
                     AppSettings.AutoSuicideRoundTypes.Clear();
                     foreach (object item in settingsForm.SettingsPanel.autoSuicideRoundListBox.CheckedItems)
                     {

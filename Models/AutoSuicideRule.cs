@@ -60,6 +60,64 @@ namespace ToNRoundCounter.Models
             return true;
         }
 
+        public static bool TryParseDetailed(string line, out AutoSuicideRule rule, out string error)
+        {
+            rule = null;
+            error = null;
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                error = "空行です";
+                return false;
+            }
+            var parts = line.Split(':');
+            string round = null;
+            bool roundNeg = false;
+            string terror = null;
+            bool terrorNeg = false;
+            int value;
+            if (parts.Length == 1)
+            {
+                if (parts[0] == "1" || parts[0] == "0" || parts[0] == "2")
+                {
+                    value = int.Parse(parts[0]);
+                }
+                else
+                {
+                    error = $"値 '{parts[0]}' が不正です。0,1,2のみ使用できます";
+                    return false;
+                }
+            }
+            else if (parts.Length == 3)
+            {
+                if (!string.IsNullOrWhiteSpace(parts[0]))
+                {
+                    roundNeg = parts[0].StartsWith("!");
+                    round = roundNeg ? parts[0].Substring(1) : parts[0];
+                }
+                if (!string.IsNullOrWhiteSpace(parts[1]))
+                {
+                    terrorNeg = parts[1].StartsWith("!");
+                    terror = terrorNeg ? parts[1].Substring(1) : parts[1];
+                }
+                if (parts[2] == "1" || parts[2] == "0" || parts[2] == "2")
+                {
+                    value = int.Parse(parts[2]);
+                }
+                else
+                {
+                    error = $"値 '{parts[2]}' が不正です。0,1,2のみ使用できます";
+                    return false;
+                }
+            }
+            else
+            {
+                error = "形式が不正です。'ラウンド:テラー:値' または '値' の形式で記述してください";
+                return false;
+            }
+            rule = new AutoSuicideRule { Round = round, RoundNegate = roundNeg, Terror = terror, TerrorNegate = terrorNeg, Value = value };
+            return true;
+        }
+
         public bool Matches(string round, string terror, Func<string, string, bool> comparer)
         {
             bool roundMatch = Round == null || (round != null && (RoundNegate ? !comparer(round, Round) : comparer(round, Round)));
