@@ -430,32 +430,10 @@ namespace ToNRoundCounter.UI
             };
             grpAutoSuicide.Controls.Add(autoSuicidePresetLoadButton);
 
-            autoSuicidePresetExportButton = new Button();
-            autoSuicidePresetExportButton.Text = LanguageManager.Translate("エクスポート");
-            autoSuicidePresetExportButton.AutoSize = true;
-            autoSuicidePresetExportButton.Location = new Point(autoSuicidePresetLoadButton.Right + 10, autoSuicideRoundListBox.Bottom + 5);
-            autoSuicidePresetExportButton.Click += (s, e) =>
-            {
-                string name = autoSuicidePresetComboBox.Text.Trim();
-                if (!string.IsNullOrEmpty(name) && AppSettings.AutoSuicidePresets.ContainsKey(name))
-                {
-                    SaveFileDialog dialog = new SaveFileDialog();
-                    dialog.Filter = "JSON Files|*.json|All Files|*.*";
-                    dialog.FileName = name + ".json";
-                    if (dialog.ShowDialog() == DialogResult.OK)
-                    {
-                        var preset = AppSettings.AutoSuicidePresets[name];
-                        File.WriteAllText(dialog.FileName, JsonConvert.SerializeObject(preset, Formatting.Indented));
-                        MessageBox.Show(LanguageManager.Translate("プリセットをエクスポートしました。"), LanguageManager.Translate("情報"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
-                }
-            };
-            grpAutoSuicide.Controls.Add(autoSuicidePresetExportButton);
-
             autoSuicidePresetImportButton = new Button();
             autoSuicidePresetImportButton.Text = LanguageManager.Translate("インポート");
             autoSuicidePresetImportButton.AutoSize = true;
-            autoSuicidePresetImportButton.Location = new Point(autoSuicidePresetExportButton.Right + 10, autoSuicideRoundListBox.Bottom + 5);
+            autoSuicidePresetImportButton.Location = new Point(autoSuicidePresetSaveButton.Left, autoSuicidePresetSaveButton.Bottom + 5);
             autoSuicidePresetImportButton.Click += (s, e) =>
             {
                 OpenFileDialog dialog = new OpenFileDialog();
@@ -484,7 +462,29 @@ namespace ToNRoundCounter.UI
             };
             grpAutoSuicide.Controls.Add(autoSuicidePresetImportButton);
 
-            grpAutoSuicide.Height = autoSuicidePresetImportButton.Bottom + 10;
+            autoSuicidePresetExportButton = new Button();
+            autoSuicidePresetExportButton.Text = LanguageManager.Translate("エクスポート");
+            autoSuicidePresetExportButton.AutoSize = true;
+            autoSuicidePresetExportButton.Location = new Point(autoSuicidePresetLoadButton.Left, autoSuicidePresetLoadButton.Bottom + 5);
+            autoSuicidePresetExportButton.Click += (s, e) =>
+            {
+                string name = autoSuicidePresetComboBox.Text.Trim();
+                if (!string.IsNullOrEmpty(name) && AppSettings.AutoSuicidePresets.ContainsKey(name))
+                {
+                    SaveFileDialog dialog = new SaveFileDialog();
+                    dialog.Filter = "JSON Files|*.json|All Files|*.*";
+                    dialog.FileName = name + ".json";
+                    if (dialog.ShowDialog() == DialogResult.OK)
+                    {
+                        var preset = AppSettings.AutoSuicidePresets[name];
+                        File.WriteAllText(dialog.FileName, JsonConvert.SerializeObject(preset, Formatting.Indented));
+                        MessageBox.Show(LanguageManager.Translate("プリセットをエクスポートしました。"), LanguageManager.Translate("情報"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                }
+            };
+            grpAutoSuicide.Controls.Add(autoSuicidePresetExportButton);
+
+            grpAutoSuicide.Height = autoSuicidePresetExportButton.Bottom + 10;
 
             currentY += grpAutoSuicide.Height + margin;
 
