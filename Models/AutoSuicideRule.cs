@@ -8,7 +8,7 @@ namespace ToNRoundCounter.Models
         public bool RoundNegate { get; set; }
         public string Terror { get; set; }
         public bool TerrorNegate { get; set; }
-        public bool Value { get; set; }
+        public int Value { get; set; }
 
         public static bool TryParse(string line, out AutoSuicideRule rule)
         {
@@ -19,12 +19,12 @@ namespace ToNRoundCounter.Models
             bool roundNeg = false;
             string terror = null;
             bool terrorNeg = false;
-            bool value;
+            int value;
             if (parts.Length == 1)
             {
-                if (parts[0] == "1" || parts[0] == "0")
+                if (parts[0] == "1" || parts[0] == "0" || parts[0] == "2")
                 {
-                    value = parts[0] == "1";
+                    value = int.Parse(parts[0]);
                 }
                 else
                 {
@@ -43,9 +43,9 @@ namespace ToNRoundCounter.Models
                     terrorNeg = parts[1].StartsWith("!");
                     terror = terrorNeg ? parts[1].Substring(1) : parts[1];
                 }
-                if (parts[2] == "1" || parts[2] == "0")
+                if (parts[2] == "1" || parts[2] == "0" || parts[2] == "2")
                 {
-                    value = parts[2] == "1";
+                    value = int.Parse(parts[2]);
                 }
                 else
                 {
@@ -78,11 +78,11 @@ namespace ToNRoundCounter.Models
         {
             if (Round == null && Terror == null)
             {
-                return Value ? "1" : "0";
+                return Value.ToString();
             }
             string r = Round == null ? "" : (RoundNegate ? "!" + Round : Round);
             string t = Terror == null ? "" : (TerrorNegate ? "!" + Terror : Terror);
-            return $"{r}:{t}:{(Value ? 1 : 0)}";
+            return $"{r}:{t}:{Value}";
         }
     }
 }
