@@ -95,7 +95,7 @@ namespace ToNRoundCounter
 
         private bool followAutoSelfKill = false;
 
-        private string version = "1.9.1";
+        private string version = "1.10.0";
 
         private CancellationTokenSource autoSuicideTokenSource = null;
         private DateTime autoSuicideRoundStartTime;
