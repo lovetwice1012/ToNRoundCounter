@@ -705,9 +705,18 @@ namespace ToNRoundCounter
                         PlayFromStart(tester_roundStartAlternatePlayer);
                     }
                     //issetAllSelfKillModeがtrueなら13秒後に自殺入力をする
-                    if (ShouldAutoSuicide(roundType, null) || issetAllSelfKillMode)
+                    if (autoSuicideRoundStartTime == default)
+                    {
+                        autoSuicideRoundStartTime = DateTime.UtcNow;
+                    }
+                    int autoAction = ShouldAutoSuicide(roundType, null);
+                    if (issetAllSelfKillMode || autoAction == 1)
                     {
                         ScheduleAutoSuicide(TimeSpan.FromSeconds(13), true);
+                    }
+                    else if (autoAction == 2)
+                    {
+                        ScheduleAutoSuicide(TimeSpan.FromSeconds(40), true);
                     }
 
                 }
@@ -771,11 +780,20 @@ namespace ToNRoundCounter
                             roundType = "EX";
                         }
                         //もしroundTypeが自動自殺ラウンド対象なら自動自殺
-                        if (ShouldAutoSuicide(roundType, currentRound.TerrorKey) || issetAllSelfKillMode)
+                        int terrorAction = ShouldAutoSuicide(roundType, currentRound.TerrorKey);
+                        if (issetAllSelfKillMode || terrorAction == 1)
                         {
 
                             _ = Task.Run(() => PerformAutoSuicide());
 
+                        }
+                        else if (terrorAction == 2)
+                        {
+                            TimeSpan remaining = TimeSpan.FromSeconds(40) - (DateTime.UtcNow - autoSuicideRoundStartTime);
+                            if (remaining > TimeSpan.Zero)
+                            {
+                                ScheduleAutoSuicide(remaining, false);
+                            }
                         }
                     }
                 }
@@ -1469,6 +1487,10 @@ namespace ToNRoundCounter
             bool active = json["Value"] != null && json["Value"].ToObject<bool>();
             if (active)
             {
+                if (autoSuicideRoundStartTime == default)
+                {
+                    autoSuicideRoundStartTime = DateTime.UtcNow;
+                }
                 if (currentRound == null)
                 {
                     currentRound = new RoundData
@@ -1497,9 +1519,17 @@ namespace ToNRoundCounter
                     {
                         checkType = "EX";
                     }
-                    if ((ShouldAutoSuicide(checkType, terror) || issetAllSelfKillMode) && autoSuicideTokenSource == null)
+                    if (autoSuicideTokenSource == null)
                     {
-                        ScheduleAutoSuicide(TimeSpan.FromSeconds(13), true);
+                        int action = ShouldAutoSuicide(checkType, terror);
+                        if (issetAllSelfKillMode || action == 1)
+                        {
+                            ScheduleAutoSuicide(TimeSpan.FromSeconds(13), true);
+                        }
+                        else if (action == 2)
+                        {
+                            ScheduleAutoSuicide(TimeSpan.FromSeconds(40), true);
+                        }
                     }
                 }
             }
@@ -1511,6 +1541,7 @@ namespace ToNRoundCounter
                 }
                 autoSuicideTokenSource?.Cancel();
                 autoSuicideTokenSource = null;
+                autoSuicideRoundStartTime = default;
             }
         }
 
@@ -1584,9 +1615,9 @@ namespace ToNRoundCounter
             autoSuicideRules = cleaned;
         }
 
-        private bool ShouldAutoSuicide(string roundType, string terrorName)
+        private int ShouldAutoSuicide(string roundType, string terrorName)
         {
-            if (!AppSettings.AutoSuicideEnabled) return false;
+            if (!AppSettings.AutoSuicideEnabled) return 0;
             Func<string, string, bool> comparer;
             if (AppSettings.AutoSuicideFuzzyMatch)
                 comparer = (a, b) => MatchWithTypoTolerance(a, b).result;
@@ -1598,7 +1629,7 @@ namespace ToNRoundCounter
                 if (r.Matches(roundType, terrorName, comparer))
                     return r.Value;
             }
-            return false;
+            return 0;
         }
 
         private Color ConvertColorFromInt(int colorInt)
