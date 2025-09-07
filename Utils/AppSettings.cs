@@ -35,6 +35,7 @@ namespace ToNRoundCounter
         public static Dictionary<string, AutoSuicidePreset> AutoSuicidePresets { get; set; } = new Dictionary<string, AutoSuicidePreset>();
         public static List<string> AutoSuicideDetailCustom { get; set; } = new List<string>();
         public static bool AutoSuicideFuzzyMatch { get; set; } = false;
+        public static bool AutoSuicideUseDetail { get; set; } = false;
 
         public static List<string> RoundTypeStats { get; set; } = new List<string>()
         {
@@ -78,6 +79,7 @@ namespace ToNRoundCounter
                         AutoSuicidePresets = settings.AutoSuicidePresets ?? new Dictionary<string, AutoSuicidePreset>();
                         AutoSuicideDetailCustom = settings.AutoSuicideDetailCustom ?? new List<string>();
                         AutoSuicideFuzzyMatch = bool.TryParse(settings.AutoSuicideFuzzyMatch.ToString(), out bool autoSuicideFuzzy) ? autoSuicideFuzzy : false;
+                        AutoSuicideUseDetail = bool.TryParse(settings.AutoSuicideUseDetail.ToString(), out bool autoSuicideUseDetail) ? autoSuicideUseDetail : false;
                         apikey = !string.IsNullOrEmpty(settings.apikey) ? settings.apikey : string.Empty; // APIキーの読み込み
                         EventLogger.LogEvent("AppSettings", "Settings loaded successfully from " + settingsFile);
 
@@ -118,6 +120,7 @@ namespace ToNRoundCounter
                 AutoSuicidePresets = AutoSuicidePresets,
                 AutoSuicideDetailCustom = AutoSuicideDetailCustom,
                 AutoSuicideFuzzyMatch = AutoSuicideFuzzyMatch,
+                AutoSuicideUseDetail = AutoSuicideUseDetail,
                 apikey = apikey // APIキーの保存
             };
             string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
@@ -149,6 +152,7 @@ namespace ToNRoundCounter
         public Dictionary<string, AutoSuicidePreset> AutoSuicidePresets { get; set; }
         public List<string> AutoSuicideDetailCustom { get; set; }
         public bool AutoSuicideFuzzyMatch { get; set; }
+        public bool AutoSuicideUseDetail { get; set; }
 
         public string apikey { get; set; }
     }
