@@ -17,7 +17,7 @@ namespace ToNRoundCounter.UI
         public SettingsForm()
         {
             this.Text = LanguageManager.Translate("設定");
-            this.Size = new Size(600, 1100);
+            this.Size = new Size(1200, 800);
             this.StartPosition = FormStartPosition.CenterParent;
             InitializeComponent();
         }

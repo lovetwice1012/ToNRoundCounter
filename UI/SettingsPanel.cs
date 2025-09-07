@@ -65,15 +65,18 @@ namespace ToNRoundCounter.UI
         public SettingsPanel()
         {
             this.BorderStyle = BorderStyle.FixedSingle;
-            this.Size = new Size(560, 1000);
 
             int margin = 10;
+            int columnWidth = 540;
+            int totalWidth = columnWidth * 2 + margin * 3;
+            this.Size = new Size(totalWidth, 1000);
+
             int currentY = margin;
 
             GroupBox grpOsc = new GroupBox();
             grpOsc.Text = LanguageManager.Translate("OSC設定");
             grpOsc.Location = new Point(margin, currentY);  // currentY を適切に調整してください
-            grpOsc.Size = new Size(540, 60);
+            grpOsc.Size = new Size(columnWidth, 60);
             this.Controls.Add(grpOsc);
 
             Label oscPortLabel = new Label();
@@ -95,7 +98,7 @@ namespace ToNRoundCounter.UI
             GroupBox grpDisplay = new GroupBox();
             grpDisplay.Text = LanguageManager.Translate("表示設定");
             grpDisplay.Location = new Point(margin, currentY);
-            grpDisplay.Size = new Size(540, 100);
+            grpDisplay.Size = new Size(columnWidth, 100);
             this.Controls.Add(grpDisplay);
 
             ShowStatsCheckBox = new CheckBox();
@@ -122,7 +125,7 @@ namespace ToNRoundCounter.UI
             GroupBox grpFilter = new GroupBox();
             grpFilter.Text = LanguageManager.Translate("フィルター設定");
             grpFilter.Location = new Point(margin, currentY);
-            grpFilter.Size = new Size(540, 70);
+            grpFilter.Size = new Size(columnWidth, 70);
             this.Controls.Add(grpFilter);
 
             int innerMargin = 10;
@@ -169,7 +172,7 @@ namespace ToNRoundCounter.UI
             GroupBox grpAdditional = new GroupBox();
             grpAdditional.Text = LanguageManager.Translate("追加設定");
             grpAdditional.Location = new Point(margin, currentY);
-            grpAdditional.Size = new Size(540, 200);
+            grpAdditional.Size = new Size(columnWidth, 200);
             this.Controls.Add(grpAdditional);
 
             innerY = 20;
@@ -234,7 +237,7 @@ namespace ToNRoundCounter.UI
             GroupBox grpBg = new GroupBox();
             grpBg.Text = LanguageManager.Translate("背景色設定");
             grpBg.Location = new Point(margin, currentY);
-            grpBg.Size = new Size(540, 120);
+            grpBg.Size = new Size(columnWidth, 120);
             this.Controls.Add(grpBg);
 
             innerY = 20;
@@ -314,7 +317,7 @@ namespace ToNRoundCounter.UI
             GroupBox grpAutoSuicide = new GroupBox();
             grpAutoSuicide.Text = LanguageManager.Translate("自動自殺モード");
             grpAutoSuicide.Location = new Point(margin, currentY);
-            grpAutoSuicide.Size = new Size(540, 100);
+            grpAutoSuicide.Size = new Size(columnWidth, 100);
             this.Controls.Add(grpAutoSuicide);
 
             int autoInnerY = 20;
@@ -492,10 +495,13 @@ namespace ToNRoundCounter.UI
 
             currentY += grpAutoSuicide.Height + margin;
 
+            int rightColumnX = margin + columnWidth + margin;
+            int currentYRight = margin;
+
             GroupBox grpAutoSuicideDetail = new GroupBox();
             grpAutoSuicideDetail.Text = LanguageManager.Translate("自動自殺詳細設定");
-            grpAutoSuicideDetail.Location = new Point(margin, currentY);
-            grpAutoSuicideDetail.Size = new Size(540, 180);
+            grpAutoSuicideDetail.Location = new Point(rightColumnX, currentYRight);
+            grpAutoSuicideDetail.Size = new Size(columnWidth, 180);
             this.Controls.Add(grpAutoSuicideDetail);
 
             autoSuicideDetailTextBox = new TextBox();
@@ -524,12 +530,12 @@ namespace ToNRoundCounter.UI
             autoSuicideDetailTextBox.Text = string.Join(Environment.NewLine, split.autoLines.Concat(split.customLines));
             autoSuicideFuzzyCheckBox.Checked = AppSettings.AutoSuicideFuzzyMatch;
 
-            currentY += grpAutoSuicideDetail.Height + margin;
+            currentYRight += grpAutoSuicideDetail.Height + margin;
 
             autoSuicideSettingsConfirmButton = new Button();
             autoSuicideSettingsConfirmButton.Text = LanguageManager.Translate("設定内容確認");
             autoSuicideSettingsConfirmButton.AutoSize = true;
-            autoSuicideSettingsConfirmButton.Location = new Point(margin, currentY);
+            autoSuicideSettingsConfirmButton.Location = new Point(rightColumnX, currentYRight);
             autoSuicideSettingsConfirmButton.Click += (s, e) =>
             {
                 CleanAutoSuicideDetailRules();
@@ -677,15 +683,15 @@ namespace ToNRoundCounter.UI
             };
             this.Controls.Add(autoSuicideSettingsConfirmButton);
 
-            currentY = autoSuicideSettingsConfirmButton.Bottom + margin;
+            currentYRight = autoSuicideSettingsConfirmButton.Bottom + margin;
 
             int innerMargin2 = 10; // ToNRoundCounter-Cloudの設定用の内側のマージン
             int apiInnerY = 20; // ToNRoundCounter-Cloudの設定用の初期Y座標
             //apiキー設定
             GroupBox grpApiKey = new GroupBox();
             grpApiKey.Text = LanguageManager.Translate("ToNRoundCounter-Cloudの設定");
-            grpApiKey.Location = new Point(margin, currentY);
-            grpApiKey.Size = new Size(540, 300);
+            grpApiKey.Location = new Point(rightColumnX, currentYRight);
+            grpApiKey.Size = new Size(columnWidth, 300);
             this.Controls.Add(grpApiKey);
             //説明
             Label apiKeyDescription = new Label();
@@ -722,8 +728,12 @@ namespace ToNRoundCounter.UI
             apiInnerY += apiKeyTextBox.Height + 10; // テキストボックスの下にスペースを確保
             // APIキーの保存ボタンはいらない
             grpApiKey.Height = apiInnerY + 20; // グループボックスの高さを調整
+
+            currentYRight += grpApiKey.Height + margin;
+
             // 最後に、パネルの高さを調整
-            this.Height = currentY + grpApiKey.Height + margin;
+            this.Width = totalWidth;
+            this.Height = Math.Max(currentY, currentYRight) + margin;
 
         }
 
