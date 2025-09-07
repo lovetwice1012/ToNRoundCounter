@@ -4,6 +4,7 @@ using System.Drawing;
 using System.IO;
 using Newtonsoft.Json;
 using ToNRoundCounter.Utils;
+using ToNRoundCounter.Models;
 
 namespace ToNRoundCounter
 {
@@ -31,7 +32,9 @@ namespace ToNRoundCounter
         public static bool Filter_SurvivalRate { get; set; } = true;
 
         public static List<string> AutoSuicideRoundTypes { get; set; } = new List<string>();
-        public static Dictionary<string, List<string>> AutoSuicidePresets { get; set; } = new Dictionary<string, List<string>>();
+        public static Dictionary<string, AutoSuicidePreset> AutoSuicidePresets { get; set; } = new Dictionary<string, AutoSuicidePreset>();
+        public static List<string> AutoSuicideDetailCustom { get; set; } = new List<string>();
+        public static bool AutoSuicideFuzzyMatch { get; set; } = false;
 
         public static List<string> RoundTypeStats { get; set; } = new List<string>()
         {
@@ -72,7 +75,9 @@ namespace ToNRoundCounter
                         };
                         AutoSuicideEnabled = bool.TryParse(settings.AutoSuicideEnabled.ToString(), out bool autoSuicideEnabled) ? autoSuicideEnabled : false;
                         AutoSuicideRoundTypes = settings.AutoSuicideRoundTypes ?? new List<string>();
-                        AutoSuicidePresets = settings.AutoSuicidePresets ?? new Dictionary<string, List<string>>();
+                        AutoSuicidePresets = settings.AutoSuicidePresets ?? new Dictionary<string, AutoSuicidePreset>();
+                        AutoSuicideDetailCustom = settings.AutoSuicideDetailCustom ?? new List<string>();
+                        AutoSuicideFuzzyMatch = bool.TryParse(settings.AutoSuicideFuzzyMatch.ToString(), out bool autoSuicideFuzzy) ? autoSuicideFuzzy : false;
                         apikey = !string.IsNullOrEmpty(settings.apikey) ? settings.apikey : string.Empty; // APIキーの読み込み
                         EventLogger.LogEvent("AppSettings", "Settings loaded successfully from " + settingsFile);
 
@@ -111,6 +116,8 @@ namespace ToNRoundCounter
                 AutoSuicideEnabled = AutoSuicideEnabled,
                 AutoSuicideRoundTypes = AutoSuicideRoundTypes,
                 AutoSuicidePresets = AutoSuicidePresets,
+                AutoSuicideDetailCustom = AutoSuicideDetailCustom,
+                AutoSuicideFuzzyMatch = AutoSuicideFuzzyMatch,
                 apikey = apikey // APIキーの保存
             };
             string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
@@ -139,7 +146,9 @@ namespace ToNRoundCounter
         public List<string> RoundTypeStats { get; set; }
         public bool AutoSuicideEnabled { get; internal set; }
         public List<string> AutoSuicideRoundTypes { get; internal set; }
-        public Dictionary<string, List<string>> AutoSuicidePresets { get; set; }
+        public Dictionary<string, AutoSuicidePreset> AutoSuicidePresets { get; set; }
+        public List<string> AutoSuicideDetailCustom { get; set; }
+        public bool AutoSuicideFuzzyMatch { get; set; }
 
         public string apikey { get; set; }
     }

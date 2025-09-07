@@ -90,6 +90,8 @@
     <Compile Include="Models\RoundAggregate.cs" />
     <Compile Include="Models\RoundData.cs" />
     <Compile Include="Models\TerrorAggregate.cs" />
+    <Compile Include="Models\AutoSuicideRule.cs" />
+    <Compile Include="Models\AutoSuicidePreset.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="UI\FilterPanel.cs">

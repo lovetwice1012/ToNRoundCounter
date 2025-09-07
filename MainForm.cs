@@ -77,6 +77,12 @@ namespace ToNRoundCounter
         private bool afkSoundPlayed = false;
         private bool punishSoundPlayed = false;
 
+        private List<AutoSuicideRule> autoSuicideRules = new List<AutoSuicideRule>();
+        private static readonly string[] AllRoundTypes = new string[]
+        {
+            "クラシック", "オルタネイト", "パニッシュ", "サボタージュ", "ブラッドバス", "ミッドナイト", "コールドナイト", "ミスティックムーン", "ブラッドムーン", "トワイライト", "ソルスティス", "霧", "8ページ", "狂気", "ゴースト", "ダブルトラブル", "EX", "アンバウンド"
+        };
+
         private ClientWebSocket instanceWsConnection = null;
 
         private Process oscRepeaterProcess = null;
@@ -208,6 +214,7 @@ namespace ToNRoundCounter
             roundLogHistory = new List<Tuple<RoundData, string>>();
             LoadTerrorInfo();
             AppSettings.Load();
+            LoadAutoSuicideRules();
             InitializeComponents();
             this.Load += MainForm_Load;
             cancellationTokenSource = new CancellationTokenSource();
@@ -433,6 +440,10 @@ namespace ToNRoundCounter
                     {
                         AppSettings.AutoSuicideRoundTypes.Add(item.ToString());
                     }
+                    settingsForm.SettingsPanel.CleanAutoSuicideDetailRules();
+                    AppSettings.AutoSuicideDetailCustom = settingsForm.SettingsPanel.GetCustomAutoSuicideLines();
+                    AppSettings.AutoSuicideFuzzyMatch = settingsForm.SettingsPanel.autoSuicideFuzzyCheckBox.Checked;
+                    LoadAutoSuicideRules();
 
                     AppSettings.apikey = settingsForm.SettingsPanel.apiKeyTextBox.Text.Trim();
                     if (string.IsNullOrEmpty(AppSettings.apikey))
@@ -694,7 +705,7 @@ namespace ToNRoundCounter
                         PlayFromStart(tester_roundStartAlternatePlayer);
                     }
                     //issetAllSelfKillModeがtrueなら13秒後に自殺入力をする
-                    if (AppSettings.AutoSuicideEnabled && AppSettings.AutoSuicideRoundTypes.Contains(roundType) || issetAllSelfKillMode)
+                    if (ShouldAutoSuicide(roundType, null) || issetAllSelfKillMode)
                     {
                         ScheduleAutoSuicide(TimeSpan.FromSeconds(13), true);
                     }
@@ -760,7 +771,7 @@ namespace ToNRoundCounter
                             roundType = "EX";
                         }
                         //もしroundTypeが自動自殺ラウンド対象なら自動自殺
-                        if (AppSettings.AutoSuicideEnabled && AppSettings.AutoSuicideRoundTypes.Contains(roundType) || issetAllSelfKillMode)
+                        if (ShouldAutoSuicide(roundType, currentRound.TerrorKey) || issetAllSelfKillMode)
                         {
 
                             _ = Task.Run(() => PerformAutoSuicide());
@@ -1478,14 +1489,15 @@ namespace ToNRoundCounter
                     }));
                 }
 
-                if (currentRound != null && AppSettings.AutoSuicideEnabled && AppSettings.AutoSuicideRoundTypes != null)
+                if (currentRound != null)
                 {
                     string checkType = currentRound.RoundType;
-                    if (checkType == "ブラッドバス" && !string.IsNullOrEmpty(currentRound.TerrorKey) && currentRound.TerrorKey.Contains("LVL 3"))
+                    string terror = currentRound.TerrorKey;
+                    if (checkType == "ブラッドバス" && !string.IsNullOrEmpty(terror) && terror.Contains("LVL 3"))
                     {
                         checkType = "EX";
                     }
-                    if ((AppSettings.AutoSuicideRoundTypes.Contains(checkType) || issetAllSelfKillMode) && autoSuicideTokenSource == null)
+                    if ((ShouldAutoSuicide(checkType, terror) || issetAllSelfKillMode) && autoSuicideTokenSource == null)
                     {
                         ScheduleAutoSuicide(TimeSpan.FromSeconds(13), true);
                     }
@@ -1541,6 +1553,52 @@ namespace ToNRoundCounter
             EventLogger.LogEvent("Suicide", "Performing Suside");
             LaunchSuicideInputIfExists();
             EventLogger.LogEvent("Suicide", "finish");
+        }
+
+        private void LoadAutoSuicideRules()
+        {
+            autoSuicideRules = new List<AutoSuicideRule>();
+            var lines = new List<string>();
+            foreach (var round in AllRoundTypes)
+            {
+                bool enabled = AppSettings.AutoSuicideRoundTypes.Contains(round);
+                lines.Add($"{round}::{(enabled ? 1 : 0)}");
+            }
+            if (AppSettings.AutoSuicideDetailCustom != null)
+                lines.AddRange(AppSettings.AutoSuicideDetailCustom);
+            var temp = new List<AutoSuicideRule>();
+            foreach (var line in lines)
+            {
+                if (AutoSuicideRule.TryParse(line, out var r))
+                    temp.Add(r);
+            }
+            var cleaned = new List<AutoSuicideRule>();
+            for (int i = temp.Count - 1; i >= 0; i--)
+            {
+                var r = temp[i];
+                bool redundant = cleaned.Any(c => c.Covers(r));
+                if (!redundant)
+                    cleaned.Add(r);
+            }
+            cleaned.Reverse();
+            autoSuicideRules = cleaned;
+        }
+
+        private bool ShouldAutoSuicide(string roundType, string terrorName)
+        {
+            if (!AppSettings.AutoSuicideEnabled) return false;
+            Func<string, string, bool> comparer;
+            if (AppSettings.AutoSuicideFuzzyMatch)
+                comparer = (a, b) => MatchWithTypoTolerance(a, b).result;
+            else
+                comparer = (a, b) => a == b;
+            for (int i = autoSuicideRules.Count - 1; i >= 0; i--)
+            {
+                var r = autoSuicideRules[i];
+                if (r.Matches(roundType, terrorName, comparer))
+                    return r.Value;
+            }
+            return false;
         }
 
         private Color ConvertColorFromInt(int colorInt)
