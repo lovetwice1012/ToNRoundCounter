@@ -7,6 +7,7 @@ using System.Linq;
 using System.IO;
 using Newtonsoft.Json;
 using ToNRoundCounter.Models;
+using System.Text;
 
 namespace ToNRoundCounter.UI
 {
@@ -54,6 +55,7 @@ namespace ToNRoundCounter.UI
         public Button autoSuicidePresetImportButton { get; private set; }
         public TextBox autoSuicideDetailTextBox { get; private set; }
         public CheckBox autoSuicideFuzzyCheckBox { get; private set; }
+        public Button autoSuicideSettingsConfirmButton { get; private set; }
         private int autoSuicideAutoRuleCount = 0;
 
         public Label apiKeyLabel { get; private set; }
@@ -389,10 +391,13 @@ namespace ToNRoundCounter.UI
             autoSuicidePresetSaveButton.Click += (s, e) =>
             {
                 string name = autoSuicidePresetComboBox.Text.Trim();
-                if (!string.IsNullOrEmpty(name))
+                if (string.IsNullOrEmpty(name))
                 {
-                    CleanAutoSuicideDetailRules();
-                    var preset = new AutoSuicidePreset
+                    name = DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff");
+                    autoSuicidePresetComboBox.Text = name;
+                }
+                CleanAutoSuicideDetailRules();
+                var preset = new AutoSuicidePreset
                     {
                         RoundTypes = autoSuicideRoundListBox.CheckedItems.Cast<object>().Select(i => i.ToString()).ToList(),
                         DetailCustom = GetCustomAutoSuicideLines(),
@@ -403,7 +408,6 @@ namespace ToNRoundCounter.UI
                         autoSuicidePresetComboBox.Items.Add(name);
                     AppSettings.Save();
                     MessageBox.Show(LanguageManager.Translate("プリセットを保存しました。"), LanguageManager.Translate("情報"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
             };
             grpAutoSuicide.Controls.Add(autoSuicidePresetSaveButton);
 
@@ -521,6 +525,159 @@ namespace ToNRoundCounter.UI
             autoSuicideFuzzyCheckBox.Checked = AppSettings.AutoSuicideFuzzyMatch;
 
             currentY += grpAutoSuicideDetail.Height + margin;
+
+            autoSuicideSettingsConfirmButton = new Button();
+            autoSuicideSettingsConfirmButton.Text = LanguageManager.Translate("設定内容確認");
+            autoSuicideSettingsConfirmButton.AutoSize = true;
+            autoSuicideSettingsConfirmButton.Location = new Point(margin, currentY);
+            autoSuicideSettingsConfirmButton.Click += (s, e) =>
+            {
+                CleanAutoSuicideDetailRules();
+                var linesCheck = autoSuicideDetailTextBox.Lines.Select(l => l.Trim()).Where(l => !string.IsNullOrEmpty(l));
+                var rulesCheck = CleanRules(linesCheck);
+                if (!autoSuicideCheckBox.Checked || rulesCheck.All(r => r.Value == 0))
+                {
+                    MessageBox.Show(LanguageManager.Translate("現在の設定では自動自殺を行いません"), LanguageManager.Translate("設定内容"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                var sb = new StringBuilder();
+
+                var globalGroups = rulesCheck.Where(r => r.Round == null && r.Terror == null)
+                                           .GroupBy(r => r.Value);
+                foreach (var g in globalGroups)
+                {
+                    sb.AppendLine($"全てのラウンドの全てのテラーで{GetActionText(g.Key)}");
+                }
+
+                var roundWildcards = rulesCheck.Where(r => r.Round != null && r.Terror == null && !r.RoundNegate).ToList();
+                var detailRules = rulesCheck.Where(r => r.Round != null && r.Terror != null && !r.RoundNegate).ToList();
+                var processedDetail = new HashSet<Models.AutoSuicideRule>();
+                var simpleRounds = new List<Tuple<string, int>>();
+
+                foreach (var rw in roundWildcards)
+                {
+                    var roundName = rw.Round;
+                    var baseValue = rw.Value;
+                    var exceptions = detailRules.Where(d => d.Round == roundName && (d.Value != baseValue || d.TerrorNegate)).ToList();
+                    if (!exceptions.Any())
+                    {
+                        simpleRounds.Add(Tuple.Create(roundName, baseValue));
+                    }
+                    else
+                    {
+                        sb.AppendLine($"{roundName}では全てのテラーで{GetActionText(baseValue)}。");
+                        foreach (var eg in exceptions.GroupBy(ex => ex.Value))
+                        {
+                            var terrors = eg.Select(rule => rule.Terror).ToList();
+                            bool useBullet = ShouldBullet(terrors);
+                            sb.AppendLine($"ただし、以下に記載する条件では{GetActionText(eg.Key)}");
+                            if (useBullet)
+                            {
+                                foreach (var t in terrors)
+                                    sb.AppendLine($"・{t}");
+                            }
+                            else
+                            {
+                                sb.AppendLine($"・{string.Join(",", terrors)}");
+                            }
+                            foreach (var t in eg)
+                                processedDetail.Add(t);
+                        }
+                    }
+                }
+
+                foreach (var g in simpleRounds.GroupBy(r => r.Item2))
+                {
+                    var rounds = g.Select(r => r.Item1).ToList();
+                    bool useBullet = ShouldBullet(rounds);
+                    if (useBullet)
+                    {
+                        sb.AppendLine($"以下のラウンドでは全てのテラーで{GetActionText(g.Key)}");
+                        foreach (var r in rounds)
+                            sb.AppendLine($"・{r}");
+                    }
+                    else
+                    {
+                        sb.AppendLine($"{string.Join(",", rounds)}では全てのテラーで{GetActionText(g.Key)}");
+                    }
+                }
+
+                var remainingDetail = detailRules.Where(d => !processedDetail.Contains(d))
+                                                .GroupBy(d => d.Round);
+                foreach (var rg in remainingDetail)
+                {
+                    sb.AppendLine($"{rg.Key}では以下の設定が適用されています");
+                    foreach (var ag in rg.GroupBy(r => r.Value))
+                    {
+                        var terrors = ag.Select(a => a.Terror).ToList();
+                        bool useBullet = ShouldBullet(terrors);
+                        if (useBullet)
+                        {
+                            sb.AppendLine($"・以下のテラーが出現した時、{GetActionText(ag.Key)}");
+                            foreach (var t in terrors)
+                                sb.AppendLine($"　・{t}");
+                        }
+                        else
+                        {
+                            sb.AppendLine($"・{string.Join(",", terrors)}が出現した時、{GetActionText(ag.Key)}");
+                        }
+                    }
+                }
+
+                var terrorGroups = rulesCheck.Where(r => r.Round == null && r.Terror != null)
+                                             .GroupBy(r => new { r.TerrorNegate, r.Value });
+                foreach (var g in terrorGroups)
+                {
+                    var terrors = g.Select(r => r.Terror).ToList();
+                    bool useBullet = ShouldBullet(terrors);
+                    if (g.Key.TerrorNegate)
+                    {
+                        if (useBullet)
+                        {
+                            sb.AppendLine($"全てのラウンドで以下のテラー以外が出現した時、{GetActionText(g.Key.Value)}");
+                            foreach (var t in terrors)
+                                sb.AppendLine($"・{t}");
+                        }
+                        else
+                        {
+                            sb.AppendLine($"全てのラウンドで{string.Join(",", terrors)}以外が出現した時、{GetActionText(g.Key.Value)}");
+                        }
+                    }
+                    else
+                    {
+                        if (useBullet)
+                        {
+                            sb.AppendLine($"全てのラウンドで以下のテラーが出現した時、{GetActionText(g.Key.Value)}");
+                            foreach (var t in terrors)
+                                sb.AppendLine($"・{t}");
+                        }
+                        else
+                        {
+                            sb.AppendLine($"全てのラウンドで{string.Join(",", terrors)}が出現した時、{GetActionText(g.Key.Value)}");
+                        }
+                    }
+                }
+
+                Func<List<string>, bool> ShouldBullet = items => items.Count > 3 || string.Join(",", items).Length > 20;
+
+                Func<int, string> GetActionText = value =>
+                {
+                    switch (value)
+                    {
+                        case 1:
+                            return "自動自爆を行います";
+                        case 2:
+                            return "遅延自爆を行います";
+                        default:
+                            return "自動自爆を行いません";
+                    }
+                };
+
+                MessageBox.Show(sb.ToString().Trim(), LanguageManager.Translate("設定内容"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+            };
+            this.Controls.Add(autoSuicideSettingsConfirmButton);
+
+            currentY = autoSuicideSettingsConfirmButton.Bottom + margin;
 
             int innerMargin2 = 10; // ToNRoundCounter-Cloudの設定用の内側のマージン
             int apiInnerY = 20; // ToNRoundCounter-Cloudの設定用の初期Y座標
