@@ -423,9 +423,9 @@ namespace ToNRoundCounter.UI
                         autoSuicideRoundListBox.SetItemChecked(i, preset.RoundTypes.Contains(item));
                     }
                     autoSuicideFuzzyCheckBox.Checked = preset.Fuzzy;
-                    var autoLines = GenerateAutoSuicideLines();
-                    autoSuicideAutoRuleCount = autoLines.Length;
-                    autoSuicideDetailTextBox.Text = string.Join(Environment.NewLine, autoLines.Concat(preset.DetailCustom));
+                    var autoLinesLocal = GenerateAutoSuicideLines();
+                    autoSuicideAutoRuleCount = autoLinesLocal.Length;
+                    autoSuicideDetailTextBox.Text = string.Join(Environment.NewLine, autoLinesLocal.Concat(preset.DetailCustom));
                 }
             };
             grpAutoSuicide.Controls.Add(autoSuicidePresetLoadButton);
