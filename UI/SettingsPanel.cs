@@ -316,6 +316,52 @@ namespace ToNRoundCounter.UI
 
             currentY += grpBg.Height + margin;
 
+            int innerMargin2 = 10; // ToNRoundCounter-Cloudの設定用の内側のマージン
+            int apiInnerY = 20; // ToNRoundCounter-Cloudの設定用の初期Y座標
+            //apiキー設定
+            GroupBox grpApiKey = new GroupBox();
+            grpApiKey.Text = LanguageManager.Translate("ToNRoundCounter-Cloudの設定");
+            grpApiKey.Location = new Point(margin, currentY);
+            grpApiKey.Size = new Size(columnWidth, 300);
+            this.Controls.Add(grpApiKey);
+            //説明
+            Label apiKeyDescription = new Label();
+            apiKeyDescription.Text = LanguageManager.Translate("ToNRoundCounter-Cloudはセーブコードの複数端末間での全自動同期などの機能を持つクラウドサービスです。\\n利用にはAPIキーが必要です。\\nAPIキーはwebサイトから取得してください。");
+            apiKeyDescription.Size = new Size(grpApiKey.Width - innerMargin2 * 2, 60); // 説明文の幅をグループボックスの幅に合わせる
+            apiKeyDescription.Location = new Point(innerMargin2, apiInnerY);
+            grpApiKey.Controls.Add(apiKeyDescription);
+            apiInnerY += apiKeyDescription.Height + 10; // 説明文の下にスペースを確保
+            grpApiKey.Height = apiInnerY + 50; // グループボックスの高さを調整
+            //ToNRoundCounter-Cloudを開くを追加(https://toncloud.sprink.cloud)
+            Button openCloudButton = new Button();
+            openCloudButton.Text = LanguageManager.Translate("ToNRoundCounter-Cloudを開く");
+            openCloudButton.AutoSize = true;
+            openCloudButton.Location = new Point(innerMargin2, apiInnerY);
+            openCloudButton.Click += (s, e) =>
+            {
+                System.Diagnostics.Process.Start("https://toncloud.sprink.cloud");
+            };
+            grpApiKey.Controls.Add(openCloudButton);
+            apiInnerY += openCloudButton.Height + 10; // ボタンの下にスペースを確保
+
+            // APIキー入力欄
+            apiKeyLabel = new Label();
+            apiKeyLabel.Text = LanguageManager.Translate("APIキー:");
+            apiKeyLabel.AutoSize = true;
+            apiKeyLabel.Location = new Point(innerMargin2, apiInnerY);
+            grpApiKey.Controls.Add(apiKeyLabel);
+            apiKeyTextBox = new TextBox();
+            apiKeyTextBox.Name = "ApiKeyTextBox";
+            apiKeyTextBox.Text = AppSettings.apikey; // AppSettings.apikey の初期値を使用
+            apiKeyTextBox.Location = new Point(apiKeyLabel.Right + 10, apiInnerY);
+            apiKeyTextBox.Width = 400; // テキストボックスの幅を設定
+            grpApiKey.Controls.Add(apiKeyTextBox);
+            apiInnerY += apiKeyTextBox.Height + 10; // テキストボックスの下にスペースを確保
+            // APIキーの保存ボタンはいらない
+            grpApiKey.Height = apiInnerY + 20; // グループボックスの高さを調整
+
+            currentY += grpApiKey.Height + margin;
+
             GroupBox grpAutoSuicide = new GroupBox();
             grpAutoSuicide.Text = LanguageManager.Translate("自動自殺モード");
             grpAutoSuicide.Location = new Point(margin, currentY);
@@ -332,15 +378,28 @@ namespace ToNRoundCounter.UI
             //autoSuicideCheckBox.Enabled = false;
             grpAutoSuicide.Controls.Add(autoSuicideCheckBox);
 
+            autoSuicideUseDetailCheckBox = new CheckBox();
+            autoSuicideUseDetailCheckBox.Text = LanguageManager.Translate("詳細設定を利用する");
+            autoSuicideUseDetailCheckBox.AutoSize = true;
+            autoSuicideUseDetailCheckBox.Location = new Point(innerMargin, autoSuicideCheckBox.Bottom + 5);
+            grpAutoSuicide.Controls.Add(autoSuicideUseDetailCheckBox);
+
+            autoSuicideFuzzyCheckBox = new CheckBox();
+            autoSuicideFuzzyCheckBox.Text = LanguageManager.Translate("曖昧マッチング");
+            autoSuicideFuzzyCheckBox.AutoSize = true;
+            autoSuicideFuzzyCheckBox.Location = new Point(autoSuicideUseDetailCheckBox.Right + 10, autoSuicideUseDetailCheckBox.Top);
+            grpAutoSuicide.Controls.Add(autoSuicideFuzzyCheckBox);
+
+            autoInnerY = autoSuicideUseDetailCheckBox.Bottom + 10;
             autoSuicideRoundLabel = new Label();
             autoSuicideRoundLabel.Text = LanguageManager.Translate("自動自殺対象ラウンド:");
             autoSuicideRoundLabel.AutoSize = true;
-            autoSuicideRoundLabel.Location = new Point(innerMargin, autoInnerY + 30);
+            autoSuicideRoundLabel.Location = new Point(innerMargin, autoInnerY);
             grpAutoSuicide.Controls.Add(autoSuicideRoundLabel);
 
             autoSuicideRoundListBox = new CheckedListBox();
             autoSuicideRoundListBox.Name = "AutoSuicideRoundListBox";
-            autoSuicideRoundListBox.Location = new Point(autoSuicideRoundLabel.Right + 10, autoInnerY + 25);
+            autoSuicideRoundListBox.Location = new Point(autoSuicideRoundLabel.Right + 10, autoInnerY);
             autoSuicideRoundListBox.Size = new Size(400, 150);
             autoSuicideRoundListBox.Items.Add("クラシック");
             autoSuicideRoundListBox.Items.Add("オルタネイト");
@@ -372,6 +431,12 @@ namespace ToNRoundCounter.UI
             {
                 BeginInvoke(new Action(UpdateAutoSuicideDetailAutoLines));
             };
+            autoSuicideDetailTextBox = new TextBox();
+            autoSuicideDetailTextBox.Multiline = true;
+            autoSuicideDetailTextBox.ScrollBars = ScrollBars.Vertical;
+            autoSuicideDetailTextBox.Size = autoSuicideRoundListBox.Size;
+            autoSuicideDetailTextBox.Location = autoSuicideRoundListBox.Location;
+            grpAutoSuicide.Controls.Add(autoSuicideDetailTextBox);
 
             Label autoSuicidePresetLabel = new Label();
             autoSuicidePresetLabel.Text = LanguageManager.Translate("プリセット:");
@@ -493,40 +558,6 @@ namespace ToNRoundCounter.UI
             };
             grpAutoSuicide.Controls.Add(autoSuicidePresetExportButton);
 
-            grpAutoSuicide.Height = autoSuicidePresetExportButton.Bottom + 10;
-
-            currentY += grpAutoSuicide.Height + margin;
-
-            int rightColumnX = margin + columnWidth + margin;
-            int currentYRight = margin;
-
-            GroupBox grpAutoSuicideDetail = new GroupBox();
-            grpAutoSuicideDetail.Text = LanguageManager.Translate("自動自殺詳細設定");
-            grpAutoSuicideDetail.Location = new Point(rightColumnX, currentYRight);
-            grpAutoSuicideDetail.Size = new Size(columnWidth, 180);
-            this.Controls.Add(grpAutoSuicideDetail);
-
-            autoSuicideUseDetailCheckBox = new CheckBox();
-            autoSuicideUseDetailCheckBox.Text = LanguageManager.Translate("詳細設定を利用する");
-            autoSuicideUseDetailCheckBox.AutoSize = true;
-            autoSuicideUseDetailCheckBox.Location = new Point(innerMargin, 20);
-            grpAutoSuicideDetail.Controls.Add(autoSuicideUseDetailCheckBox);
-
-            autoSuicideDetailTextBox = new TextBox();
-            autoSuicideDetailTextBox.Multiline = true;
-            autoSuicideDetailTextBox.ScrollBars = ScrollBars.Vertical;
-            autoSuicideDetailTextBox.Size = new Size(500, 100);
-            autoSuicideDetailTextBox.Location = new Point(innerMargin, autoSuicideUseDetailCheckBox.Bottom + 5);
-            grpAutoSuicideDetail.Controls.Add(autoSuicideDetailTextBox);
-
-            autoSuicideFuzzyCheckBox = new CheckBox();
-            autoSuicideFuzzyCheckBox.Text = LanguageManager.Translate("曖昧マッチング");
-            autoSuicideFuzzyCheckBox.AutoSize = true;
-            autoSuicideFuzzyCheckBox.Location = new Point(innerMargin, autoSuicideDetailTextBox.Bottom + 10);
-            grpAutoSuicideDetail.Controls.Add(autoSuicideFuzzyCheckBox);
-
-            grpAutoSuicideDetail.Height = autoSuicideFuzzyCheckBox.Bottom + 10;
-
             autoSuicideAutoRuleCount = autoSuicideRoundListBox.Items.Count;
             var lines = new List<string>();
             if (!AppSettings.AutoSuicideUseDetail)
@@ -551,14 +582,11 @@ namespace ToNRoundCounter.UI
             autoSuicideFuzzyCheckBox.Checked = AppSettings.AutoSuicideFuzzyMatch;
             autoSuicideUseDetailCheckBox.CheckedChanged += AutoSuicideUseDetailCheckBox_CheckedChanged;
             autoSuicideUseDetailCheckBox.Checked = AppSettings.AutoSuicideUseDetail;
-            AutoSuicideUseDetailCheckBox_CheckedChanged(null, EventArgs.Empty);
-
-            currentYRight += grpAutoSuicideDetail.Height + margin;
 
             autoSuicideSettingsConfirmButton = new Button();
             autoSuicideSettingsConfirmButton.Text = LanguageManager.Translate("設定内容確認");
             autoSuicideSettingsConfirmButton.AutoSize = true;
-            autoSuicideSettingsConfirmButton.Location = new Point(rightColumnX, currentYRight);
+            autoSuicideSettingsConfirmButton.Location = new Point(autoSuicidePresetComboBox.Left, autoSuicidePresetExportButton.Bottom + 5);
             autoSuicideSettingsConfirmButton.Click += (s, e) =>
             {
                 var rawLines = autoSuicideDetailTextBox.Lines;
@@ -729,59 +757,18 @@ namespace ToNRoundCounter.UI
 
                 MessageBox.Show(sb.ToString().Trim(), LanguageManager.Translate("設定内容"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             };
-            this.Controls.Add(autoSuicideSettingsConfirmButton);
+            grpAutoSuicide.Controls.Add(autoSuicideSettingsConfirmButton);
 
-            currentYRight = autoSuicideSettingsConfirmButton.Bottom + margin;
+            grpAutoSuicide.Height = autoSuicideSettingsConfirmButton.Bottom + 10;
+            autoSuicideCheckBox.CheckedChanged += AutoSuicideCheckBox_CheckedChanged;
+            AutoSuicideUseDetailCheckBox_CheckedChanged(null, EventArgs.Empty);
+            AutoSuicideCheckBox_CheckedChanged(null, EventArgs.Empty);
 
-            int innerMargin2 = 10; // ToNRoundCounter-Cloudの設定用の内側のマージン
-            int apiInnerY = 20; // ToNRoundCounter-Cloudの設定用の初期Y座標
-            //apiキー設定
-            GroupBox grpApiKey = new GroupBox();
-            grpApiKey.Text = LanguageManager.Translate("ToNRoundCounter-Cloudの設定");
-            grpApiKey.Location = new Point(rightColumnX, currentYRight);
-            grpApiKey.Size = new Size(columnWidth, 300);
-            this.Controls.Add(grpApiKey);
-            //説明
-            Label apiKeyDescription = new Label();
-            apiKeyDescription.Text = LanguageManager.Translate("ToNRoundCounter-Cloudはセーブコードの複数端末間での全自動同期などの機能を持つクラウドサービスです。\n利用にはAPIキーが必要です。\nAPIキーはwebサイトから取得してください。");
-            apiKeyDescription.Size = new Size(grpApiKey.Width - innerMargin2 * 2, 60); // 説明文の幅をグループボックスの幅に合わせる
-            apiKeyDescription.Location = new Point(innerMargin2, apiInnerY);
-            grpApiKey.Controls.Add(apiKeyDescription);
-            apiInnerY += apiKeyDescription.Height + 10; // 説明文の下にスペースを確保
-            grpApiKey.Height = apiInnerY + 50; // グループボックスの高さを調整
-            //ToNRoundCounter-Cloudを開くを追加(https://toncloud.sprink.cloud)
-            Button openCloudButton = new Button();
-            openCloudButton.Text = LanguageManager.Translate("ToNRoundCounter-Cloudを開く");
-            openCloudButton.AutoSize = true;
-            openCloudButton.Location = new Point(innerMargin2, apiInnerY);
-            openCloudButton.Click += (s, e) =>
-            {
-                System.Diagnostics.Process.Start("https://toncloud.sprink.cloud");
-            };
-            grpApiKey.Controls.Add(openCloudButton);
-            apiInnerY += openCloudButton.Height + 10; // ボタンの下にスペースを確保
-
-            // APIキー入力欄
-            apiKeyLabel = new Label();
-            apiKeyLabel.Text = LanguageManager.Translate("APIキー:");
-            apiKeyLabel.AutoSize = true;
-            apiKeyLabel.Location = new Point(innerMargin2, apiInnerY);
-            grpApiKey.Controls.Add(apiKeyLabel);
-            apiKeyTextBox = new TextBox();
-            apiKeyTextBox.Name = "ApiKeyTextBox";
-            apiKeyTextBox.Text = AppSettings.apikey; // AppSettings.apikey の初期値を使用
-            apiKeyTextBox.Location = new Point(apiKeyLabel.Right + 10, apiInnerY);
-            apiKeyTextBox.Width = 400; // テキストボックスの幅を設定
-            grpApiKey.Controls.Add(apiKeyTextBox);
-            apiInnerY += apiKeyTextBox.Height + 10; // テキストボックスの下にスペースを確保
-            // APIキーの保存ボタンはいらない
-            grpApiKey.Height = apiInnerY + 20; // グループボックスの高さを調整
-
-            currentYRight += grpApiKey.Height + margin;
+            currentY += grpAutoSuicide.Height + margin;
 
             // 最後に、パネルの高さを調整
             this.Width = totalWidth;
-            this.Height = Math.Max(currentY, currentYRight) + margin;
+            this.Height = currentY + margin;
 
         }
 
@@ -879,8 +866,9 @@ namespace ToNRoundCounter.UI
         {
             bool useDetail = autoSuicideUseDetailCheckBox.Checked;
             autoSuicideRoundListBox.Enabled = !useDetail;
-            autoSuicideRoundListBox.Visible = !useDetail;
-            autoSuicideRoundLabel.Visible = !useDetail;
+            autoSuicideRoundListBox.Visible = autoSuicideCheckBox.Checked && !useDetail;
+            autoSuicideRoundLabel.Visible = autoSuicideCheckBox.Checked && !useDetail;
+            autoSuicideDetailTextBox.Visible = autoSuicideCheckBox.Checked && useDetail;
             if (useDetail)
             {
                 autoSuicideDetailTextBox.Text = string.Join(Environment.NewLine, autoSuicideDetailTextBox.Lines.Skip(autoSuicideAutoRuleCount));
@@ -890,6 +878,24 @@ namespace ToNRoundCounter.UI
             {
                 autoSuicideAutoRuleCount = autoSuicideRoundListBox.Items.Count;
                 UpdateAutoSuicideDetailAutoLines();
+            }
+        }
+
+        private void AutoSuicideCheckBox_CheckedChanged(object sender, EventArgs e)
+        {
+            bool enabled = autoSuicideCheckBox.Checked;
+            autoSuicideUseDetailCheckBox.Visible = enabled;
+            autoSuicideFuzzyCheckBox.Visible = enabled;
+            autoSuicideSettingsConfirmButton.Visible = enabled;
+            if (enabled)
+            {
+                AutoSuicideUseDetailCheckBox_CheckedChanged(null, EventArgs.Empty);
+            }
+            else
+            {
+                autoSuicideRoundLabel.Visible = false;
+                autoSuicideRoundListBox.Visible = false;
+                autoSuicideDetailTextBox.Visible = false;
             }
         }
     }
