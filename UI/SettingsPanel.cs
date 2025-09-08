@@ -584,12 +584,17 @@ namespace ToNRoundCounter.UI
                     return;
                 }
                 var rulesCheck = CleanRules(trimmed);
-                if (!autoSuicideCheckBox.Checked || rulesCheck.All(r => r.Value == 0))
+                if (rulesCheck.All(r => r.Value == 0))
                 {
                     MessageBox.Show(LanguageManager.Translate("現在の設定では自動自殺を行いません"), LanguageManager.Translate("設定内容"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
                 var sb = new StringBuilder();
+                if (!autoSuicideCheckBox.Checked)
+                {
+                    sb.AppendLine(LanguageManager.Translate("自動自殺は無効になっています"));
+                    sb.AppendLine();
+                }
 
                 Func<int, string> GetActionText = value =>
                 {
