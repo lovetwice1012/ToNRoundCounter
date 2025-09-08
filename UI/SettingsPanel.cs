@@ -499,7 +499,7 @@ namespace ToNRoundCounter.UI
             AutoSuicideUseDetailCheckBox_CheckedChanged(null, EventArgs.Empty);
             AutoSuicideCheckBox_CheckedChanged(null, EventArgs.Empty);
 
-            currentY = Math.Max(grpOsc.Bottom, grpAutoSuicide.Bottom) + margin;
+            currentY = Math.Max(grpOsc.Bottom, grpAutoSuicide.Bottom);
 
             // 表示設定グループ
             GroupBox grpDisplay = new GroupBox();
