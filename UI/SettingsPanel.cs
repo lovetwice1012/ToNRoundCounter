@@ -864,12 +864,31 @@ namespace ToNRoundCounter.UI
 
         private void AutoSuicideUseDetailCheckBox_CheckedChanged(object sender, EventArgs e)
         {
-            bool useDetail = autoSuicideUseDetailCheckBox.Checked;
+            // Use the sender if available, otherwise fall back to the field. This
+            // avoids a potential NullReferenceException when the handler is
+            // invoked before the checkbox is initialised (e.g. during form
+            // construction) or externally with a null sender.
+            var checkBox = sender as CheckBox ?? autoSuicideUseDetailCheckBox;
+
+            // If the checkbox or related controls haven't been created yet, just
+            // exit early instead of throwing.
+            if (checkBox == null ||
+                autoSuicideRoundListBox == null ||
+                autoSuicideRoundLabel == null ||
+                autoSuicideDetailTextBox == null ||
+                autoSuicideFuzzyCheckBox == null ||
+                autoSuicideSettingsConfirmButton == null)
+            {
+                return;
+            }
+
+            bool useDetail = checkBox.Checked;
             autoSuicideRoundListBox.Enabled = !useDetail;
             autoSuicideRoundListBox.Visible = autoSuicideCheckBox.Checked && !useDetail;
             autoSuicideRoundLabel.Visible = autoSuicideCheckBox.Checked && !useDetail;
             autoSuicideDetailTextBox.Visible = autoSuicideCheckBox.Checked && useDetail;
             autoSuicideFuzzyCheckBox.Visible = autoSuicideSettingsConfirmButton.Visible = autoSuicideCheckBox.Checked && useDetail;
+
             if (useDetail)
             {
                 autoSuicideDetailTextBox.Text = string.Join(Environment.NewLine, autoSuicideDetailTextBox.Lines.Skip(autoSuicideAutoRuleCount));
