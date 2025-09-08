@@ -50,6 +50,7 @@ namespace ToNRoundCounter.UI
         public CheckBox autoSuicideCheckBox { get; internal set; }
         public Label autoSuicideRoundLabel { get; private set; }
         public CheckBox autoSuicideUseDetailCheckBox { get; private set; }
+        public Label autoSuicidePresetLabel { get; private set; }
         public ComboBox autoSuicidePresetComboBox { get; private set; }
         public Button autoSuicidePresetSaveButton { get; private set; }
         public Button autoSuicidePresetLoadButton { get; private set; }
@@ -74,6 +75,7 @@ namespace ToNRoundCounter.UI
             this.Size = new Size(totalWidth, 1000);
 
             int currentY = margin;
+            int innerMargin = 10;
 
             GroupBox grpOsc = new GroupBox();
             grpOsc.Text = LanguageManager.Translate("OSC設定");
@@ -94,7 +96,410 @@ namespace ToNRoundCounter.UI
             oscPortNumericUpDown.Location = new Point(oscPortLabel.Right + 10, 20);
             grpOsc.Controls.Add(oscPortNumericUpDown);
 
-            currentY += grpOsc.Height + margin;
+            // 自動自殺モードグループ（右列）
+            GroupBox grpAutoSuicide = new GroupBox();
+            grpAutoSuicide.Text = LanguageManager.Translate("自動自殺モード");
+            grpAutoSuicide.Location = new Point(margin * 2 + columnWidth, currentY);
+            grpAutoSuicide.Size = new Size(columnWidth, 100);
+            this.Controls.Add(grpAutoSuicide);
+
+            int autoInnerY = 20;
+            autoSuicideCheckBox = new CheckBox();
+            autoSuicideCheckBox.Name = "AutoSuicideCheckBox";
+            autoSuicideCheckBox.Text = LanguageManager.Translate("自動自殺を有効にする");
+            autoSuicideCheckBox.AutoSize = true;
+            autoSuicideCheckBox.Location = new Point(innerMargin, autoInnerY);
+            autoSuicideCheckBox.Checked = AppSettings.AutoSuicideEnabled;
+            //autoSuicideCheckBox.Enabled = false;
+            grpAutoSuicide.Controls.Add(autoSuicideCheckBox);
+
+            autoSuicideUseDetailCheckBox = new CheckBox();
+            autoSuicideUseDetailCheckBox.Text = LanguageManager.Translate("詳細設定を利用する");
+            autoSuicideUseDetailCheckBox.AutoSize = true;
+            autoSuicideUseDetailCheckBox.Location = new Point(innerMargin, autoSuicideCheckBox.Bottom + 5);
+            grpAutoSuicide.Controls.Add(autoSuicideUseDetailCheckBox);
+
+            autoSuicideFuzzyCheckBox = new CheckBox();
+            autoSuicideFuzzyCheckBox.Text = LanguageManager.Translate("曖昧マッチング");
+            autoSuicideFuzzyCheckBox.AutoSize = true;
+            autoSuicideFuzzyCheckBox.Location = new Point(autoSuicideUseDetailCheckBox.Right + 10, autoSuicideUseDetailCheckBox.Top);
+            grpAutoSuicide.Controls.Add(autoSuicideFuzzyCheckBox);
+
+            autoInnerY = autoSuicideUseDetailCheckBox.Bottom + 10;
+            autoSuicideRoundLabel = new Label();
+            autoSuicideRoundLabel.Text = LanguageManager.Translate("自動自殺対象ラウンド:");
+            autoSuicideRoundLabel.AutoSize = true;
+            autoSuicideRoundLabel.Location = new Point(innerMargin, autoInnerY);
+            grpAutoSuicide.Controls.Add(autoSuicideRoundLabel);
+
+            autoSuicideRoundListBox = new CheckedListBox();
+            autoSuicideRoundListBox.Name = "AutoSuicideRoundListBox";
+            autoSuicideRoundListBox.Location = new Point(autoSuicideRoundLabel.Right + 10, autoInnerY);
+            autoSuicideRoundListBox.Size = new Size(400, 150);
+            autoSuicideRoundListBox.Items.Add("クラシック");
+            autoSuicideRoundListBox.Items.Add("オルタネイト");
+            autoSuicideRoundListBox.Items.Add("パニッシュ");
+            autoSuicideRoundListBox.Items.Add("サボタージュ");
+            autoSuicideRoundListBox.Items.Add("ブラッドバス");
+            autoSuicideRoundListBox.Items.Add("ミッドナイト");
+            //autoSuicideRoundListBox.Items.Add("走れ！");
+            autoSuicideRoundListBox.Items.Add("コールドナイト");
+            autoSuicideRoundListBox.Items.Add("ミスティックムーン");
+            autoSuicideRoundListBox.Items.Add("ブラッドムーン");
+            autoSuicideRoundListBox.Items.Add("トワイライト");
+            autoSuicideRoundListBox.Items.Add("ソルスティス");
+            autoSuicideRoundListBox.Items.Add("霧");
+            autoSuicideRoundListBox.Items.Add("8ページ");
+            autoSuicideRoundListBox.Items.Add("狂気");
+            autoSuicideRoundListBox.Items.Add("ゴースト");
+            autoSuicideRoundListBox.Items.Add("ダブルトラブル");
+            autoSuicideRoundListBox.Items.Add("EX");
+            autoSuicideRoundListBox.Items.Add("アンバウンド");
+            for (int i = 0; i < autoSuicideRoundListBox.Items.Count; i++)
+            {
+                string item = autoSuicideRoundListBox.Items[i].ToString();
+                autoSuicideRoundListBox.SetItemChecked(i, AppSettings.AutoSuicideRoundTypes.Contains(item));
+            }
+            //autoSuicideRoundListBox.Enabled = false;
+            grpAutoSuicide.Controls.Add(autoSuicideRoundListBox);
+            autoSuicideRoundListBox.ItemCheck += (s, e) =>
+            {
+                BeginInvoke(new Action(UpdateAutoSuicideDetailAutoLines));
+            };
+            autoSuicideDetailTextBox = new TextBox();
+            autoSuicideDetailTextBox.Multiline = true;
+            autoSuicideDetailTextBox.ScrollBars = ScrollBars.Vertical;
+            autoSuicideDetailTextBox.Size = autoSuicideRoundListBox.Size;
+            autoSuicideDetailTextBox.Location = autoSuicideRoundListBox.Location;
+            grpAutoSuicide.Controls.Add(autoSuicideDetailTextBox);
+
+            autoSuicidePresetLabel = new Label();
+            autoSuicidePresetLabel.Text = LanguageManager.Translate("プリセット:");
+            autoSuicidePresetLabel.AutoSize = true;
+            autoSuicidePresetLabel.Location = new Point(innerMargin, autoSuicideRoundListBox.Bottom + 10);
+            grpAutoSuicide.Controls.Add(autoSuicidePresetLabel);
+
+            autoSuicidePresetComboBox = new ComboBox();
+            autoSuicidePresetComboBox.Name = "AutoSuicidePresetComboBox";
+            autoSuicidePresetComboBox.Location = new Point(autoSuicidePresetLabel.Right + 10, autoSuicideRoundListBox.Bottom + 5);
+            autoSuicidePresetComboBox.Width = 200;
+            foreach (var key in AppSettings.AutoSuicidePresets.Keys)
+            {
+                autoSuicidePresetComboBox.Items.Add(key);
+            }
+            grpAutoSuicide.Controls.Add(autoSuicidePresetComboBox);
+
+            autoSuicidePresetSaveButton = new Button();
+            autoSuicidePresetSaveButton.Text = LanguageManager.Translate("保存");
+            autoSuicidePresetSaveButton.AutoSize = true;
+            autoSuicidePresetSaveButton.Location = new Point(autoSuicidePresetComboBox.Right + 10, autoSuicideRoundListBox.Bottom + 5);
+            autoSuicidePresetSaveButton.Click += (s, e) =>
+            {
+                string name = autoSuicidePresetComboBox.Text.Trim();
+                if (string.IsNullOrEmpty(name))
+                {
+                    name = DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff");
+                    autoSuicidePresetComboBox.Text = name;
+                }
+                CleanAutoSuicideDetailRules();
+                var preset = new AutoSuicidePreset
+                    {
+                        RoundTypes = autoSuicideRoundListBox.CheckedItems.Cast<object>().Select(i => i.ToString()).ToList(),
+                        DetailCustom = GetCustomAutoSuicideLines(),
+                        Fuzzy = autoSuicideFuzzyCheckBox.Checked
+                    };
+                    AppSettings.AutoSuicidePresets[name] = preset;
+                    if (!autoSuicidePresetComboBox.Items.Contains(name))
+                        autoSuicidePresetComboBox.Items.Add(name);
+                    AppSettings.Save();
+                    MessageBox.Show(LanguageManager.Translate("プリセットを保存しました。"), LanguageManager.Translate("情報"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+            };
+            grpAutoSuicide.Controls.Add(autoSuicidePresetSaveButton);
+
+            autoSuicidePresetLoadButton = new Button();
+            autoSuicidePresetLoadButton.Text = LanguageManager.Translate("読み込み");
+            autoSuicidePresetLoadButton.AutoSize = true;
+            autoSuicidePresetLoadButton.Location = new Point(autoSuicidePresetSaveButton.Right + 10, autoSuicideRoundListBox.Bottom + 5);
+            autoSuicidePresetLoadButton.Click += (s, e) =>
+            {
+                string name = autoSuicidePresetComboBox.Text.Trim();
+                if (!string.IsNullOrEmpty(name) && AppSettings.AutoSuicidePresets.ContainsKey(name))
+                {
+                    var preset = AppSettings.AutoSuicidePresets[name];
+                    for (int i = 0; i < autoSuicideRoundListBox.Items.Count; i++)
+                    {
+                        string item = autoSuicideRoundListBox.Items[i].ToString();
+                        autoSuicideRoundListBox.SetItemChecked(i, preset.RoundTypes.Contains(item));
+                    }
+                    autoSuicideFuzzyCheckBox.Checked = preset.Fuzzy;
+                    var autoLinesLocal = GenerateAutoSuicideLines();
+                    autoSuicideAutoRuleCount = autoLinesLocal.Length;
+                    autoSuicideDetailTextBox.Text = string.Join(Environment.NewLine, autoLinesLocal.Concat(preset.DetailCustom));
+                }
+            };
+            grpAutoSuicide.Controls.Add(autoSuicidePresetLoadButton);
+
+            autoSuicidePresetImportButton = new Button();
+            autoSuicidePresetImportButton.Text = LanguageManager.Translate("インポート");
+            autoSuicidePresetImportButton.AutoSize = true;
+            autoSuicidePresetImportButton.Location = new Point(autoSuicidePresetSaveButton.Left, autoSuicidePresetSaveButton.Bottom + 5);
+            autoSuicidePresetImportButton.Click += (s, e) =>
+            {
+                OpenFileDialog dialog = new OpenFileDialog();
+                dialog.Filter = "JSON Files|*.json|All Files|*.*";
+                if (dialog.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        string json = File.ReadAllText(dialog.FileName);
+                        var preset = JsonConvert.DeserializeObject<AutoSuicidePreset>(json);
+                        if (preset != null)
+                        {
+                            string name = Path.GetFileNameWithoutExtension(dialog.FileName);
+                            AppSettings.AutoSuicidePresets[name] = preset;
+                            if (!autoSuicidePresetComboBox.Items.Contains(name))
+                                autoSuicidePresetComboBox.Items.Add(name);
+                            AppSettings.Save();
+                            MessageBox.Show(LanguageManager.Translate("プリセットをインポートしました。"), LanguageManager.Translate("情報"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(ex.Message, LanguageManager.Translate("エラー"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+            };
+            grpAutoSuicide.Controls.Add(autoSuicidePresetImportButton);
+
+            autoSuicidePresetExportButton = new Button();
+            autoSuicidePresetExportButton.Text = LanguageManager.Translate("エクスポート");
+            autoSuicidePresetExportButton.AutoSize = true;
+            autoSuicidePresetExportButton.Location = new Point(autoSuicidePresetLoadButton.Left, autoSuicidePresetLoadButton.Bottom + 5);
+            autoSuicidePresetExportButton.Click += (s, e) =>
+            {
+                string name = autoSuicidePresetComboBox.Text.Trim();
+                if (!string.IsNullOrEmpty(name) && AppSettings.AutoSuicidePresets.ContainsKey(name))
+                {
+                    SaveFileDialog dialog = new SaveFileDialog();
+                    dialog.Filter = "JSON Files|*.json|All Files|*.*";
+                    dialog.FileName = name + ".json";
+                    if (dialog.ShowDialog() == DialogResult.OK)
+                    {
+                        var preset = AppSettings.AutoSuicidePresets[name];
+                        File.WriteAllText(dialog.FileName, JsonConvert.SerializeObject(preset, Formatting.Indented));
+                        MessageBox.Show(LanguageManager.Translate("プリセットをエクスポートしました。"), LanguageManager.Translate("情報"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                }
+            };
+            grpAutoSuicide.Controls.Add(autoSuicidePresetExportButton);
+
+            autoSuicideAutoRuleCount = autoSuicideRoundListBox.Items.Count;
+            var lines = new List<string>();
+            if (!AppSettings.AutoSuicideUseDetail)
+            {
+                var autoLines = GenerateAutoSuicideLines();
+                lines.AddRange(autoLines);
+            }
+            if (AppSettings.AutoSuicideDetailCustom != null)
+                lines.AddRange(AppSettings.AutoSuicideDetailCustom);
+            var cleaned = CleanRules(lines);
+            if (!AppSettings.AutoSuicideUseDetail)
+            {
+                var split = SplitAutoAndCustom(cleaned);
+                autoSuicideAutoRuleCount = split.autoLines.Count;
+                autoSuicideDetailTextBox.Text = string.Join(Environment.NewLine, split.autoLines.Concat(split.customLines));
+            }
+            else
+            {
+                autoSuicideAutoRuleCount = 0;
+                autoSuicideDetailTextBox.Text = string.Join(Environment.NewLine, cleaned.Select(r => r.ToString()));
+            }
+            autoSuicideFuzzyCheckBox.Checked = AppSettings.AutoSuicideFuzzyMatch;
+            autoSuicideUseDetailCheckBox.CheckedChanged += AutoSuicideUseDetailCheckBox_CheckedChanged;
+            autoSuicideUseDetailCheckBox.Checked = AppSettings.AutoSuicideUseDetail;
+
+            autoSuicideSettingsConfirmButton = new Button();
+            autoSuicideSettingsConfirmButton.Text = LanguageManager.Translate("設定内容確認");
+            autoSuicideSettingsConfirmButton.AutoSize = true;
+            autoSuicideSettingsConfirmButton.Location = new Point(autoSuicidePresetExportButton.Right + 10, autoSuicidePresetExportButton.Top);
+            autoSuicideSettingsConfirmButton.Click += (s, e) =>
+            {
+                var rawLines = autoSuicideDetailTextBox.Lines;
+                var trimmed = new List<string>();
+                var errors = new List<string>();
+                for (int i = 0; i < rawLines.Length; i++)
+                {
+                    string line = rawLines[i].Trim();
+                    if (string.IsNullOrEmpty(line))
+                        continue;
+                    if (Models.AutoSuicideRule.TryParseDetailed(line, out var _, out var err))
+                    {
+                        trimmed.Add(line);
+                    }
+                    else
+                    {
+                        errors.Add($"{i + 1}行目: {err}");
+                    }
+                }
+                if (errors.Any())
+                {
+                    MessageBox.Show(string.Join(Environment.NewLine, errors), LanguageManager.Translate("構文エラー"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+                var rulesCheck = CleanRules(trimmed);
+                if (rulesCheck.All(r => r.Value == 0))
+                {
+                    MessageBox.Show(LanguageManager.Translate("現在の設定では自動自殺を行いません"), LanguageManager.Translate("設定内容"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                var sb = new StringBuilder();
+                if (!autoSuicideCheckBox.Checked)
+                {
+                    sb.AppendLine(LanguageManager.Translate("自動自殺は無効になっています"));
+                    sb.AppendLine();
+                }
+
+                Func<int, string> GetActionText = value =>
+                {
+                    switch (value)
+                    {
+                        case 1:
+                            return "自動自爆を行います";
+                        case 2:
+                            return "遅延自爆を行います";
+                        default:
+                            return "何もしません";
+                    }
+                };
+
+                Func<List<string>, bool> ShouldBullet = items => items.Count > 3 || string.Join(",", items).Length > 20;
+
+                var globalGroups = rulesCheck.Where(r => r.Round == null && r.Terror == null)
+                                             .GroupBy(r => r.Value);
+                foreach (var g in globalGroups)
+                {
+                    sb.AppendLine($"全てのラウンドの全てのテラーで{GetActionText(g.Key)}");
+                }
+
+                var roundWildcards = rulesCheck.Where(r => r.Round != null && r.Terror == null && !r.RoundNegate).ToList();
+                var detailRules = rulesCheck.Where(r => r.Round != null && r.Terror != null && !r.RoundNegate).ToList();
+                var processedDetail = new HashSet<Models.AutoSuicideRule>();
+                var simpleRounds = new List<Tuple<string, int>>();
+
+                foreach (var rw in roundWildcards)
+                {
+                    var roundName = rw.Round;
+                    var baseValue = rw.Value;
+                    var exceptions = detailRules.Where(d => d.Round == roundName && (d.Value != baseValue || d.TerrorNegate)).ToList();
+                    if (!exceptions.Any())
+                    {
+                        simpleRounds.Add(Tuple.Create(roundName, baseValue));
+                    }
+                    else
+                    {
+                        sb.AppendLine($"{roundName}では全てのテラーで{GetActionText(baseValue)}。");
+                        foreach (var eg in exceptions.GroupBy(ex => ex.Value))
+                        {
+                            var terrors = eg.Select(rule => rule.Terror).ToList();
+                            bool useBullet = ShouldBullet(terrors);
+                            sb.AppendLine($"ただし、以下に記載する条件では{GetActionText(eg.Key)}");
+                            if (useBullet)
+                            {
+                                foreach (var t in terrors)
+                                    sb.AppendLine($"・{t}");
+                            }
+                            else
+                            {
+                                sb.AppendLine($"・{string.Join(",", terrors)}");
+                            }
+                            foreach (var t in eg)
+                                processedDetail.Add(t);
+                        }
+                    }
+                }
+
+                foreach (var g in simpleRounds.GroupBy(r => r.Item2))
+                {
+                    var rounds = g.Select(r => r.Item1).ToList();
+                    bool useBullet = ShouldBullet(rounds);
+                    if (useBullet)
+                    {
+                        sb.AppendLine($"以下のラウンドでは全てのテラーで{GetActionText(g.Key)}");
+                        foreach (var r in rounds)
+                            sb.AppendLine($"・{r}");
+                    }
+                    else
+                    {
+                        sb.AppendLine($"{string.Join(",", rounds)}では全てのテラーで{GetActionText(g.Key)}");
+                    }
+                }
+
+                var remainingDetail = detailRules.Where(d => !processedDetail.Contains(d))
+                                                .GroupBy(d => d.Round);
+                foreach (var rg in remainingDetail)
+                {
+                    sb.AppendLine($"{rg.Key}では以下の設定が適用されています");
+                    foreach (var ag in rg.GroupBy(r => r.Value))
+                    {
+                        var terrors = ag.Select(a => a.Terror).ToList();
+                        bool useBullet = ShouldBullet(terrors);
+                        if (useBullet)
+                        {
+                            sb.AppendLine($"・以下のテラーが出現した時、{GetActionText(ag.Key)}");
+                            foreach (var t in terrors)
+                                sb.AppendLine($"　・{t}");
+                        }
+                        else
+                        {
+                            sb.AppendLine($"・{string.Join(",", terrors)}が出現した時、{GetActionText(ag.Key)}");
+                        }
+                    }
+                }
+
+                var terrorGroups = rulesCheck.Where(r => r.Round == null && r.Terror != null)
+                                             .GroupBy(r => new { r.TerrorNegate, r.Value });
+                foreach (var g in terrorGroups)
+                {
+                    var terrors = g.Select(r => r.Terror).ToList();
+                    bool useBullet = ShouldBullet(terrors);
+                    if (g.Key.TerrorNegate)
+                    {
+                        if (useBullet)
+                        {
+                            sb.AppendLine($"全てのラウンドで以下のテラー以外が出現した時、{GetActionText(g.Key.Value)}");
+                            foreach (var t in terrors)
+                                sb.AppendLine($"・{t}");
+                        }
+                        else
+                        {
+                            sb.AppendLine($"全てのラウンドで{string.Join(",", terrors)}以外が出現した時、{GetActionText(g.Key.Value)}");
+                        }
+                    }
+                    else
+                    {
+                        if (useBullet)
+                        {
+                            sb.AppendLine($"全てのラウンドで以下のテラーが出現した時、{GetActionText(g.Key.Value)}");
+                            foreach (var t in terrors)
+                                sb.AppendLine($"・{t}");
+                        }
+                        else
+                        {
+                            sb.AppendLine($"全てのラウンドで{string.Join(",", terrors)}が出現した時、{GetActionText(g.Key.Value)}");
+                        }
+                    }
+                }
+
+                MessageBox.Show(sb.ToString().Trim(), LanguageManager.Translate("設定内容"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+            };
+            grpAutoSuicide.Controls.Add(autoSuicideSettingsConfirmButton);
+
+            grpAutoSuicide.Height = autoSuicideSettingsConfirmButton.Bottom + 10;
+            autoSuicideCheckBox.CheckedChanged += AutoSuicideCheckBox_CheckedChanged;
+            AutoSuicideUseDetailCheckBox_CheckedChanged(null, EventArgs.Empty);
+            AutoSuicideCheckBox_CheckedChanged(null, EventArgs.Empty);
+
+            currentY = Math.Max(grpOsc.Bottom, grpAutoSuicide.Bottom) + margin;
 
             // 表示設定グループ
             GroupBox grpDisplay = new GroupBox();
@@ -130,7 +535,6 @@ namespace ToNRoundCounter.UI
             grpFilter.Size = new Size(columnWidth, 70);
             this.Controls.Add(grpFilter);
 
-            int innerMargin = 10;
             int innerY = 20;
             RoundTypeCheckBox = new CheckBox();
             RoundTypeCheckBox.Text = LanguageManager.Translate("ラウンドタイプ");
@@ -362,410 +766,6 @@ namespace ToNRoundCounter.UI
 
             currentY += grpApiKey.Height + margin;
 
-            GroupBox grpAutoSuicide = new GroupBox();
-            grpAutoSuicide.Text = LanguageManager.Translate("自動自殺モード");
-            grpAutoSuicide.Location = new Point(margin, currentY);
-            grpAutoSuicide.Size = new Size(columnWidth, 100);
-            this.Controls.Add(grpAutoSuicide);
-
-            int autoInnerY = 20;
-            autoSuicideCheckBox = new CheckBox();
-            autoSuicideCheckBox.Name = "AutoSuicideCheckBox";
-            autoSuicideCheckBox.Text = LanguageManager.Translate("自動自殺を有効にする");
-            autoSuicideCheckBox.AutoSize = true;
-            autoSuicideCheckBox.Location = new Point(innerMargin, autoInnerY);
-            autoSuicideCheckBox.Checked = AppSettings.AutoSuicideEnabled;
-            //autoSuicideCheckBox.Enabled = false;
-            grpAutoSuicide.Controls.Add(autoSuicideCheckBox);
-
-            autoSuicideUseDetailCheckBox = new CheckBox();
-            autoSuicideUseDetailCheckBox.Text = LanguageManager.Translate("詳細設定を利用する");
-            autoSuicideUseDetailCheckBox.AutoSize = true;
-            autoSuicideUseDetailCheckBox.Location = new Point(innerMargin, autoSuicideCheckBox.Bottom + 5);
-            grpAutoSuicide.Controls.Add(autoSuicideUseDetailCheckBox);
-
-            autoSuicideFuzzyCheckBox = new CheckBox();
-            autoSuicideFuzzyCheckBox.Text = LanguageManager.Translate("曖昧マッチング");
-            autoSuicideFuzzyCheckBox.AutoSize = true;
-            autoSuicideFuzzyCheckBox.Location = new Point(autoSuicideUseDetailCheckBox.Right + 10, autoSuicideUseDetailCheckBox.Top);
-            grpAutoSuicide.Controls.Add(autoSuicideFuzzyCheckBox);
-
-            autoInnerY = autoSuicideUseDetailCheckBox.Bottom + 10;
-            autoSuicideRoundLabel = new Label();
-            autoSuicideRoundLabel.Text = LanguageManager.Translate("自動自殺対象ラウンド:");
-            autoSuicideRoundLabel.AutoSize = true;
-            autoSuicideRoundLabel.Location = new Point(innerMargin, autoInnerY);
-            grpAutoSuicide.Controls.Add(autoSuicideRoundLabel);
-
-            autoSuicideRoundListBox = new CheckedListBox();
-            autoSuicideRoundListBox.Name = "AutoSuicideRoundListBox";
-            autoSuicideRoundListBox.Location = new Point(autoSuicideRoundLabel.Right + 10, autoInnerY);
-            autoSuicideRoundListBox.Size = new Size(400, 150);
-            autoSuicideRoundListBox.Items.Add("クラシック");
-            autoSuicideRoundListBox.Items.Add("オルタネイト");
-            autoSuicideRoundListBox.Items.Add("パニッシュ");
-            autoSuicideRoundListBox.Items.Add("サボタージュ");
-            autoSuicideRoundListBox.Items.Add("ブラッドバス");
-            autoSuicideRoundListBox.Items.Add("ミッドナイト");
-            //autoSuicideRoundListBox.Items.Add("走れ！");
-            autoSuicideRoundListBox.Items.Add("コールドナイト");
-            autoSuicideRoundListBox.Items.Add("ミスティックムーン");
-            autoSuicideRoundListBox.Items.Add("ブラッドムーン");
-            autoSuicideRoundListBox.Items.Add("トワイライト");
-            autoSuicideRoundListBox.Items.Add("ソルスティス");
-            autoSuicideRoundListBox.Items.Add("霧");
-            autoSuicideRoundListBox.Items.Add("8ページ");
-            autoSuicideRoundListBox.Items.Add("狂気");
-            autoSuicideRoundListBox.Items.Add("ゴースト");
-            autoSuicideRoundListBox.Items.Add("ダブルトラブル");
-            autoSuicideRoundListBox.Items.Add("EX");
-            autoSuicideRoundListBox.Items.Add("アンバウンド");
-            for (int i = 0; i < autoSuicideRoundListBox.Items.Count; i++)
-            {
-                string item = autoSuicideRoundListBox.Items[i].ToString();
-                autoSuicideRoundListBox.SetItemChecked(i, AppSettings.AutoSuicideRoundTypes.Contains(item));
-            }
-            //autoSuicideRoundListBox.Enabled = false;
-            grpAutoSuicide.Controls.Add(autoSuicideRoundListBox);
-            autoSuicideRoundListBox.ItemCheck += (s, e) =>
-            {
-                BeginInvoke(new Action(UpdateAutoSuicideDetailAutoLines));
-            };
-            autoSuicideDetailTextBox = new TextBox();
-            autoSuicideDetailTextBox.Multiline = true;
-            autoSuicideDetailTextBox.ScrollBars = ScrollBars.Vertical;
-            autoSuicideDetailTextBox.Size = autoSuicideRoundListBox.Size;
-            autoSuicideDetailTextBox.Location = autoSuicideRoundListBox.Location;
-            grpAutoSuicide.Controls.Add(autoSuicideDetailTextBox);
-
-            Label autoSuicidePresetLabel = new Label();
-            autoSuicidePresetLabel.Text = LanguageManager.Translate("プリセット:");
-            autoSuicidePresetLabel.AutoSize = true;
-            autoSuicidePresetLabel.Location = new Point(innerMargin, autoSuicideRoundListBox.Bottom + 10);
-            grpAutoSuicide.Controls.Add(autoSuicidePresetLabel);
-
-            autoSuicidePresetComboBox = new ComboBox();
-            autoSuicidePresetComboBox.Name = "AutoSuicidePresetComboBox";
-            autoSuicidePresetComboBox.Location = new Point(autoSuicidePresetLabel.Right + 10, autoSuicideRoundListBox.Bottom + 5);
-            autoSuicidePresetComboBox.Width = 200;
-            foreach (var key in AppSettings.AutoSuicidePresets.Keys)
-            {
-                autoSuicidePresetComboBox.Items.Add(key);
-            }
-            grpAutoSuicide.Controls.Add(autoSuicidePresetComboBox);
-
-            autoSuicidePresetSaveButton = new Button();
-            autoSuicidePresetSaveButton.Text = LanguageManager.Translate("保存");
-            autoSuicidePresetSaveButton.AutoSize = true;
-            autoSuicidePresetSaveButton.Location = new Point(autoSuicidePresetComboBox.Right + 10, autoSuicideRoundListBox.Bottom + 5);
-            autoSuicidePresetSaveButton.Click += (s, e) =>
-            {
-                string name = autoSuicidePresetComboBox.Text.Trim();
-                if (string.IsNullOrEmpty(name))
-                {
-                    name = DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff");
-                    autoSuicidePresetComboBox.Text = name;
-                }
-                CleanAutoSuicideDetailRules();
-                var preset = new AutoSuicidePreset
-                    {
-                        RoundTypes = autoSuicideRoundListBox.CheckedItems.Cast<object>().Select(i => i.ToString()).ToList(),
-                        DetailCustom = GetCustomAutoSuicideLines(),
-                        Fuzzy = autoSuicideFuzzyCheckBox.Checked
-                    };
-                    AppSettings.AutoSuicidePresets[name] = preset;
-                    if (!autoSuicidePresetComboBox.Items.Contains(name))
-                        autoSuicidePresetComboBox.Items.Add(name);
-                    AppSettings.Save();
-                    MessageBox.Show(LanguageManager.Translate("プリセットを保存しました。"), LanguageManager.Translate("情報"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-            };
-            grpAutoSuicide.Controls.Add(autoSuicidePresetSaveButton);
-
-            autoSuicidePresetLoadButton = new Button();
-            autoSuicidePresetLoadButton.Text = LanguageManager.Translate("読み込み");
-            autoSuicidePresetLoadButton.AutoSize = true;
-            autoSuicidePresetLoadButton.Location = new Point(autoSuicidePresetSaveButton.Right + 10, autoSuicideRoundListBox.Bottom + 5);
-            autoSuicidePresetLoadButton.Click += (s, e) =>
-            {
-                string name = autoSuicidePresetComboBox.Text.Trim();
-                if (!string.IsNullOrEmpty(name) && AppSettings.AutoSuicidePresets.ContainsKey(name))
-                {
-                    var preset = AppSettings.AutoSuicidePresets[name];
-                    for (int i = 0; i < autoSuicideRoundListBox.Items.Count; i++)
-                    {
-                        string item = autoSuicideRoundListBox.Items[i].ToString();
-                        autoSuicideRoundListBox.SetItemChecked(i, preset.RoundTypes.Contains(item));
-                    }
-                    autoSuicideFuzzyCheckBox.Checked = preset.Fuzzy;
-                    var autoLinesLocal = GenerateAutoSuicideLines();
-                    autoSuicideAutoRuleCount = autoLinesLocal.Length;
-                    autoSuicideDetailTextBox.Text = string.Join(Environment.NewLine, autoLinesLocal.Concat(preset.DetailCustom));
-                }
-            };
-            grpAutoSuicide.Controls.Add(autoSuicidePresetLoadButton);
-
-            autoSuicidePresetImportButton = new Button();
-            autoSuicidePresetImportButton.Text = LanguageManager.Translate("インポート");
-            autoSuicidePresetImportButton.AutoSize = true;
-            autoSuicidePresetImportButton.Location = new Point(autoSuicidePresetSaveButton.Left, autoSuicidePresetSaveButton.Bottom + 5);
-            autoSuicidePresetImportButton.Click += (s, e) =>
-            {
-                OpenFileDialog dialog = new OpenFileDialog();
-                dialog.Filter = "JSON Files|*.json|All Files|*.*";
-                if (dialog.ShowDialog() == DialogResult.OK)
-                {
-                    try
-                    {
-                        string json = File.ReadAllText(dialog.FileName);
-                        var preset = JsonConvert.DeserializeObject<AutoSuicidePreset>(json);
-                        if (preset != null)
-                        {
-                            string name = Path.GetFileNameWithoutExtension(dialog.FileName);
-                            AppSettings.AutoSuicidePresets[name] = preset;
-                            if (!autoSuicidePresetComboBox.Items.Contains(name))
-                                autoSuicidePresetComboBox.Items.Add(name);
-                            AppSettings.Save();
-                            MessageBox.Show(LanguageManager.Translate("プリセットをインポートしました。"), LanguageManager.Translate("情報"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        MessageBox.Show(ex.Message, LanguageManager.Translate("エラー"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    }
-                }
-            };
-            grpAutoSuicide.Controls.Add(autoSuicidePresetImportButton);
-
-            autoSuicidePresetExportButton = new Button();
-            autoSuicidePresetExportButton.Text = LanguageManager.Translate("エクスポート");
-            autoSuicidePresetExportButton.AutoSize = true;
-            autoSuicidePresetExportButton.Location = new Point(autoSuicidePresetLoadButton.Left, autoSuicidePresetLoadButton.Bottom + 5);
-            autoSuicidePresetExportButton.Click += (s, e) =>
-            {
-                string name = autoSuicidePresetComboBox.Text.Trim();
-                if (!string.IsNullOrEmpty(name) && AppSettings.AutoSuicidePresets.ContainsKey(name))
-                {
-                    SaveFileDialog dialog = new SaveFileDialog();
-                    dialog.Filter = "JSON Files|*.json|All Files|*.*";
-                    dialog.FileName = name + ".json";
-                    if (dialog.ShowDialog() == DialogResult.OK)
-                    {
-                        var preset = AppSettings.AutoSuicidePresets[name];
-                        File.WriteAllText(dialog.FileName, JsonConvert.SerializeObject(preset, Formatting.Indented));
-                        MessageBox.Show(LanguageManager.Translate("プリセットをエクスポートしました。"), LanguageManager.Translate("情報"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
-                }
-            };
-            grpAutoSuicide.Controls.Add(autoSuicidePresetExportButton);
-
-            autoSuicideAutoRuleCount = autoSuicideRoundListBox.Items.Count;
-            var lines = new List<string>();
-            if (!AppSettings.AutoSuicideUseDetail)
-            {
-                var autoLines = GenerateAutoSuicideLines();
-                lines.AddRange(autoLines);
-            }
-            if (AppSettings.AutoSuicideDetailCustom != null)
-                lines.AddRange(AppSettings.AutoSuicideDetailCustom);
-            var cleaned = CleanRules(lines);
-            if (!AppSettings.AutoSuicideUseDetail)
-            {
-                var split = SplitAutoAndCustom(cleaned);
-                autoSuicideAutoRuleCount = split.autoLines.Count;
-                autoSuicideDetailTextBox.Text = string.Join(Environment.NewLine, split.autoLines.Concat(split.customLines));
-            }
-            else
-            {
-                autoSuicideAutoRuleCount = 0;
-                autoSuicideDetailTextBox.Text = string.Join(Environment.NewLine, cleaned.Select(r => r.ToString()));
-            }
-            autoSuicideFuzzyCheckBox.Checked = AppSettings.AutoSuicideFuzzyMatch;
-            autoSuicideUseDetailCheckBox.CheckedChanged += AutoSuicideUseDetailCheckBox_CheckedChanged;
-            autoSuicideUseDetailCheckBox.Checked = AppSettings.AutoSuicideUseDetail;
-
-            autoSuicideSettingsConfirmButton = new Button();
-            autoSuicideSettingsConfirmButton.Text = LanguageManager.Translate("設定内容確認");
-            autoSuicideSettingsConfirmButton.AutoSize = true;
-            autoSuicideSettingsConfirmButton.Location = new Point(autoSuicidePresetComboBox.Left, autoSuicidePresetExportButton.Bottom + 5);
-            autoSuicideSettingsConfirmButton.Click += (s, e) =>
-            {
-                var rawLines = autoSuicideDetailTextBox.Lines;
-                var trimmed = new List<string>();
-                var errors = new List<string>();
-                for (int i = 0; i < rawLines.Length; i++)
-                {
-                    string line = rawLines[i].Trim();
-                    if (string.IsNullOrEmpty(line))
-                        continue;
-                    if (Models.AutoSuicideRule.TryParseDetailed(line, out var _, out var err))
-                    {
-                        trimmed.Add(line);
-                    }
-                    else
-                    {
-                        errors.Add($"{i + 1}行目: {err}");
-                    }
-                }
-                if (errors.Any())
-                {
-                    MessageBox.Show(string.Join(Environment.NewLine, errors), LanguageManager.Translate("構文エラー"), MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
-                var rulesCheck = CleanRules(trimmed);
-                if (rulesCheck.All(r => r.Value == 0))
-                {
-                    MessageBox.Show(LanguageManager.Translate("現在の設定では自動自殺を行いません"), LanguageManager.Translate("設定内容"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return;
-                }
-                var sb = new StringBuilder();
-                if (!autoSuicideCheckBox.Checked)
-                {
-                    sb.AppendLine(LanguageManager.Translate("自動自殺は無効になっています"));
-                    sb.AppendLine();
-                }
-
-                Func<int, string> GetActionText = value =>
-                {
-                    switch (value)
-                    {
-                        case 1:
-                            return "自動自爆を行います";
-                        case 2:
-                            return "遅延自爆を行います";
-                        default:
-                            return "自動自爆を行いません";
-                    }
-                };
-
-                Func<List<string>, bool> ShouldBullet = items => items.Count > 3 || string.Join(",", items).Length > 20;
-
-                var globalGroups = rulesCheck.Where(r => r.Round == null && r.Terror == null)
-                                           .GroupBy(r => r.Value);
-                foreach (var g in globalGroups)
-                {
-                    sb.AppendLine($"全てのラウンドの全てのテラーで{GetActionText(g.Key)}");
-                }
-
-                var roundWildcards = rulesCheck.Where(r => r.Round != null && r.Terror == null && !r.RoundNegate).ToList();
-                var detailRules = rulesCheck.Where(r => r.Round != null && r.Terror != null && !r.RoundNegate).ToList();
-                var processedDetail = new HashSet<Models.AutoSuicideRule>();
-                var simpleRounds = new List<Tuple<string, int>>();
-
-                foreach (var rw in roundWildcards)
-                {
-                    var roundName = rw.Round;
-                    var baseValue = rw.Value;
-                    var exceptions = detailRules.Where(d => d.Round == roundName && (d.Value != baseValue || d.TerrorNegate)).ToList();
-                    if (!exceptions.Any())
-                    {
-                        simpleRounds.Add(Tuple.Create(roundName, baseValue));
-                    }
-                    else
-                    {
-                        sb.AppendLine($"{roundName}では全てのテラーで{GetActionText(baseValue)}。");
-                        foreach (var eg in exceptions.GroupBy(ex => ex.Value))
-                        {
-                            var terrors = eg.Select(rule => rule.Terror).ToList();
-                            bool useBullet = ShouldBullet(terrors);
-                            sb.AppendLine($"ただし、以下に記載する条件では{GetActionText(eg.Key)}");
-                            if (useBullet)
-                            {
-                                foreach (var t in terrors)
-                                    sb.AppendLine($"・{t}");
-                            }
-                            else
-                            {
-                                sb.AppendLine($"・{string.Join(",", terrors)}");
-                            }
-                            foreach (var t in eg)
-                                processedDetail.Add(t);
-                        }
-                    }
-                }
-
-                foreach (var g in simpleRounds.GroupBy(r => r.Item2))
-                {
-                    var rounds = g.Select(r => r.Item1).ToList();
-                    bool useBullet = ShouldBullet(rounds);
-                    if (useBullet)
-                    {
-                        sb.AppendLine($"以下のラウンドでは全てのテラーで{GetActionText(g.Key)}");
-                        foreach (var r in rounds)
-                            sb.AppendLine($"・{r}");
-                    }
-                    else
-                    {
-                        sb.AppendLine($"{string.Join(",", rounds)}では全てのテラーで{GetActionText(g.Key)}");
-                    }
-                }
-
-                var remainingDetail = detailRules.Where(d => !processedDetail.Contains(d))
-                                                .GroupBy(d => d.Round);
-                foreach (var rg in remainingDetail)
-                {
-                    sb.AppendLine($"{rg.Key}では以下の設定が適用されています");
-                    foreach (var ag in rg.GroupBy(r => r.Value))
-                    {
-                        var terrors = ag.Select(a => a.Terror).ToList();
-                        bool useBullet = ShouldBullet(terrors);
-                        if (useBullet)
-                        {
-                            sb.AppendLine($"・以下のテラーが出現した時、{GetActionText(ag.Key)}");
-                            foreach (var t in terrors)
-                                sb.AppendLine($"　・{t}");
-                        }
-                        else
-                        {
-                            sb.AppendLine($"・{string.Join(",", terrors)}が出現した時、{GetActionText(ag.Key)}");
-                        }
-                    }
-                }
-
-                var terrorGroups = rulesCheck.Where(r => r.Round == null && r.Terror != null)
-                                             .GroupBy(r => new { r.TerrorNegate, r.Value });
-                foreach (var g in terrorGroups)
-                {
-                    var terrors = g.Select(r => r.Terror).ToList();
-                    bool useBullet = ShouldBullet(terrors);
-                    if (g.Key.TerrorNegate)
-                    {
-                        if (useBullet)
-                        {
-                            sb.AppendLine($"全てのラウンドで以下のテラー以外が出現した時、{GetActionText(g.Key.Value)}");
-                            foreach (var t in terrors)
-                                sb.AppendLine($"・{t}");
-                        }
-                        else
-                        {
-                            sb.AppendLine($"全てのラウンドで{string.Join(",", terrors)}以外が出現した時、{GetActionText(g.Key.Value)}");
-                        }
-                    }
-                    else
-                    {
-                        if (useBullet)
-                        {
-                            sb.AppendLine($"全てのラウンドで以下のテラーが出現した時、{GetActionText(g.Key.Value)}");
-                            foreach (var t in terrors)
-                                sb.AppendLine($"・{t}");
-                        }
-                        else
-                        {
-                            sb.AppendLine($"全てのラウンドで{string.Join(",", terrors)}が出現した時、{GetActionText(g.Key.Value)}");
-                        }
-                    }
-                }
-
-                MessageBox.Show(sb.ToString().Trim(), LanguageManager.Translate("設定内容"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-            };
-            grpAutoSuicide.Controls.Add(autoSuicideSettingsConfirmButton);
-
-            grpAutoSuicide.Height = autoSuicideSettingsConfirmButton.Bottom + 10;
-            autoSuicideCheckBox.CheckedChanged += AutoSuicideCheckBox_CheckedChanged;
-            AutoSuicideUseDetailCheckBox_CheckedChanged(null, EventArgs.Empty);
-            AutoSuicideCheckBox_CheckedChanged(null, EventArgs.Empty);
-
-            currentY += grpAutoSuicide.Height + margin;
-
             // 最後に、パネルの高さを調整
             this.Width = totalWidth;
             this.Height = currentY + margin;
@@ -869,6 +869,7 @@ namespace ToNRoundCounter.UI
             autoSuicideRoundListBox.Visible = autoSuicideCheckBox.Checked && !useDetail;
             autoSuicideRoundLabel.Visible = autoSuicideCheckBox.Checked && !useDetail;
             autoSuicideDetailTextBox.Visible = autoSuicideCheckBox.Checked && useDetail;
+            autoSuicideFuzzyCheckBox.Visible = autoSuicideSettingsConfirmButton.Visible = autoSuicideCheckBox.Checked && useDetail;
             if (useDetail)
             {
                 autoSuicideDetailTextBox.Text = string.Join(Environment.NewLine, autoSuicideDetailTextBox.Lines.Skip(autoSuicideAutoRuleCount));
@@ -885,13 +886,14 @@ namespace ToNRoundCounter.UI
         {
             bool enabled = autoSuicideCheckBox.Checked;
             autoSuicideUseDetailCheckBox.Visible = enabled;
-            autoSuicideFuzzyCheckBox.Visible = enabled;
-            autoSuicideSettingsConfirmButton.Visible = enabled;
-            if (enabled)
-            {
-                AutoSuicideUseDetailCheckBox_CheckedChanged(null, EventArgs.Empty);
-            }
-            else
+            autoSuicidePresetLabel.Visible = enabled;
+            autoSuicidePresetComboBox.Visible = enabled;
+            autoSuicidePresetSaveButton.Visible = enabled;
+            autoSuicidePresetLoadButton.Visible = enabled;
+            autoSuicidePresetImportButton.Visible = enabled;
+            autoSuicidePresetExportButton.Visible = enabled;
+            AutoSuicideUseDetailCheckBox_CheckedChanged(null, EventArgs.Empty);
+            if (!enabled)
             {
                 autoSuicideRoundLabel.Visible = false;
                 autoSuicideRoundListBox.Visible = false;
