@@ -203,16 +203,16 @@ namespace ToNRoundCounter.UI
                 }
                 CleanAutoSuicideDetailRules();
                 var preset = new AutoSuicidePreset
-                    {
-                        RoundTypes = autoSuicideRoundListBox.CheckedItems.Cast<object>().Select(i => i.ToString()).ToList(),
-                        DetailCustom = GetCustomAutoSuicideLines(),
-                        Fuzzy = autoSuicideFuzzyCheckBox.Checked
-                    };
-                    AppSettings.AutoSuicidePresets[name] = preset;
-                    if (!autoSuicidePresetComboBox.Items.Contains(name))
-                        autoSuicidePresetComboBox.Items.Add(name);
-                    AppSettings.Save();
-                    MessageBox.Show(LanguageManager.Translate("プリセットを保存しました。"), LanguageManager.Translate("情報"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                {
+                    RoundTypes = autoSuicideRoundListBox.CheckedItems.Cast<object>().Select(i => i.ToString()).ToList(),
+                    DetailCustom = GetCustomAutoSuicideLines(),
+                    Fuzzy = autoSuicideFuzzyCheckBox.Checked
+                };
+                AppSettings.AutoSuicidePresets[name] = preset;
+                if (!autoSuicidePresetComboBox.Items.Contains(name))
+                    autoSuicidePresetComboBox.Items.Add(name);
+                AppSettings.Save();
+                MessageBox.Show(LanguageManager.Translate("プリセットを保存しました。"), LanguageManager.Translate("情報"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             };
             grpAutoSuicide.Controls.Add(autoSuicidePresetSaveButton);
 
@@ -499,7 +499,7 @@ namespace ToNRoundCounter.UI
             AutoSuicideUseDetailCheckBox_CheckedChanged(null, EventArgs.Empty);
             AutoSuicideCheckBox_CheckedChanged(null, EventArgs.Empty);
 
-            currentY = Math.Max(grpOsc.Bottom, grpAutoSuicide.Bottom);
+            currentY = currentY + grpOsc.Bottom + margin;
 
             // 表示設定グループ
             GroupBox grpDisplay = new GroupBox();
@@ -730,7 +730,7 @@ namespace ToNRoundCounter.UI
             this.Controls.Add(grpApiKey);
             //説明
             Label apiKeyDescription = new Label();
-            apiKeyDescription.Text = LanguageManager.Translate("ToNRoundCounter-Cloudはセーブコードの複数端末間での全自動同期などの機能を持つクラウドサービスです。\\n利用にはAPIキーが必要です。\\nAPIキーはwebサイトから取得してください。");
+            apiKeyDescription.Text = LanguageManager.Translate("ToNRoundCounter-Cloudはセーブコードの複数端末間での全自動同期などの機能を持つクラウドサービスです。\n利用にはAPIキーが必要です。\nAPIキーはwebサイトから取得してください。");
             apiKeyDescription.Size = new Size(grpApiKey.Width - innerMargin2 * 2, 60); // 説明文の幅をグループボックスの幅に合わせる
             apiKeyDescription.Location = new Point(innerMargin2, apiInnerY);
             grpApiKey.Controls.Add(apiKeyDescription);
