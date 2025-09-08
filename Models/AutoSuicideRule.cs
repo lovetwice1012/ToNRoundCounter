@@ -10,6 +10,55 @@ namespace ToNRoundCounter.Models
         public bool TerrorNegate { get; set; }
         public int Value { get; set; }
 
+        private ConditionNode roundCondition;
+        private ConditionNode terrorCondition;
+        private string roundExpr;
+        private string terrorExpr;
+
+        private abstract class ConditionNode
+        {
+            public abstract bool Evaluate(string input, Func<string, string, bool> comparer);
+        }
+
+        private class ValueNode : ConditionNode
+        {
+            public string Value { get; }
+            public ValueNode(string value) { Value = value; }
+            public override bool Evaluate(string input, Func<string, string, bool> comparer)
+            {
+                if (input == null) return false;
+                return comparer(input, Value);
+            }
+        }
+
+        private class AndNode : ConditionNode
+        {
+            public ConditionNode Left { get; }
+            public ConditionNode Right { get; }
+            public AndNode(ConditionNode left, ConditionNode right)
+            {
+                Left = left; Right = right;
+            }
+            public override bool Evaluate(string input, Func<string, string, bool> comparer)
+            {
+                return Left.Evaluate(input, comparer) && Right.Evaluate(input, comparer);
+            }
+        }
+
+        private class OrNode : ConditionNode
+        {
+            public ConditionNode Left { get; }
+            public ConditionNode Right { get; }
+            public OrNode(ConditionNode left, ConditionNode right)
+            {
+                Left = left; Right = right;
+            }
+            public override bool Evaluate(string input, Func<string, string, bool> comparer)
+            {
+                return Left.Evaluate(input, comparer) || Right.Evaluate(input, comparer);
+            }
+        }
+
         public static bool TryParse(string line, out AutoSuicideRule rule)
         {
             rule = null;
@@ -19,6 +68,10 @@ namespace ToNRoundCounter.Models
             bool roundNeg = false;
             string terror = null;
             bool terrorNeg = false;
+            ConditionNode roundCond = null;
+            ConditionNode terrorCond = null;
+            string roundExprStr = null;
+            string terrorExprStr = null;
             int value;
             if (parts.Length == 1)
             {
@@ -36,12 +89,18 @@ namespace ToNRoundCounter.Models
                 if (!string.IsNullOrWhiteSpace(parts[0]))
                 {
                     roundNeg = parts[0].StartsWith("!");
-                    round = roundNeg ? parts[0].Substring(1) : parts[0];
+                    var tmp = roundNeg ? parts[0].Substring(1) : parts[0];
+                    if (!TryParseCondition(tmp, out roundCond)) return false;
+                    if (roundCond is ValueNode) round = tmp;
+                    roundExprStr = tmp;
                 }
                 if (!string.IsNullOrWhiteSpace(parts[1]))
                 {
                     terrorNeg = parts[1].StartsWith("!");
-                    terror = terrorNeg ? parts[1].Substring(1) : parts[1];
+                    var tmp = terrorNeg ? parts[1].Substring(1) : parts[1];
+                    if (!TryParseCondition(tmp, out terrorCond)) return false;
+                    if (terrorCond is ValueNode) terror = tmp;
+                    terrorExprStr = tmp;
                 }
                 if (parts[2] == "1" || parts[2] == "0" || parts[2] == "2")
                 {
@@ -56,7 +115,7 @@ namespace ToNRoundCounter.Models
             {
                 return false;
             }
-            rule = new AutoSuicideRule { Round = round, RoundNegate = roundNeg, Terror = terror, TerrorNegate = terrorNeg, Value = value };
+            rule = new AutoSuicideRule { Round = round, RoundNegate = roundNeg, Terror = terror, TerrorNegate = terrorNeg, Value = value, roundCondition = roundCond, terrorCondition = terrorCond, roundExpr = roundExprStr, terrorExpr = terrorExprStr };
             return true;
         }
 
@@ -74,6 +133,10 @@ namespace ToNRoundCounter.Models
             bool roundNeg = false;
             string terror = null;
             bool terrorNeg = false;
+            ConditionNode roundCond = null;
+            ConditionNode terrorCond = null;
+            string roundExprStr = null;
+            string terrorExprStr = null;
             int value;
             if (parts.Length == 1)
             {
@@ -92,12 +155,26 @@ namespace ToNRoundCounter.Models
                 if (!string.IsNullOrWhiteSpace(parts[0]))
                 {
                     roundNeg = parts[0].StartsWith("!");
-                    round = roundNeg ? parts[0].Substring(1) : parts[0];
+                    var tmp = roundNeg ? parts[0].Substring(1) : parts[0];
+                    if (!TryParseCondition(tmp, out roundCond, out error))
+                    {
+                        error = $"ラウンド指定 '{tmp}' が不正です: {error}";
+                        return false;
+                    }
+                    if (roundCond is ValueNode) round = tmp;
+                    roundExprStr = tmp;
                 }
                 if (!string.IsNullOrWhiteSpace(parts[1]))
                 {
                     terrorNeg = parts[1].StartsWith("!");
-                    terror = terrorNeg ? parts[1].Substring(1) : parts[1];
+                    var tmp = terrorNeg ? parts[1].Substring(1) : parts[1];
+                    if (!TryParseCondition(tmp, out terrorCond, out error))
+                    {
+                        error = $"テラー指定 '{tmp}' が不正です: {error}";
+                        return false;
+                    }
+                    if (terrorCond is ValueNode) terror = tmp;
+                    terrorExprStr = tmp;
                 }
                 if (parts[2] == "1" || parts[2] == "0" || parts[2] == "2")
                 {
@@ -114,19 +191,39 @@ namespace ToNRoundCounter.Models
                 error = "形式が不正です。'ラウンド:テラー:値' または '値' の形式で記述してください";
                 return false;
             }
-            rule = new AutoSuicideRule { Round = round, RoundNegate = roundNeg, Terror = terror, TerrorNegate = terrorNeg, Value = value };
+            rule = new AutoSuicideRule { Round = round, RoundNegate = roundNeg, Terror = terror, TerrorNegate = terrorNeg, Value = value, roundCondition = roundCond, terrorCondition = terrorCond, roundExpr = roundExprStr, terrorExpr = terrorExprStr };
             return true;
         }
 
         public bool Matches(string round, string terror, Func<string, string, bool> comparer)
         {
-            bool roundMatch = Round == null || (round != null && (RoundNegate ? !comparer(round, Round) : comparer(round, Round)));
-            bool terrorMatch = Terror == null || (terror != null && (TerrorNegate ? !comparer(terror, Terror) : comparer(terror, Terror)));
+            bool roundMatch;
+            if (roundCondition != null)
+            {
+                bool res = roundCondition.Evaluate(round, comparer);
+                roundMatch = RoundNegate ? !res : res;
+            }
+            else
+            {
+                roundMatch = Round == null || (round != null && (RoundNegate ? !comparer(round, Round) : comparer(round, Round)));
+            }
+            bool terrorMatch;
+            if (terrorCondition != null)
+            {
+                bool res = terrorCondition.Evaluate(terror, comparer);
+                terrorMatch = TerrorNegate ? !res : res;
+            }
+            else
+            {
+                terrorMatch = Terror == null || (terror != null && (TerrorNegate ? !comparer(terror, Terror) : comparer(terror, Terror)));
+            }
             return roundMatch && terrorMatch;
         }
 
         public bool Covers(AutoSuicideRule other)
         {
+            if (roundCondition != null || other.roundCondition != null || terrorCondition != null || other.terrorCondition != null)
+                return false;
             bool roundCovers = (Round == null && !RoundNegate) || (other.Round != null && Round == other.Round && RoundNegate == other.RoundNegate);
             bool terrorCovers = (Terror == null && !TerrorNegate) || (other.Terror != null && Terror == other.Terror && TerrorNegate == other.TerrorNegate);
             return roundCovers && terrorCovers;
@@ -134,13 +231,135 @@ namespace ToNRoundCounter.Models
 
         public override string ToString()
         {
-            if (Round == null && Terror == null)
+            if (roundExpr == null && terrorExpr == null)
             {
                 return Value.ToString();
             }
-            string r = Round == null ? "" : (RoundNegate ? "!" + Round : Round);
-            string t = Terror == null ? "" : (TerrorNegate ? "!" + Terror : Terror);
+            string r = roundExpr == null ? "" : (RoundNegate ? "!" + roundExpr : roundExpr);
+            string t = terrorExpr == null ? "" : (TerrorNegate ? "!" + terrorExpr : terrorExpr);
             return $"{r}:{t}:{Value}";
+        }
+
+        private static bool TryParseCondition(string expr, out ConditionNode node)
+        {
+            string dummy;
+            return TryParseCondition(expr, out node, out dummy);
+        }
+
+        private static bool TryParseCondition(string expr, out ConditionNode node, out string error)
+        {
+            node = null;
+            error = null;
+            if (expr == null)
+                return true;
+            expr = expr.Trim();
+            if (expr.Length == 0)
+            {
+                error = "空の条件です";
+                return false;
+            }
+            if (expr.StartsWith("(") && FindMatchingParen(expr, 0) == expr.Length - 1)
+            {
+                return TryParseCondition(expr.Substring(1, expr.Length - 2), out node, out error);
+            }
+            int depth = 0;
+            var andOps = new System.Collections.Generic.List<int>();
+            var orOps = new System.Collections.Generic.List<int>();
+            for (int i = 0; i < expr.Length - 1; i++)
+            {
+                char c = expr[i];
+                if (c == '(')
+                {
+                    depth++;
+                }
+                else if (c == ')')
+                {
+                    depth--;
+                    if (depth < 0)
+                    {
+                        error = "括弧の対応が取れていません";
+                        return false;
+                    }
+                }
+                if (depth == 0)
+                {
+                    if (c == '&' && expr[i + 1] == '&')
+                    {
+                        andOps.Add(i);
+                        i++;
+                    }
+                    else if (c == '|' && expr[i + 1] == '|')
+                    {
+                        orOps.Add(i);
+                        i++;
+                    }
+                }
+            }
+            if (depth != 0)
+            {
+                error = "括弧の対応が取れていません";
+                return false;
+            }
+            if (andOps.Count > 0 && orOps.Count > 0)
+            {
+                error = "&&と||が混在しています";
+                return false;
+            }
+            if (andOps.Count > 0)
+            {
+                var parts = new System.Collections.Generic.List<ConditionNode>();
+                int start = 0;
+                foreach (var idx in andOps)
+                {
+                    var sub = expr.Substring(start, idx - start);
+                    if (!TryParseCondition(sub, out var subNode, out error)) return false;
+                    parts.Add(subNode);
+                    start = idx + 2;
+                }
+                var last = expr.Substring(start);
+                if (!TryParseCondition(last, out var lastNode, out error)) return false;
+                parts.Add(lastNode);
+                node = parts[0];
+                for (int i = 1; i < parts.Count; i++)
+                    node = new AndNode(node, parts[i]);
+                return true;
+            }
+            if (orOps.Count > 0)
+            {
+                var parts = new System.Collections.Generic.List<ConditionNode>();
+                int start = 0;
+                foreach (var idx in orOps)
+                {
+                    var sub = expr.Substring(start, idx - start);
+                    if (!TryParseCondition(sub, out var subNode, out error)) return false;
+                    parts.Add(subNode);
+                    start = idx + 2;
+                }
+                var last = expr.Substring(start);
+                if (!TryParseCondition(last, out var lastNode, out error)) return false;
+                parts.Add(lastNode);
+                node = parts[0];
+                for (int i = 1; i < parts.Count; i++)
+                    node = new OrNode(node, parts[i]);
+                return true;
+            }
+            node = new ValueNode(expr.Trim());
+            return true;
+        }
+
+        private static int FindMatchingParen(string s, int start)
+        {
+            int depth = 0;
+            for (int i = start; i < s.Length; i++)
+            {
+                if (s[i] == '(') depth++;
+                else if (s[i] == ')')
+                {
+                    depth--;
+                    if (depth == 0) return i;
+                }
+            }
+            return -1;
         }
     }
 }
