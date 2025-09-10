@@ -679,6 +679,61 @@ namespace ToNRoundCounter.UI
                         }
                     }
                 }
+                else if (eventType == "STATS")
+                {
+                    string statName = json.Value<string>("Name") ?? string.Empty;
+                    JToken valueToken = json["Value"];
+                    if (!string.IsNullOrEmpty(statName) && valueToken != null)
+                    {
+                        stateService.UpdateStat(statName, valueToken.ToObject<object>());
+                    }
+                }
+                else if (eventType == "ALIVE")
+                {
+                    bool isAlive = json.Value<bool?>("Value") ?? true;
+                    if (stateService.CurrentRound != null)
+                    {
+                        if (!isAlive && !stateService.CurrentRound.IsDeath)
+                        {
+                            stateService.CurrentRound.IsDeath = true;
+                            FinalizeCurrentRound("☠");
+                        }
+                        else if (isAlive)
+                        {
+                            stateService.CurrentRound.IsDeath = false;
+                        }
+                    }
+                }
+                else if (eventType == "REBORN")
+                {
+                    bool reborn = json.Value<bool?>("Value") ?? false;
+                    if (stateService.CurrentRound != null && reborn)
+                    {
+                        stateService.CurrentRound.IsDeath = false;
+                    }
+                }
+                else if (eventType == "PAGE_COUNT")
+                {
+                    int pages = json.Value<int>("Value");
+                    if (stateService.CurrentRound != null)
+                    {
+                        stateService.CurrentRound.PageCount = pages;
+                    }
+                }
+                else if (eventType == "PLAYER_JOIN")
+                {
+                    if (stateService.CurrentRound != null)
+                    {
+                        stateService.CurrentRound.InstancePlayersCount++;
+                    }
+                }
+                else if (eventType == "PLAYER_LEAVE")
+                {
+                    if (stateService.CurrentRound != null && stateService.CurrentRound.InstancePlayersCount > 0)
+                    {
+                        stateService.CurrentRound.InstancePlayersCount--;
+                    }
+                }
                 else if (eventType == "OPTED_IN")
                 {
                     if (!isNotifyActivated)

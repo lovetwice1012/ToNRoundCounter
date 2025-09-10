@@ -24,5 +24,16 @@ namespace ToNRoundCounter.Tests
             Assert.Equal(1, terrorAgg.Survival);
             Assert.Equal(1, terrorAgg.Death);
         }
+
+        [Fact]
+        public void UpdateStat_StoresValue()
+        {
+            var service = new StateService();
+            service.UpdateStat("Survivals", 5);
+            Assert.True(service.Stats.ContainsKey("Survivals"));
+            Assert.Equal(5, service.Stats["Survivals"]);
+            service.Reset();
+            Assert.Empty(service.Stats);
+        }
     }
 }
