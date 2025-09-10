@@ -394,7 +394,10 @@ namespace ToNRoundCounter.UI
                 {
                     var roundName = rw.Round;
                     var baseValue = rw.Value;
-                    var exceptions = detailRules.Where(d => d.Round == roundName && (d.Value != baseValue || d.TerrorNegate)).ToList();
+                    var relatedDetails = detailRules.Where(d => d.Round == roundName).ToList();
+                    var exceptions = relatedDetails.Where(d => d.Value != baseValue || d.TerrorNegate).ToList();
+                    var sameActionDetails = relatedDetails.Except(exceptions).ToList();
+
                     if (!exceptions.Any())
                     {
                         simpleRounds.Add(Tuple.Create(roundName, baseValue));
@@ -420,6 +423,9 @@ namespace ToNRoundCounter.UI
                                 processedDetail.Add(t);
                         }
                     }
+
+                    foreach (var d in sameActionDetails)
+                        processedDetail.Add(d);
                 }
 
                 foreach (var g in simpleRounds.GroupBy(r => r.Item2))
