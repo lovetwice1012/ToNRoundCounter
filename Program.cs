@@ -1,7 +1,6 @@
 using System;
 using System.Windows.Forms;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Configuration;
 using Serilog;
 using ToNRoundCounter.UI;
 using ToNRoundCounter.Application;
@@ -25,12 +24,6 @@ namespace ToNRoundCounter
 
             var services = new ServiceCollection();
 
-            var configuration = new ConfigurationBuilder()
-                .AddJsonFile("appsettings.json", optional: true)
-                .AddEnvironmentVariables()
-                .Build();
-            services.AddSingleton<IConfiguration>(configuration);
-
             services.AddSingleton<ICancellationProvider, CancellationProvider>();
             services.AddSingleton<IEventLogger, EventLogger>();
             services.AddSingleton<IEventBus, EventBus>();
@@ -38,7 +31,7 @@ namespace ToNRoundCounter
             services.AddSingleton<IWebSocketClient>(sp => new WebSocketClient("ws://127.0.0.1:11398", sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ICancellationProvider>(), sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<AutoSuicideService>();
             services.AddSingleton<StateService>();
-            services.AddSingleton<IAppSettings, AppSettings>();
+            services.AddSingleton<IAppSettings>(sp => new AppSettings(sp.GetRequiredService<IEventLogger>(), sp.GetRequiredService<IEventBus>()));
             services.AddSingleton<IInputSender, NativeInputSender>();
             services.AddSingleton<IErrorReporter, ErrorReporter>();
             services.AddSingleton<IHttpClient, HttpClientWrapper>();

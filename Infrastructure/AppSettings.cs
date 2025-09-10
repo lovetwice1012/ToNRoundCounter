@@ -4,7 +4,6 @@ using System.Drawing;
 using System.IO;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
-using Microsoft.Extensions.Configuration;
 using ToNRoundCounter.Application;
 using ToNRoundCounter.Domain;
 
@@ -14,12 +13,10 @@ namespace ToNRoundCounter.Infrastructure
     {
         private readonly string settingsFile = "appsettings.json";
         private readonly IEventLogger _logger;
-        private readonly IConfiguration _configuration;
         private readonly IEventBus _bus;
 
-        public AppSettings(IConfiguration configuration, IEventLogger logger, IEventBus bus)
+        public AppSettings(IEventLogger logger, IEventBus bus)
         {
-            _configuration = configuration;
             _logger = logger;
             _bus = bus;
             Load();
@@ -57,7 +54,11 @@ namespace ToNRoundCounter.Infrastructure
         {
             try
             {
-                _configuration.Bind(this);
+                if (File.Exists(settingsFile))
+                {
+                    var json = File.ReadAllText(settingsFile);
+                    JsonConvert.PopulateObject(json, this);
+                }
                 var errors = Validate();
                 if (errors.Count > 0)
                 {
