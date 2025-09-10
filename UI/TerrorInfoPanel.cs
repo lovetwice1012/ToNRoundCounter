@@ -32,6 +32,20 @@ namespace ToNRoundCounter.UI
             this.Controls.Add(flow);
         }
 
+        public void ApplyTheme()
+        {
+            this.BackColor = Theme.Current.PanelBackground;
+            flow.BackColor = Theme.Current.PanelBackground;
+            foreach (Control cell in flow.Controls)
+            {
+                cell.BackColor = Theme.Current.PanelBackground;
+                foreach (Control lbl in cell.Controls)
+                {
+                    lbl.ForeColor = Theme.Current.Foreground;
+                }
+            }
+        }
+
         public void UpdateInfo(List<string> names, JObject data, int width)
         {
             flow.Controls.Clear();

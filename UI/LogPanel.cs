@@ -37,5 +37,11 @@ namespace ToNRoundCounter.UI
             RoundLogTextBox.Size = new Size(540, 150);
             this.Controls.Add(RoundLogTextBox);
         }
+
+        public void ApplyTheme()
+        {
+            AggregateStatsTextBox.ForeColor = Theme.Current.Foreground;
+            RoundLogTextBox.ForeColor = Theme.Current.Foreground;
+        }
     }
 }
