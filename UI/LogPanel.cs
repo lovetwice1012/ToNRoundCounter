@@ -21,7 +21,7 @@ namespace ToNRoundCounter.UI
             AggregateStatsTextBox.ReadOnly = true;
             AggregateStatsTextBox.BorderStyle = BorderStyle.FixedSingle;
             AggregateStatsTextBox.Font = new Font("Arial", 10);
-            AggregateStatsTextBox.BackColor = Theme.Current.Background;
+            AggregateStatsTextBox.BackColor = Theme.Current == Theme.Light ? Color.White : Theme.Current.Background;
             AggregateStatsTextBox.ForeColor = Theme.Current.Foreground;
             AggregateStatsTextBox.Location = new Point(margin, margin);
             AggregateStatsTextBox.Size = new Size(540, 150);
@@ -31,7 +31,7 @@ namespace ToNRoundCounter.UI
             RoundLogTextBox.ReadOnly = true;
             RoundLogTextBox.BorderStyle = BorderStyle.FixedSingle;
             RoundLogTextBox.Font = new Font("Arial", 10);
-            RoundLogTextBox.BackColor = Theme.Current.Background;
+            RoundLogTextBox.BackColor = Theme.Current == Theme.Light ? Color.White : Theme.Current.Background;
             RoundLogTextBox.ForeColor = Theme.Current.Foreground;
             RoundLogTextBox.Location = new Point(margin, AggregateStatsTextBox.Bottom + margin);
             RoundLogTextBox.Size = new Size(540, 150);

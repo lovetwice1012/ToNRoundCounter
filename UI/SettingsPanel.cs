@@ -457,11 +457,13 @@ namespace ToNRoundCounter.UI
                     }
                 }
 
-                var negRoundGroups = rulesCheck.Where(r => r.Round != null && r.Terror == null && r.RoundNegate)
-                                               .GroupBy(r => r.Value);
+                var negRoundGroups = rulesCheck.Where(r => r.TerrorExpression == null && r.RoundNegate)
+                                               .Select(r => new { r.Value, Rounds = r.GetRoundTerms() })
+                                               .Where(x => x.Rounds != null)
+                                               .GroupBy(x => x.Value);
                 foreach (var g in negRoundGroups)
                 {
-                    var rounds = g.Select(r => r.Round).ToList();
+                    var rounds = g.SelectMany(x => x.Rounds).Distinct().ToList();
                     bool useBullet = ShouldBullet(rounds);
                     if (useBullet)
                     {
@@ -497,11 +499,13 @@ namespace ToNRoundCounter.UI
                     }
                 }
 
-                var terrorGroups = rulesCheck.Where(r => r.Round == null && r.Terror != null)
-                                             .GroupBy(r => new { r.TerrorNegate, r.Value });
+                var terrorGroups = rulesCheck.Where(r => r.RoundExpression == null && r.TerrorExpression != null)
+                                             .Select(r => new { r.TerrorNegate, r.Value, Terrors = r.GetTerrorTerms() })
+                                             .Where(x => x.Terrors != null)
+                                             .GroupBy(x => new { x.TerrorNegate, x.Value });
                 foreach (var g in terrorGroups)
                 {
-                    var terrors = g.Select(r => r.Terror).ToList();
+                    var terrors = g.SelectMany(x => x.Terrors).Distinct().ToList();
                     bool useBullet = ShouldBullet(terrors);
                     if (g.Key.TerrorNegate)
                     {
