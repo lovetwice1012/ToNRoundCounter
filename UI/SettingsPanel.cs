@@ -476,6 +476,38 @@ namespace ToNRoundCounter.UI
                     }
                 }
 
+                var negRoundTerrorRules = rulesCheck.Where(r => r.RoundNegate && r.TerrorExpression != null)
+                                                     .GroupBy(r => r.Value);
+                foreach (var g in negRoundTerrorRules)
+                {
+                    foreach (var rule in g)
+                    {
+                        var rounds = rule.GetRoundTerms() ?? new List<string> { rule.RoundExpression };
+                        var terrors = rule.GetTerrorTerms() ?? new List<string> { rule.TerrorExpression };
+                        bool roundBullet = ShouldBullet(rounds);
+                        bool terrorBullet = ShouldBullet(terrors);
+                        string roundPart = roundBullet
+                            ? "以下のラウンド以外のラウンドで"
+                            : $"{string.Join(",", rounds)}以外のラウンドで";
+                        string terrorPart;
+                        if (rule.TerrorNegate)
+                            terrorPart = terrorBullet ? "以下のテラー以外が出現した時" : $"{string.Join(",", terrors)}以外が出現した時";
+                        else
+                            terrorPart = terrorBullet ? "以下のテラーが出現した時" : $"{string.Join(",", terrors)}が出現した時";
+                        sb.AppendLine($"{roundPart}{terrorPart}、{GetActionText(rule.Value)}");
+                        if (roundBullet)
+                        {
+                            foreach (var r in rounds)
+                                sb.AppendLine($"・{r}");
+                        }
+                        if (terrorBullet)
+                        {
+                            foreach (var t in terrors)
+                                sb.AppendLine($"・{t}");
+                        }
+                    }
+                }
+
                 var remainingDetail = detailRules.Where(d => !processedDetail.Contains(d))
                                                 .GroupBy(d => d.Round);
                 foreach (var rg in remainingDetail)
