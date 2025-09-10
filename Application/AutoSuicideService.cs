@@ -2,7 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ToNRoundCounter.Services
+namespace ToNRoundCounter.Application
 {
     /// <summary>
     /// Provides scheduling utilities for auto suicide logic.

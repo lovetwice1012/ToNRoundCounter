@@ -2,12 +2,14 @@
 using System.Drawing;
 using System.Windows.Forms;
 using ToNRoundCounter.UI;
-using ToNRoundCounter.Utils;
+using ToNRoundCounter.Application;
+using ToNRoundCounter.Infrastructure;
 
 namespace ToNRoundCounter.UI
 {
     public class SettingsForm : Form
     {
+        private readonly IAppSettings _settings;
         private SettingsPanel settingsPanel;
         private Button btnOK;
         private Button btnCancel;
@@ -15,6 +17,7 @@ namespace ToNRoundCounter.UI
         public SettingsPanel SettingsPanel { get { return settingsPanel; } }
 
         public SettingsForm()
+            _settings = settings;
         {
             this.Text = LanguageManager.Translate("設定");
             this.Size = new Size(1150, 900);
@@ -25,7 +28,7 @@ namespace ToNRoundCounter.UI
         private void InitializeComponent()
         {
             // 設定パネルをフォーム全体に配置（下部にボタン用のスペースを確保するため Fill を使用）
-            settingsPanel = new SettingsPanel();
+            settingsPanel = new SettingsPanel(_settings);
             settingsPanel.Dock = DockStyle.Fill;
 
             // 下部にボタン専用のパネルを追加

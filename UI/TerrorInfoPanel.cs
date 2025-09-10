@@ -7,7 +7,7 @@ using Newtonsoft.Json.Linq;
 
 namespace ToNRoundCounter.UI
 {
-    public class TerrorInfoPanel : Panel
+    public class TerrorInfoPanel : UserControl
     {
 
         private const int CellWidth = 240;
@@ -16,7 +16,7 @@ namespace ToNRoundCounter.UI
         public TerrorInfoPanel()
         {
             this.BorderStyle = BorderStyle.FixedSingle;
-            this.BackColor = Color.DarkGray;
+            this.BackColor = Theme.Current.PanelBackground;
 
             this.AutoSize = false;
             this.Visible = false;
@@ -24,7 +24,7 @@ namespace ToNRoundCounter.UI
 
             flow = new FlowLayoutPanel();
             flow.AutoSize = false;
-
+            flow.BackColor = Theme.Current.PanelBackground;
             flow.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             flow.WrapContents = true;
             flow.FlowDirection = FlowDirection.LeftToRight;
@@ -84,6 +84,7 @@ namespace ToNRoundCounter.UI
         {
             var cell = new TableLayoutPanel();
             cell.AutoSize = true;
+            cell.BackColor = Theme.Current.PanelBackground;
 
             cell.MaximumSize = new Size(CellWidth, 0);
             cell.MinimumSize = new Size(CellWidth, 0);
@@ -99,7 +100,7 @@ namespace ToNRoundCounter.UI
                 Text = name,
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleCenter,
-                ForeColor = Color.White,
+                ForeColor = Theme.Current.Foreground,
 
                 AutoSize = true,
                 MaximumSize = new Size(CellWidth, 0)
@@ -123,7 +124,7 @@ namespace ToNRoundCounter.UI
                         Text = prop.Name,
                         Dock = DockStyle.Fill,
                         TextAlign = ContentAlignment.MiddleCenter,
-                        ForeColor = Color.White,
+                        ForeColor = Theme.Current.Foreground,
                         AutoSize = true,
                         MaximumSize = new Size(CellWidth / 2, 0)
                     };
@@ -132,7 +133,7 @@ namespace ToNRoundCounter.UI
                         Text = prop.Value.ToString(),
                         Dock = DockStyle.Fill,
                         TextAlign = ContentAlignment.MiddleLeft,
-                        ForeColor = Color.White,
+                        ForeColor = Theme.Current.Foreground,
                         AutoSize = true,
                         MaximumSize = new Size(CellWidth / 2, 0)
                     };

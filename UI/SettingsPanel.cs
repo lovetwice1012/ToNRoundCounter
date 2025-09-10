@@ -1,18 +1,21 @@
 ﻿using System;
 using System.Drawing;
 using System.Windows.Forms;
-using ToNRoundCounter.Utils;
+using ToNRoundCounter.Application;
+using ToNRoundCounter.Infrastructure;
+using ToNRoundCounter.Domain;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
 using Newtonsoft.Json;
-using ToNRoundCounter.Models;
+using ToNRoundCounter.Domain;
 using System.Text;
 
 namespace ToNRoundCounter.UI
 {
     public class SettingsPanel : UserControl
     {
+        private readonly IAppSettings _settings;
 
 
         public NumericUpDown oscPortNumericUpDown { get; private set; }
@@ -65,8 +68,9 @@ namespace ToNRoundCounter.UI
         public TextBox apiKeyTextBox { get; private set; }
 
 
-        public SettingsPanel()
+        public SettingsPanel(IAppSettings settings)
         {
+            _settings = settings;
             this.BorderStyle = BorderStyle.FixedSingle;
 
             int margin = 10;
@@ -92,7 +96,7 @@ namespace ToNRoundCounter.UI
             oscPortNumericUpDown = new NumericUpDown();
             oscPortNumericUpDown.Minimum = 1024;
             oscPortNumericUpDown.Maximum = 65535;
-            oscPortNumericUpDown.Value = AppSettings.OSCPort;  // AppSettings.OSCPort の初期値を使用
+            oscPortNumericUpDown.Value = _settings.OSCPort;  // _settings.OSCPort の初期値を使用
             oscPortNumericUpDown.Location = new Point(oscPortLabel.Right + 10, 20);
             grpOsc.Controls.Add(oscPortNumericUpDown);
 
@@ -109,7 +113,7 @@ namespace ToNRoundCounter.UI
             autoSuicideCheckBox.Text = LanguageManager.Translate("自動自殺を有効にする");
             autoSuicideCheckBox.AutoSize = true;
             autoSuicideCheckBox.Location = new Point(innerMargin, autoInnerY);
-            autoSuicideCheckBox.Checked = AppSettings.AutoSuicideEnabled;
+            autoSuicideCheckBox.Checked = _settings.AutoSuicideEnabled;
             //autoSuicideCheckBox.Enabled = false;
             grpAutoSuicide.Controls.Add(autoSuicideCheckBox);
 
@@ -142,8 +146,8 @@ namespace ToNRoundCounter.UI
             autoSuicideRoundListBox.Items.Add("サボタージュ");
             autoSuicideRoundListBox.Items.Add("ブラッドバス");
             autoSuicideRoundListBox.Items.Add("ミッドナイト");
-            //autoSuicideRoundListBox.Items.Add("走れ！");
-            autoSuicideRoundListBox.Items.Add("コールドナイト");
+            autoSuicideRoundListBox.Items.Add("走れ！");
+            autoSuicideRoundListBox.Items.Add("寒い夜");
             autoSuicideRoundListBox.Items.Add("ミスティックムーン");
             autoSuicideRoundListBox.Items.Add("ブラッドムーン");
             autoSuicideRoundListBox.Items.Add("トワイライト");
@@ -158,7 +162,7 @@ namespace ToNRoundCounter.UI
             for (int i = 0; i < autoSuicideRoundListBox.Items.Count; i++)
             {
                 string item = autoSuicideRoundListBox.Items[i].ToString();
-                autoSuicideRoundListBox.SetItemChecked(i, AppSettings.AutoSuicideRoundTypes.Contains(item));
+                autoSuicideRoundListBox.SetItemChecked(i, _settings.AutoSuicideRoundTypes.Contains(item));
             }
             //autoSuicideRoundListBox.Enabled = false;
             grpAutoSuicide.Controls.Add(autoSuicideRoundListBox);
@@ -184,7 +188,7 @@ namespace ToNRoundCounter.UI
             autoSuicidePresetComboBox.Name = "AutoSuicidePresetComboBox";
             autoSuicidePresetComboBox.Location = new Point(autoSuicidePresetLabel.Right + 10, autoSuicideRoundListBox.Bottom + 5);
             autoSuicidePresetComboBox.Width = 200;
-            foreach (var key in AppSettings.AutoSuicidePresets.Keys)
+            foreach (var key in _settings.AutoSuicidePresets.Keys)
             {
                 autoSuicidePresetComboBox.Items.Add(key);
             }
@@ -194,7 +198,7 @@ namespace ToNRoundCounter.UI
             autoSuicidePresetSaveButton.Text = LanguageManager.Translate("保存");
             autoSuicidePresetSaveButton.AutoSize = true;
             autoSuicidePresetSaveButton.Location = new Point(autoSuicidePresetComboBox.Right + 10, autoSuicideRoundListBox.Bottom + 5);
-            autoSuicidePresetSaveButton.Click += (s, e) =>
+            autoSuicidePresetSaveButton.Click += async (s, e) =>
             {
                 string name = autoSuicidePresetComboBox.Text.Trim();
                 if (string.IsNullOrEmpty(name))
@@ -209,10 +213,10 @@ namespace ToNRoundCounter.UI
                     DetailCustom = GetCustomAutoSuicideLines(),
                     Fuzzy = autoSuicideFuzzyCheckBox.Checked
                 };
-                AppSettings.AutoSuicidePresets[name] = preset;
+                _settings.AutoSuicidePresets[name] = preset;
                 if (!autoSuicidePresetComboBox.Items.Contains(name))
                     autoSuicidePresetComboBox.Items.Add(name);
-                AppSettings.Save();
+                await _settings.SaveAsync();
                 MessageBox.Show(LanguageManager.Translate("プリセットを保存しました。"), LanguageManager.Translate("情報"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             };
             grpAutoSuicide.Controls.Add(autoSuicidePresetSaveButton);
@@ -224,9 +228,9 @@ namespace ToNRoundCounter.UI
             autoSuicidePresetLoadButton.Click += (s, e) =>
             {
                 string name = autoSuicidePresetComboBox.Text.Trim();
-                if (!string.IsNullOrEmpty(name) && AppSettings.AutoSuicidePresets.ContainsKey(name))
+                if (!string.IsNullOrEmpty(name) && _settings.AutoSuicidePresets.ContainsKey(name))
                 {
-                    var preset = AppSettings.AutoSuicidePresets[name];
+                    var preset = _settings.AutoSuicidePresets[name];
                     for (int i = 0; i < autoSuicideRoundListBox.Items.Count; i++)
                     {
                         string item = autoSuicideRoundListBox.Items[i].ToString();
@@ -247,7 +251,7 @@ namespace ToNRoundCounter.UI
             autoSuicidePresetImportButton.Text = LanguageManager.Translate("インポート");
             autoSuicidePresetImportButton.AutoSize = true;
             autoSuicidePresetImportButton.Location = new Point(autoSuicidePresetSaveButton.Left, autoSuicidePresetSaveButton.Bottom + 5);
-            autoSuicidePresetImportButton.Click += (s, e) =>
+            autoSuicidePresetImportButton.Click += async (s, e) =>
             {
                 OpenFileDialog dialog = new OpenFileDialog();
                 dialog.Filter = "JSON Files|*.json|All Files|*.*";
@@ -260,10 +264,10 @@ namespace ToNRoundCounter.UI
                         if (preset != null)
                         {
                             string name = Path.GetFileNameWithoutExtension(dialog.FileName);
-                            AppSettings.AutoSuicidePresets[name] = preset;
+                            _settings.AutoSuicidePresets[name] = preset;
                             if (!autoSuicidePresetComboBox.Items.Contains(name))
                                 autoSuicidePresetComboBox.Items.Add(name);
-                            AppSettings.Save();
+                            await _settings.SaveAsync();
                             MessageBox.Show(LanguageManager.Translate("プリセットをインポートしました。"), LanguageManager.Translate("情報"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                         }
                     }
@@ -282,14 +286,14 @@ namespace ToNRoundCounter.UI
             autoSuicidePresetExportButton.Click += (s, e) =>
             {
                 string name = autoSuicidePresetComboBox.Text.Trim();
-                if (!string.IsNullOrEmpty(name) && AppSettings.AutoSuicidePresets.ContainsKey(name))
+                if (!string.IsNullOrEmpty(name) && _settings.AutoSuicidePresets.ContainsKey(name))
                 {
                     SaveFileDialog dialog = new SaveFileDialog();
                     dialog.Filter = "JSON Files|*.json|All Files|*.*";
                     dialog.FileName = name + ".json";
                     if (dialog.ShowDialog() == DialogResult.OK)
                     {
-                        var preset = AppSettings.AutoSuicidePresets[name];
+                        var preset = _settings.AutoSuicidePresets[name];
                         File.WriteAllText(dialog.FileName, JsonConvert.SerializeObject(preset, Formatting.Indented));
                         MessageBox.Show(LanguageManager.Translate("プリセットをエクスポートしました。"), LanguageManager.Translate("情報"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
@@ -299,15 +303,15 @@ namespace ToNRoundCounter.UI
 
             autoSuicideAutoRuleCount = autoSuicideRoundListBox.Items.Count;
             var lines = new List<string>();
-            if (!AppSettings.AutoSuicideUseDetail)
+            if (!_settings.AutoSuicideUseDetail)
             {
                 var autoLines = GenerateAutoSuicideLines();
                 lines.AddRange(autoLines);
             }
-            if (AppSettings.AutoSuicideDetailCustom != null)
-                lines.AddRange(AppSettings.AutoSuicideDetailCustom);
+            if (_settings.AutoSuicideDetailCustom != null)
+                lines.AddRange(_settings.AutoSuicideDetailCustom);
             var cleaned = CleanRules(lines);
-            if (!AppSettings.AutoSuicideUseDetail)
+            if (!_settings.AutoSuicideUseDetail)
             {
                 var split = SplitAutoAndCustom(cleaned);
                 autoSuicideAutoRuleCount = split.autoLines.Count;
@@ -318,9 +322,9 @@ namespace ToNRoundCounter.UI
                 autoSuicideAutoRuleCount = 0;
                 autoSuicideDetailTextBox.Text = string.Join(Environment.NewLine, cleaned.Select(r => r.ToString()));
             }
-            autoSuicideFuzzyCheckBox.Checked = AppSettings.AutoSuicideFuzzyMatch;
+            autoSuicideFuzzyCheckBox.Checked = _settings.AutoSuicideFuzzyMatch;
             autoSuicideUseDetailCheckBox.CheckedChanged += AutoSuicideUseDetailCheckBox_CheckedChanged;
-            autoSuicideUseDetailCheckBox.Checked = AppSettings.AutoSuicideUseDetail;
+            autoSuicideUseDetailCheckBox.Checked = _settings.AutoSuicideUseDetail;
 
             autoSuicideSettingsConfirmButton = new Button();
             autoSuicideSettingsConfirmButton.Text = LanguageManager.Translate("設定内容確認");
@@ -336,7 +340,7 @@ namespace ToNRoundCounter.UI
                     string line = rawLines[i].Trim();
                     if (string.IsNullOrEmpty(line))
                         continue;
-                    if (Models.AutoSuicideRule.TryParseDetailed(line, out var _, out var err))
+                    if (AutoSuicideRule.TryParseDetailed(line, out var _, out var err))
                     {
                         trimmed.Add(line);
                     }
@@ -387,7 +391,7 @@ namespace ToNRoundCounter.UI
 
                 var roundWildcards = rulesCheck.Where(r => r.Round != null && r.Terror == null && !r.RoundNegate).ToList();
                 var detailRules = rulesCheck.Where(r => r.Round != null && r.Terror != null && !r.RoundNegate).ToList();
-                var processedDetail = new HashSet<Models.AutoSuicideRule>();
+                var processedDetail = new HashSet<AutoSuicideRule>();
                 var simpleRounds = new List<Tuple<string, int>>();
 
                 foreach (var rw in roundWildcards)
@@ -633,7 +637,7 @@ namespace ToNRoundCounter.UI
             RoundTypeStatsListBox.Items.Add("ブラッドバス");
             RoundTypeStatsListBox.Items.Add("ミッドナイト");
             RoundTypeStatsListBox.Items.Add("走れ！");
-            RoundTypeStatsListBox.Items.Add("コールドナイト");
+            RoundTypeStatsListBox.Items.Add("寒い夜");
             RoundTypeStatsListBox.Items.Add("ミスティックムーン");
             RoundTypeStatsListBox.Items.Add("ブラッドムーン");
             RoundTypeStatsListBox.Items.Add("トワイライト");
@@ -642,7 +646,7 @@ namespace ToNRoundCounter.UI
             RoundTypeStatsListBox.Items.Add("8ページ");
             RoundTypeStatsListBox.Items.Add("狂気");
             RoundTypeStatsListBox.Items.Add("ゴースト");
-            RoundTypeStatsListBox.Items.Add("ダブル・トラブル");
+            RoundTypeStatsListBox.Items.Add("ダブルトラブル");
             RoundTypeStatsListBox.Items.Add("EX");
             RoundTypeStatsListBox.Items.Add("アンバウンド");
             grpAdditional.Controls.Add(RoundTypeStatsListBox);
@@ -766,7 +770,7 @@ namespace ToNRoundCounter.UI
             grpApiKey.Controls.Add(apiKeyLabel);
             apiKeyTextBox = new TextBox();
             apiKeyTextBox.Name = "ApiKeyTextBox";
-            apiKeyTextBox.Text = AppSettings.apikey; // AppSettings.apikey の初期値を使用
+            apiKeyTextBox.Text = _settings.apikey; // _settings.apikey の初期値を使用
             apiKeyTextBox.Location = new Point(apiKeyLabel.Right + 10, apiInnerY);
             apiKeyTextBox.Width = 400; // テキストボックスの幅を設定
             grpApiKey.Controls.Add(apiKeyTextBox);
@@ -804,15 +808,15 @@ namespace ToNRoundCounter.UI
             autoSuicideDetailTextBox.Text = string.Join(Environment.NewLine, autoLines.Concat(custom));
         }
 
-        private List<Models.AutoSuicideRule> CleanRules(IEnumerable<string> lines)
+        private List<AutoSuicideRule> CleanRules(IEnumerable<string> lines)
         {
-            var rules = new List<Models.AutoSuicideRule>();
+            var rules = new List<AutoSuicideRule>();
             foreach (var line in lines)
             {
-                if (Models.AutoSuicideRule.TryParse(line, out var r))
+                if (AutoSuicideRule.TryParse(line, out var r))
                     rules.Add(r);
             }
-            var cleaned = new List<Models.AutoSuicideRule>();
+            var cleaned = new List<AutoSuicideRule>();
             for (int i = rules.Count - 1; i >= 0; i--)
             {
                 var r = rules[i];
@@ -824,7 +828,7 @@ namespace ToNRoundCounter.UI
             return cleaned;
         }
 
-        private (List<string> autoLines, List<string> customLines) SplitAutoAndCustom(List<Models.AutoSuicideRule> rules)
+        private (List<string> autoLines, List<string> customLines) SplitAutoAndCustom(List<AutoSuicideRule> rules)
         {
             var autoLines = new List<string>();
             var customLines = new List<string>();

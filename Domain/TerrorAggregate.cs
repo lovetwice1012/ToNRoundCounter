@@ -1,6 +1,6 @@
-﻿namespace ToNRoundCounter.Models
+﻿namespace ToNRoundCounter.Domain
 {
-    public class RoundAggregate
+    public class TerrorAggregate
     {
         public int Total { get; set; }
         public int Death { get; set; }
