@@ -125,5 +125,14 @@ namespace ToNRoundCounter.UI
 
             this.Height = currentY + margin;
         }
+
+        public void ApplyTheme()
+        {
+            this.BackColor = Theme.Current.PanelBackground;
+            foreach (Control ctrl in Controls)
+            {
+                ctrl.ForeColor = Theme.Current.Foreground;
+            }
+        }
     }
 }

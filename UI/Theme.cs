@@ -31,7 +31,7 @@ namespace ToNRoundCounter.UI
             PanelBackground = Color.Gainsboro
         };
 
-        public static ThemeColors Current { get; private set; } = Dark;
+        public static ThemeColors Current { get; private set; } = Light;
 
         public static void SetTheme(ThemeType type)
         {

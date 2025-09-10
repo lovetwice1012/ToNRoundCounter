@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Threading.Tasks;
 using ToNRoundCounter.Domain;
+using ToNRoundCounter.UI;
 
 namespace ToNRoundCounter.Application
 {
@@ -30,6 +31,7 @@ namespace ToNRoundCounter.Application
         List<string> RoundTypeStats { get; set; }
         bool AutoSuicideEnabled { get; set; }
         string apikey { get; set; }
+        ThemeType Theme { get; set; }
         void Load();
         Task SaveAsync();
     }

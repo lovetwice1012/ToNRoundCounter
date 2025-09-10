@@ -66,6 +66,8 @@ namespace ToNRoundCounter.UI
         public Label apiKeyLabel { get; private set; }
         public TextBox apiKeyTextBox { get; private set; }
 
+        public CheckBox DarkThemeCheckBox { get; private set; }
+
 
         public SettingsPanel(IAppSettings settings)
         {
@@ -79,6 +81,14 @@ namespace ToNRoundCounter.UI
 
             int currentY = margin;
             int innerMargin = 10;
+
+            DarkThemeCheckBox = new CheckBox();
+            DarkThemeCheckBox.Text = LanguageManager.Translate("ダークテーマを使用する");
+            DarkThemeCheckBox.AutoSize = true;
+            DarkThemeCheckBox.Location = new Point(margin, currentY);
+            DarkThemeCheckBox.Checked = _settings.Theme == ThemeType.Dark;
+            this.Controls.Add(DarkThemeCheckBox);
+            currentY += DarkThemeCheckBox.Height + margin;
 
             GroupBox grpOsc = new GroupBox();
             grpOsc.Text = LanguageManager.Translate("OSC設定");

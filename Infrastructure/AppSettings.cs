@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Newtonsoft.Json;
 using ToNRoundCounter.Application;
 using ToNRoundCounter.Domain;
+using ToNRoundCounter.UI;
 
 namespace ToNRoundCounter.Infrastructure
 {
@@ -24,9 +25,9 @@ namespace ToNRoundCounter.Infrastructure
 
         public int OSCPort { get; set; } = 9001;
         public bool OSCPortChanged { get; set; } = false;
-        public Color BackgroundColor_InfoPanel { get; set; } = Color.DarkGray;
-        public Color BackgroundColor_Stats { get; set; } = Color.DarkGray;
-        public Color BackgroundColor_Log { get; set; } = Color.DarkGray;
+        public Color BackgroundColor_InfoPanel { get; set; } = Color.Gainsboro;
+        public Color BackgroundColor_Stats { get; set; } = Color.Gainsboro;
+        public Color BackgroundColor_Log { get; set; } = Color.Gainsboro;
         public Color FixedTerrorColor { get; set; } = Color.Empty;
         public bool ShowStats { get; set; } = true;
         public bool ShowDebug { get; set; } = false;
@@ -49,6 +50,7 @@ namespace ToNRoundCounter.Infrastructure
         };
         public bool AutoSuicideEnabled { get; set; }
         public string apikey { get; set; } = string.Empty;
+        public ThemeType Theme { get; set; } = ThemeType.Light;
 
         public void Load()
         {
@@ -116,7 +118,8 @@ namespace ToNRoundCounter.Infrastructure
                 AutoSuicideDetailCustom = AutoSuicideDetailCustom,
                 AutoSuicideFuzzyMatch = AutoSuicideFuzzyMatch,
                 AutoSuicideUseDetail = AutoSuicideUseDetail,
-                apikey = apikey
+                apikey = apikey,
+                Theme = Theme
             };
             string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
             File.WriteAllText(settingsFile, json);
@@ -149,5 +152,6 @@ namespace ToNRoundCounter.Infrastructure
         public bool AutoSuicideFuzzyMatch { get; set; }
         public bool AutoSuicideUseDetail { get; set; }
         public string apikey { get; set; }
+        public ThemeType Theme { get; set; }
     }
 }

@@ -107,8 +107,10 @@ namespace ToNRoundCounter.UI
             terrorColors = new Dictionary<string, Color>();
             LoadTerrorInfo();
             _settings.Load();
+            Theme.SetTheme(_settings.Theme);
             LoadAutoSuicideRules();
             InitializeComponents();
+            ApplyTheme();
             this.Load += MainForm_Load;
 
             _eventBus.Subscribe<WebSocketConnected>(_ => _dispatcher.Invoke(() =>
@@ -254,6 +256,20 @@ namespace ToNRoundCounter.UI
             this.Controls.Add(splitContainerMain);
         }
 
+        private void ApplyTheme()
+        {
+            this.BackColor = Theme.Current.Background;
+            lblDebugInfo.ForeColor = Theme.Current.Foreground;
+            InfoPanel.ApplyTheme();
+            InfoPanel.BackColor = _settings.Theme == ThemeType.Dark ? Theme.Current.PanelBackground : _settings.BackgroundColor_InfoPanel;
+            rtbStatsDisplay.ForeColor = Theme.Current.Foreground;
+            rtbStatsDisplay.BackColor = _settings.Theme == ThemeType.Dark ? Theme.Current.PanelBackground : _settings.BackgroundColor_Stats;
+            logPanel.ApplyTheme();
+            logPanel.AggregateStatsTextBox.BackColor = _settings.Theme == ThemeType.Dark ? Theme.Current.PanelBackground : _settings.BackgroundColor_Stats;
+            logPanel.RoundLogTextBox.BackColor = _settings.Theme == ThemeType.Dark ? Theme.Current.PanelBackground : _settings.BackgroundColor_Log;
+            terrorInfoPanel.ApplyTheme();
+        }
+
         private void MainForm_Resize(object sender, EventArgs e)
         {
             int margin = 10;
@@ -303,6 +319,7 @@ namespace ToNRoundCounter.UI
                 settingsForm.SettingsPanel.StatsBgLabel.BackColor = _settings.BackgroundColor_Stats;
                 settingsForm.SettingsPanel.LogBgLabel.BackColor = _settings.BackgroundColor_Log;
                 settingsForm.SettingsPanel.FixedTerrorColorLabel.BackColor = _settings.FixedTerrorColor;
+                settingsForm.SettingsPanel.DarkThemeCheckBox.Checked = _settings.Theme == ThemeType.Dark;
                 for (int i = 0; i < settingsForm.SettingsPanel.RoundTypeStatsListBox.Items.Count; i++)
                 {
                     string item = settingsForm.SettingsPanel.RoundTypeStatsListBox.Items[i].ToString();
@@ -355,6 +372,7 @@ namespace ToNRoundCounter.UI
                     settingsForm.SettingsPanel.CleanAutoSuicideDetailRules();
                     _settings.AutoSuicideDetailCustom = settingsForm.SettingsPanel.GetCustomAutoSuicideLines();
                     _settings.AutoSuicideFuzzyMatch = settingsForm.SettingsPanel.autoSuicideFuzzyCheckBox.Checked;
+                    _settings.Theme = settingsForm.SettingsPanel.DarkThemeCheckBox.Checked ? ThemeType.Dark : ThemeType.Light;
                     LoadAutoSuicideRules();
 
                     _settings.apikey = settingsForm.SettingsPanel.apiKeyTextBox.Text.Trim();
@@ -368,9 +386,8 @@ namespace ToNRoundCounter.UI
                         return;
                     }
 
-                    InfoPanel.BackColor = _settings.BackgroundColor_InfoPanel;
-                    rtbStatsDisplay.BackColor = _settings.BackgroundColor_Stats;
-                    logPanel.RoundLogTextBox.BackColor = _settings.BackgroundColor_Log;
+                    Theme.SetTheme(_settings.Theme);
+                    ApplyTheme();
                     InfoPanel.TerrorValue.ForeColor = _settings.FixedTerrorColor;
                     UpdateAggregateStatsDisplay();
                     UpdateDisplayVisibility();
@@ -447,6 +464,8 @@ namespace ToNRoundCounter.UI
         {
             _cancellation.Cancel();
             webSocketClient.Stop();
+            velocityTimer?.Stop();
+            velocityTimer?.Dispose();
             if (oscRepeaterProcess != null && !oscRepeaterProcess.HasExited)
             {
                 try
