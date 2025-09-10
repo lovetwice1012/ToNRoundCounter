@@ -38,13 +38,18 @@ namespace ToNRoundCounter.Services
                     Connected?.Invoke();
                     await ReceiveLoopAsync();
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Console.WriteLine($"WebSocket connection error: {ex.Message}");
                     Disconnected?.Invoke();
                     if (!_cts.Token.IsCancellationRequested)
                     {
                         await Task.Delay(300, _cts.Token);
                     }
+                }
+                finally
+                {
+                    _socket?.Dispose();
                 }
             }
         }
@@ -52,39 +57,49 @@ namespace ToNRoundCounter.Services
         private async Task ReceiveLoopAsync()
         {
             var buffer = new byte[8192];
-            while (_socket.State == WebSocketState.Open && !_cts.Token.IsCancellationRequested)
+            try
             {
-                var segment = new ArraySegment<byte>(buffer);
-                WebSocketReceiveResult result = null;
-                try
+                while (_socket.State == WebSocketState.Open && !_cts.Token.IsCancellationRequested)
                 {
-                    result = await _socket.ReceiveAsync(segment, _cts.Token);
-                }
-                catch
-                {
-                    break;
-                }
-                if (result.MessageType == WebSocketMessageType.Close)
-                {
-                    await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", _cts.Token);
-                    break;
-                }
-                var messageBytes = new List<byte>();
-                messageBytes.AddRange(buffer.Take(result.Count));
-                while (!result.EndOfMessage)
-                {
-                    result = await _socket.ReceiveAsync(segment, _cts.Token);
+                    var segment = new ArraySegment<byte>(buffer);
+                    var result = await _socket.ReceiveAsync(segment, _cts.Token);
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", _cts.Token);
+                        break;
+                    }
+                    var messageBytes = new List<byte>();
                     messageBytes.AddRange(buffer.Take(result.Count));
+                    while (!result.EndOfMessage)
+                    {
+                        result = await _socket.ReceiveAsync(segment, _cts.Token);
+                        messageBytes.AddRange(buffer.Take(result.Count));
+                    }
+                    var message = Encoding.UTF8.GetString(messageBytes.ToArray());
+                    MessageReceived?.Invoke(message);
                 }
-                var message = Encoding.UTF8.GetString(messageBytes.ToArray());
-                MessageReceived?.Invoke(message);
             }
-            Disconnected?.Invoke();
+            catch (Exception ex)
+            {
+                Console.WriteLine($"WebSocket receive error: {ex.Message}");
+            }
+            finally
+            {
+                Disconnected?.Invoke();
+            }
         }
 
         public void Stop()
         {
-            try { _cts?.Cancel(); } catch { }
+            try
+            {
+                _cts?.Cancel();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"WebSocket stop error: {ex.Message}");
+            }
+            _socket?.Dispose();
         }
     }
 }
