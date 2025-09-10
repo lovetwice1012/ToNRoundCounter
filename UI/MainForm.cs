@@ -231,7 +231,7 @@ namespace ToNRoundCounter.UI
             rtbStatsDisplay.ReadOnly = true;
             rtbStatsDisplay.BorderStyle = BorderStyle.FixedSingle;
             rtbStatsDisplay.Font = new Font("Arial", 10);
-            rtbStatsDisplay.BackColor = Theme.Current.Background;
+            rtbStatsDisplay.BackColor = Theme.Current == Theme.Light ? Color.White : Theme.Current.Background;
             rtbStatsDisplay.ForeColor = Theme.Current.Foreground;
             rtbStatsDisplay.Location = new Point(0, lblStatsTitle.Height);
             rtbStatsDisplay.Size = new Size(splitContainerMain.Panel1.Width, splitContainerMain.Panel1.Height - lblStatsTitle.Height);
@@ -263,10 +263,10 @@ namespace ToNRoundCounter.UI
             InfoPanel.ApplyTheme();
             InfoPanel.BackColor = _settings.Theme == ThemeType.Dark ? Theme.Current.PanelBackground : _settings.BackgroundColor_InfoPanel;
             rtbStatsDisplay.ForeColor = Theme.Current.Foreground;
-            rtbStatsDisplay.BackColor = _settings.Theme == ThemeType.Dark ? Theme.Current.PanelBackground : _settings.BackgroundColor_Stats;
+            rtbStatsDisplay.BackColor = _settings.Theme == ThemeType.Dark ? Theme.Current.PanelBackground : Color.White;
             logPanel.ApplyTheme();
-            logPanel.AggregateStatsTextBox.BackColor = _settings.Theme == ThemeType.Dark ? Theme.Current.PanelBackground : _settings.BackgroundColor_Stats;
-            logPanel.RoundLogTextBox.BackColor = _settings.Theme == ThemeType.Dark ? Theme.Current.PanelBackground : _settings.BackgroundColor_Log;
+            logPanel.AggregateStatsTextBox.BackColor = _settings.Theme == ThemeType.Dark ? Theme.Current.PanelBackground : Color.White;
+            logPanel.RoundLogTextBox.BackColor = _settings.Theme == ThemeType.Dark ? Theme.Current.PanelBackground : Color.White;
             terrorInfoPanel.ApplyTheme();
         }
 
@@ -593,7 +593,7 @@ namespace ToNRoundCounter.UI
                     }
 
                     var roundType = InfoPanel.RoundTypeValue.Text;
-                    if ((terrors == null || terrors.Count == 0) && roundType == RoundTypeExtensions.GetDisplayName(RoundType.Unbound))
+                    if ((terrors == null || terrors.Count == 0) && roundType == "アンバウンド")
                     {
                         var lookup = UnboundRoundDefinitions.GetTerrors(displayName);
                         if (lookup != null)
@@ -1270,7 +1270,7 @@ namespace ToNRoundCounter.UI
         private void UpdateTerrorDisplay(string displayName, Color color, List<(string name, int count)> terrors)
         {
             string roundType = stateService.CurrentRound?.RoundType;
-            if (roundType == RoundTypeExtensions.GetDisplayName(RoundType.Unbound) && terrors != null)
+            if (roundType == "アンバウンド" && terrors != null)
             {
                 string terrorText = string.Join(", ", terrors.Select(t => $"{t.name} x{t.count}"));
                 InfoPanel.TerrorValue.Text = $"{displayName} ({terrorText})";

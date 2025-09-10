@@ -161,9 +161,6 @@
     <Compile Include="Domain\TerrorMapNameCollection.cs" />
     <Compile Include="Domain\AutoSuicideRule.cs" />
     <Compile Include="Domain\AutoSuicidePreset.cs" />
-    <Compile Include="Domain\RoundType.cs" />
-    <Compile Include="Domain\RoundTypeExtensions.cs" />
-    <Compile Include="Domain\TerrorType.cs" />
     <Compile Include="Domain\UnboundRoundDefinitions.cs" />
     <Compile Include="Application\AutoSuicideService.cs" />
     <Compile Include="Application\StateService.cs" />

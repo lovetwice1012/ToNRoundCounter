@@ -43,16 +43,14 @@ namespace ToNRoundCounter.Domain
             bool roundNeg = false;
             if (!string.IsNullOrEmpty(roundExpr))
             {
-                roundNeg = roundExpr.StartsWith("!");
-                if (roundNeg) roundExpr = roundExpr.Substring(1);
+                roundNeg = StripNegation(ref roundExpr);
                 if (!ValidateExpression(roundExpr)) return false;
             }
 
             bool terrorNeg = false;
             if (!string.IsNullOrEmpty(terrorExpr))
             {
-                terrorNeg = terrorExpr.StartsWith("!");
-                if (terrorNeg) terrorExpr = terrorExpr.Substring(1);
+                terrorNeg = StripNegation(ref terrorExpr);
                 if (!ValidateExpression(terrorExpr)) return false;
             }
 
@@ -90,8 +88,27 @@ namespace ToNRoundCounter.Domain
 
         public bool Covers(AutoSuicideRule other)
         {
-            return RoundExpression == other.RoundExpression && RoundNegate == other.RoundNegate
-                && TerrorExpression == other.TerrorExpression && TerrorNegate == other.TerrorNegate;
+            // Determine if this rule's conditions cover another rule's conditions.
+            // Later rules override earlier ones; if this rule matches every scenario
+            // that the other rule matches, the other is redundant.  Rather than rely
+            // on enums of all possible rounds and terrors, evaluate only the terms
+            // present in the other rule's expressions.
+            Func<string, string, bool> comparer = (a, b) => a == b;
+
+            var roundTerms = other.GetRoundTerms() ?? new List<string> { null };
+            var terrorTerms = other.GetTerrorTerms() ?? new List<string> { null };
+
+            foreach (var round in roundTerms)
+            {
+                foreach (var terror in terrorTerms)
+                {
+                    bool thisMatches = Matches(round, terror, comparer);
+                    bool otherMatches = other.Matches(round, terror, comparer);
+                    if (otherMatches && !thisMatches)
+                        return false;
+                }
+            }
+            return true;
         }
 
         public override string ToString()
@@ -101,6 +118,60 @@ namespace ToNRoundCounter.Domain
             string r = RoundExpression == null ? "" : (RoundNegate ? "!" + RoundExpression : RoundExpression);
             string t = TerrorExpression == null ? "" : (TerrorNegate ? "!" + TerrorExpression : TerrorExpression);
             return $"{r}:{t}:{Value}";
+        }
+
+        /// <summary>
+        /// Returns a list of simple round terms when the round expression is a
+        /// disjunction (A||B||...).  Parentheses wrapping the expression are
+        /// ignored.  If the expression cannot be represented as such a list,
+        /// null is returned.
+        /// </summary>
+        public List<string> GetRoundTerms()
+        {
+            return GetSimpleTerms(RoundExpression);
+        }
+
+        /// <summary>
+        /// Returns a list of simple terror terms when the terror expression is a
+        /// disjunction (A||B||...).  Parentheses wrapping the expression are
+        /// ignored.  If the expression cannot be represented as such a list,
+        /// null is returned.
+        /// </summary>
+        public List<string> GetTerrorTerms()
+        {
+            return GetSimpleTerms(TerrorExpression);
+        }
+
+        private static List<string> GetSimpleTerms(string expr)
+        {
+            if (string.IsNullOrWhiteSpace(expr)) return null;
+            string working = expr.Trim();
+            if (working.StartsWith("(") && MatchingParen(working) == working.Length - 1)
+                working = working.Substring(1, working.Length - 2);
+            var parts = SplitTopLevel(working, "||").ToList();
+            if (parts.Count > 1 && parts.All(p => IsSimple(p.Trim())))
+                return parts.Select(p => p.Trim()).ToList();
+            if (IsSimple(working))
+                return new List<string> { working };
+            return null;
+        }
+
+        private static bool StripNegation(ref string expr)
+        {
+            expr = expr.Trim();
+            if (!expr.StartsWith("!")) return false;
+            string candidate = expr.Substring(1).Trim();
+            if (candidate.StartsWith("(") && MatchingParen(candidate) == candidate.Length - 1)
+            {
+                expr = candidate;
+                return true;
+            }
+            if (IsSimple(candidate))
+            {
+                expr = candidate;
+                return true;
+            }
+            return false;
         }
 
         private static bool ValidateExpression(string expr)
