@@ -16,9 +16,10 @@ namespace ToNRoundCounter.UI
 
         public SettingsPanel SettingsPanel { get { return settingsPanel; } }
 
-        public SettingsForm()
-            _settings = settings;
+        public SettingsForm(IAppSettings settings)
         {
+            _settings = settings;
+
             this.Text = LanguageManager.Translate("設定");
             this.Size = new Size(1150, 900);
             this.StartPosition = FormStartPosition.CenterParent;
