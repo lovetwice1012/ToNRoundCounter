@@ -23,6 +23,7 @@ namespace ToNRoundCounter.Domain
         public string MapName { get; set; }
         public List<string> ItemNames { get; set; }
         public int Damage { get; set; }
+        public int PageCount { get; set; }
         public int InstancePlayersCount { get; internal set; }
     }
 }

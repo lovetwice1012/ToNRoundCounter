@@ -15,6 +15,7 @@ namespace ToNRoundCounter.Application
         public Dictionary<string, string> RoundMapNames { get; } = new Dictionary<string, string>();
         public TerrorMapNameCollection TerrorMapNames { get; } = new TerrorMapNameCollection();
         public List<Tuple<Round, string>> RoundLogHistory { get; } = new List<Tuple<Round, string>>();
+        public Dictionary<string, object> Stats { get; } = new Dictionary<string, object>();
         public int RoundCycle { get; private set; } = 0;
 
         public void UpdateCurrentRound(Round round)
@@ -61,6 +62,12 @@ namespace ToNRoundCounter.Application
             StateChanged?.Invoke();
         }
 
+        public void UpdateStat(string name, object value)
+        {
+            Stats[name] = value;
+            StateChanged?.Invoke();
+        }
+
         public void Reset()
         {
             CurrentRound = null;
@@ -70,6 +77,7 @@ namespace ToNRoundCounter.Application
             TerrorMapNames.Clear();
             RoundLogHistory.Clear();
             RoundCycle = 0;
+            Stats.Clear();
             StateChanged?.Invoke();
         }
     }
