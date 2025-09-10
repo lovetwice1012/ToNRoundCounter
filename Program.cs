@@ -1,10 +1,10 @@
 using System;
-using System.Windows.Forms;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using ToNRoundCounter.UI;
 using ToNRoundCounter.Application;
 using ToNRoundCounter.Infrastructure;
+using WinFormsApp = System.Windows.Forms.Application;
 
 namespace ToNRoundCounter
 {
@@ -13,8 +13,8 @@ namespace ToNRoundCounter
         [STAThread]
         static void Main()
         {
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
+            WinFormsApp.EnableVisualStyles();
+            WinFormsApp.SetCompatibleTextRenderingDefault(false);
 
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Debug()
@@ -33,18 +33,32 @@ namespace ToNRoundCounter
             services.AddSingleton<StateService>();
             services.AddSingleton<IAppSettings>(sp => new AppSettings(sp.GetRequiredService<IEventLogger>(), sp.GetRequiredService<IEventBus>()));
             services.AddSingleton<IInputSender, NativeInputSender>();
-            services.AddSingleton<IErrorReporter, ErrorReporter>();
+            services.AddSingleton<IErrorReporter>(sp => new ErrorReporter(sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<IHttpClient, HttpClientWrapper>();
             services.AddSingleton<IUiDispatcher, WinFormsDispatcher>();
-            services.AddSingleton<MainPresenter>();
+            services.AddSingleton<MainPresenter>(sp => new MainPresenter(
+                sp.GetRequiredService<StateService>(),
+                sp.GetRequiredService<IAppSettings>(),
+                sp.GetRequiredService<IEventLogger>(),
+                sp.GetRequiredService<IHttpClient>()));
             ModuleLoader.LoadModules(services);
-            services.AddSingleton<MainForm>();
+            services.AddSingleton<MainForm>(sp => new MainForm(
+                sp.GetRequiredService<IWebSocketClient>(),
+                sp.GetRequiredService<IOSCListener>(),
+                sp.GetRequiredService<AutoSuicideService>(),
+                sp.GetRequiredService<StateService>(),
+                sp.GetRequiredService<IAppSettings>(),
+                sp.GetRequiredService<IEventLogger>(),
+                sp.GetRequiredService<MainPresenter>(),
+                sp.GetRequiredService<IEventBus>(),
+                sp.GetRequiredService<ICancellationProvider>(),
+                sp.GetRequiredService<IInputSender>(),
+                sp.GetRequiredService<IUiDispatcher>()));
 
-            using (var provider = services.BuildServiceProvider())
-            {
-                provider.GetRequiredService<IErrorReporter>().Register();
-                Application.Run(provider.GetRequiredService<MainForm>());
-            }
+            var provider = services.BuildServiceProvider();
+            provider.GetRequiredService<IErrorReporter>().Register();
+            WinFormsApp.Run(provider.GetRequiredService<MainForm>());
+            (provider as IDisposable)?.Dispose();
         }
     }
 }
