@@ -155,7 +155,6 @@ namespace ToNRoundCounter.UI
             autoSuicideRoundListBox.Items.Add("サボタージュ");
             autoSuicideRoundListBox.Items.Add("ブラッドバス");
             autoSuicideRoundListBox.Items.Add("ミッドナイト");
-            autoSuicideRoundListBox.Items.Add("走れ！");
             autoSuicideRoundListBox.Items.Add("寒い夜");
             autoSuicideRoundListBox.Items.Add("ミスティックムーン");
             autoSuicideRoundListBox.Items.Add("ブラッドムーン");
