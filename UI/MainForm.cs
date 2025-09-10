@@ -512,11 +512,12 @@ namespace ToNRoundCounter.UI
                     stateService.CurrentRound.TerrorKey = "";
                     stateService.CurrentRound.MapName = InfoPanel.MapValue.Text;
                     stateService.CurrentRound.Damage = 0;
+                    stateService.CurrentRound.PageCount = 0;
                     if (!string.IsNullOrEmpty(InfoPanel.ItemValue.Text))
                         stateService.CurrentRound.ItemNames.Add(InfoPanel.ItemValue.Text);
                     _dispatcher.Invoke(() =>
                     {
-                        InfoPanel.RoundTypeValue.Text = roundType;
+                        UpdateRoundTypeLabel();
                         InfoPanel.RoundTypeValue.ForeColor = ConvertColorFromInt(json.Value<int>("DisplayColor"));
                     });
                     //もしtesterNamesに含まれているかつオルタネイトなら、オルタネイトラウンド開始の音を鳴らす
@@ -718,6 +719,7 @@ namespace ToNRoundCounter.UI
                     if (stateService.CurrentRound != null)
                     {
                         stateService.CurrentRound.PageCount = pages;
+                        _dispatcher.Invoke(UpdateRoundTypeLabel);
                     }
                 }
                 else if (eventType == "PLAYER_JOIN")
@@ -1217,13 +1219,14 @@ namespace ToNRoundCounter.UI
                         IsDeath = false,
                         TerrorKey = "",
                         MapName = InfoPanel.MapValue.Text,
-                        Damage = 0
+                        Damage = 0,
+                        PageCount = 0
                     });
                     if (!string.IsNullOrEmpty(InfoPanel.ItemValue.Text))
                         stateService.CurrentRound.ItemNames.Add(InfoPanel.ItemValue.Text);
                     _dispatcher.Invoke(() =>
                     {
-                        InfoPanel.RoundTypeValue.Text = stateService.CurrentRound.RoundType;
+                        UpdateRoundTypeLabel();
                         InfoPanel.RoundTypeValue.ForeColor = Color.White;
                         InfoPanel.DamageValue.Text = "0";
                     });
@@ -1312,6 +1315,28 @@ namespace ToNRoundCounter.UI
                     return r.Value;
             }
             return 0;
+        }
+
+        private void UpdateRoundTypeLabel()
+        {
+            if (InfoPanel == null)
+                return;
+
+            var round = stateService.CurrentRound;
+            if (round == null)
+            {
+                InfoPanel.RoundTypeValue.Text = string.Empty;
+                return;
+            }
+
+            if (round.RoundType == "8ページ")
+            {
+                InfoPanel.RoundTypeValue.Text = $"{round.RoundType} ({round.PageCount}/8)";
+            }
+            else
+            {
+                InfoPanel.RoundTypeValue.Text = round.RoundType;
+            }
         }
 
         private Color ConvertColorFromInt(int colorInt)
