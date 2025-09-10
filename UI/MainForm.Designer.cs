@@ -1,4 +1,4 @@
-﻿namespace ToNRoundCounter
+﻿namespace ToNRoundCounter.UI
 {
     partial class MainForm
     {
