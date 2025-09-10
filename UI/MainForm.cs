@@ -1350,19 +1350,33 @@ namespace ToNRoundCounter.UI
         private void UpdateTerrorDisplay(string displayName, Color color, List<(string name, int count)> terrors)
         {
             string roundType = stateService.CurrentRound?.RoundType;
-            if (roundType == "アンバウンド" && terrors != null)
+
+            if (roundType == "アンバウンド")
             {
-                string terrorText = string.Join(", ", terrors.Select(t => $"{t.name} x{t.count}"));
-                InfoPanel.TerrorValue.Text = $"{displayName} ({terrorText})";
-                InfoPanel.TerrorValue.ForeColor = (_settings.FixedTerrorColor != Color.Empty) ? _settings.FixedTerrorColor : color;
-                var expanded = terrors.SelectMany(t => Enumerable.Repeat(t.name, t.count)).ToList();
-                if (!string.IsNullOrEmpty(stateService.CurrentRound.TerrorKey))
+                // Unbound rounds sometimes lack explicit terror names in the event data.
+                // If they are missing, resolve them via the predefined lookup so the
+                // information panel can display the appropriate terror details.
+                if (terrors == null || terrors.Count == 0)
                 {
-                    terrorColors[stateService.CurrentRound.TerrorKey] = color;
+                    var lookup = UnboundRoundDefinitions.GetTerrors(displayName);
+                    if (lookup != null)
+                        terrors = lookup.ToList();
                 }
-                UpdateTerrorInfoPanel(expanded);
+
+                if (terrors != null && terrors.Count > 0)
+                {
+                    string terrorText = string.Join(", ", terrors.Select(t => $"{t.name} x{t.count}"));
+                    InfoPanel.TerrorValue.Text = $"{displayName} ({terrorText})";
+                    InfoPanel.TerrorValue.ForeColor = (_settings.FixedTerrorColor != Color.Empty) ? _settings.FixedTerrorColor : color;
+                    var expanded = terrors.SelectMany(t => Enumerable.Repeat(t.name, t.count)).ToList();
+                    if (!string.IsNullOrEmpty(stateService.CurrentRound.TerrorKey))
+                        terrorColors[stateService.CurrentRound.TerrorKey] = color;
+                    UpdateTerrorInfoPanel(expanded);
+                    return;
+                }
             }
-            else if (terrors != null && terrors.Count > 0)
+
+            if (terrors != null && terrors.Count > 0)
             {
                 var expanded = terrors.SelectMany(t => Enumerable.Repeat(t.name, t.count)).ToList();
                 string joinedNames = string.Join(" & ", expanded);
@@ -1372,9 +1386,7 @@ namespace ToNRoundCounter.UI
                     InfoPanel.TerrorValue.Text = displayName;
                 InfoPanel.TerrorValue.ForeColor = (_settings.FixedTerrorColor != Color.Empty) ? _settings.FixedTerrorColor : color;
                 if (!string.IsNullOrEmpty(joinedNames))
-                {
                     terrorColors[joinedNames] = color;
-                }
                 UpdateTerrorInfoPanel(expanded);
             }
             else
