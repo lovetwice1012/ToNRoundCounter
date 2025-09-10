@@ -457,6 +457,24 @@ namespace ToNRoundCounter.UI
                     }
                 }
 
+                var negRoundGroups = rulesCheck.Where(r => r.Round != null && r.Terror == null && r.RoundNegate)
+                                               .GroupBy(r => r.Value);
+                foreach (var g in negRoundGroups)
+                {
+                    var rounds = g.Select(r => r.Round).ToList();
+                    bool useBullet = ShouldBullet(rounds);
+                    if (useBullet)
+                    {
+                        sb.AppendLine($"全てのラウンドで以下のラウンド以外が出現した時、{GetActionText(g.Key)}");
+                        foreach (var r in rounds)
+                            sb.AppendLine($"・{r}");
+                    }
+                    else
+                    {
+                        sb.AppendLine($"全てのラウンドで{string.Join(",", rounds)}以外が出現した時、{GetActionText(g.Key)}");
+                    }
+                }
+
                 var remainingDetail = detailRules.Where(d => !processedDetail.Contains(d))
                                                 .GroupBy(d => d.Round);
                 foreach (var rg in remainingDetail)
