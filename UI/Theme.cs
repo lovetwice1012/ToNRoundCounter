@@ -26,9 +26,9 @@ namespace ToNRoundCounter.UI
 
         public static readonly ThemeColors Light = new ThemeColors
         {
-            Background = Color.White,
+            Background = SystemColors.Control,
             Foreground = Color.Black,
-            PanelBackground = Color.Gainsboro
+            PanelBackground = SystemColors.Control
         };
 
         public static ThemeColors Current { get; private set; } = Light;

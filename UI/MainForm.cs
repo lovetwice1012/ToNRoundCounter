@@ -62,7 +62,7 @@ namespace ToNRoundCounter.UI
         private Dictionary<string, Color> terrorColors;
         private bool lastOptedIn = true;
 
-        // 次ラウンド予測用：stateService.RoundCycle==1 → 通常ラウンド, ==2 → 「通常ラウンド or 特殊ラウンド」, >=3 → 特殊ラウンド
+        // 次ラウンド予測用：stateService.RoundCycle==0 → 通常ラウンド, ==1 → 「通常ラウンド or 特殊ラウンド」, >=2 → 特殊ラウンド
         private Random randomGenerator = new Random();
 
         // OSC/Velocity 関連
@@ -708,7 +708,8 @@ namespace ToNRoundCounter.UI
                 }
                 else if (eventType == "MASTER_CHANGE")
                 {
-                    stateService.SetRoundCycle(1); // 確定特殊カウントをリセット
+                    // インスタンスオーナー交代直後は特殊ラウンドが確定
+                    stateService.SetRoundCycle(2);
                     _dispatcher.Invoke(() =>
                     {
                         UpdateNextRoundPrediction();
@@ -815,34 +816,33 @@ namespace ToNRoundCounter.UI
                 if (!string.IsNullOrEmpty(stateService.CurrentRound.MapName))
                     stateService.RoundMapNames[stateService.CurrentRound.RoundType] = stateService.CurrentRound.MapName;
 
-                // 新規追加：特殊ラウンド出現方式のロジック
-                var normalTypes = new List<string> { "クラシック", "Classic", "RUN", "走れ！" };
-                var overrideSpecialTypes = new List<string> { "アンバウンド", "8ページ", "ゴースト" };
-                var confirmedSpecialTypes = new List<string> { "オルタネイト", "パニッシュ", "サボタージュ", "ブラッドバス", "ミッドナイト", "狂気", "ダブルトラブル", "EX" };
+                // 次ラウンド予測ロジック
+                var normalTypes = new[] { "クラシック", "Classic", "RUN", "走れ！" };
+                var overrideTypes = new HashSet<string> { "アンバウンド", "8ページ", "ゴースト", "オルタネイト" };
+                string current = stateService.CurrentRound.RoundType;
 
-                // 既存のロジックを以下のように変更
-                if (normalTypes.Any(type => stateService.CurrentRound.RoundType.Contains(type)))
+                if (normalTypes.Any(type => current.Contains(type)))
                 {
-                    // 通常ラウンドの場合
-                    if (stateService.RoundCycle >= 3)
-                    {
-                        // 次ラウンド特殊の可能性を維持
-                    }
+                    // 通常ラウンド
+                    if (stateService.RoundCycle == 0)
+                        stateService.SetRoundCycle(1); // 次は通常 or 特殊
+                    else if (stateService.RoundCycle == 1)
+                        stateService.SetRoundCycle(2); // 次は特殊
+                    else
+                        stateService.SetRoundCycle(1); // 想定外: 状態を不確定へ
                 }
-                else if (overrideSpecialTypes.Contains(stateService.CurrentRound.RoundType))
+                else if (overrideTypes.Contains(current))
                 {
-                    // "アンバウンド", "8ページ", "ゴースト"の場合：通常を上書き（特殊として確定しない）
-                    // stateService.RoundCycle はそのまま維持（特殊カウントはリセットしない）
-                }
-                else if (confirmedSpecialTypes.Contains(stateService.CurrentRound.RoundType))
-                {
-                    // "オルタネイト", "パニッシュ", "サボタージュ", "ブラッドバス", "ミッドナイト", "狂気", "ダブルトラブル", "EX"の場合：特殊抽選が確定
-                    stateService.SetRoundCycle(1);  // 確定特殊カウントをリセット
+                    // 8ページ・アンバウンド・ゴースト・オルタネイトによる上書き
+                    if (stateService.RoundCycle >= 2)
+                        stateService.SetRoundCycle(0); // 特殊として扱いリセット
+                    else
+                        stateService.SetRoundCycle(1); // 通常扱いだが次は不確定
                 }
                 else
                 {
-                    // その他の場合は特殊ラウンドとみなし、確定特殊カウントをリセット
-                    stateService.SetRoundCycle(1);
+                    // 確定特殊ラウンド
+                    stateService.SetRoundCycle(0);
                 }
 
                 var round = stateService.CurrentRound;
@@ -955,15 +955,15 @@ namespace ToNRoundCounter.UI
 
         private void UpdateNextRoundPrediction()
         {
-            // stateService.RoundCycle == 1: 次は通常ラウンド
-            // stateService.RoundCycle == 2: 「通常ラウンド or 特殊ラウンド」と表示（50/50の抽選結果によるため不明）
-            // stateService.RoundCycle >= 3: 次は特殊ラウンド
-            if (stateService.RoundCycle == 1)
+            // stateService.RoundCycle == 0: 次は通常ラウンド
+            // stateService.RoundCycle == 1: 「通常ラウンド or 特殊ラウンド」と表示（50/50の抽選結果によるため不明）
+            // stateService.RoundCycle >= 2: 次は特殊ラウンド
+            if (stateService.RoundCycle == 0)
             {
                 InfoPanel.NextRoundType.Text = "通常ラウンド";
                 InfoPanel.NextRoundType.ForeColor = Color.White;
             }
-            else if (stateService.RoundCycle == 2)
+            else if (stateService.RoundCycle == 1)
             {
                 InfoPanel.NextRoundType.Text = "通常ラウンド or 特殊ラウンド";
                 InfoPanel.NextRoundType.ForeColor = Color.Orange;
