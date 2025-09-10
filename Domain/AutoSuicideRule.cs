@@ -95,8 +95,17 @@ namespace ToNRoundCounter.Domain
             // present in the other rule's expressions.
             Func<string, string, bool> comparer = (a, b) => a == b;
 
-            var roundTerms = other.GetRoundTerms() ?? new List<string> { null };
-            var terrorTerms = other.GetTerrorTerms() ?? new List<string> { null };
+            var roundTerms = other.GetRoundTerms();
+            if (roundTerms == null || roundTerms.Count == 0)
+                roundTerms = new List<string> { null };
+            else if (other.RoundNegate)
+                roundTerms.Add(null);
+
+            var terrorTerms = other.GetTerrorTerms();
+            if (terrorTerms == null || terrorTerms.Count == 0)
+                terrorTerms = new List<string> { null };
+            else if (other.TerrorNegate)
+                terrorTerms.Add(null);
 
             foreach (var round in roundTerms)
             {
