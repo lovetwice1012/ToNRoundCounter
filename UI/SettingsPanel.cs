@@ -466,13 +466,13 @@ namespace ToNRoundCounter.UI
                     bool useBullet = ShouldBullet(rounds);
                     if (useBullet)
                     {
-                        sb.AppendLine($"全てのラウンドで以下のラウンド以外が出現した時、{GetActionText(g.Key)}");
+                        sb.AppendLine($"全てのラウンドで以下のラウンド以外のラウンドが出現した時、{GetActionText(g.Key)}");
                         foreach (var r in rounds)
                             sb.AppendLine($"・{r}");
                     }
                     else
                     {
-                        sb.AppendLine($"全てのラウンドで{string.Join(",", rounds)}以外が出現した時、{GetActionText(g.Key)}");
+                        sb.AppendLine($"全てのラウンドで{string.Join(",", rounds)}以外のラウンドが出現した時、{GetActionText(g.Key)}");
                     }
                 }
 
