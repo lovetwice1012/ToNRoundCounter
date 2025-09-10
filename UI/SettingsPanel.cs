@@ -8,7 +8,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.IO;
 using Newtonsoft.Json;
-using ToNRoundCounter.Domain;
 using System.Text;
 
 namespace ToNRoundCounter.UI
