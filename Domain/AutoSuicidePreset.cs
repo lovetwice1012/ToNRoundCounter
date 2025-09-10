@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace ToNRoundCounter.Models
+namespace ToNRoundCounter.Domain
 {
     public class AutoSuicidePreset
     {

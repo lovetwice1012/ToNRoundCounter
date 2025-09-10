@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ToNRoundCounter", "ToNRound
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Updater", "Updater\Updater.csproj", "{0415BFC3-4703-4E15-955C-37F872DD5E41}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ToNRoundCounter.Tests", "ToNRoundCounter.Tests\ToNRoundCounter.Tests.csproj", "{A0A9AD68-4D08-4D1A-ADEE-708CF89FBB60}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -29,9 +31,17 @@ Global
 		{0415BFC3-4703-4E15-955C-37F872DD5E41}.Debug|x64.Build.0 = Debug|Any CPU
 		{0415BFC3-4703-4E15-955C-37F872DD5E41}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{0415BFC3-4703-4E15-955C-37F872DD5E41}.Release|Any CPU.Build.0 = Release|Any CPU
-		{0415BFC3-4703-4E15-955C-37F872DD5E41}.Release|x64.ActiveCfg = Release|Any CPU
-		{0415BFC3-4703-4E15-955C-37F872DD5E41}.Release|x64.Build.0 = Release|Any CPU
-	EndGlobalSection
+                {0415BFC3-4703-4E15-955C-37F872DD5E41}.Release|x64.ActiveCfg = Release|Any CPU
+                {0415BFC3-4703-4E15-955C-37F872DD5E41}.Release|x64.Build.0 = Release|Any CPU
+                {A0A9AD68-4D08-4D1A-ADEE-708CF89FBB60}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+                {A0A9AD68-4D08-4D1A-ADEE-708CF89FBB60}.Debug|Any CPU.Build.0 = Debug|Any CPU
+                {A0A9AD68-4D08-4D1A-ADEE-708CF89FBB60}.Debug|x64.ActiveCfg = Debug|Any CPU
+                {A0A9AD68-4D08-4D1A-ADEE-708CF89FBB60}.Debug|x64.Build.0 = Debug|Any CPU
+                {A0A9AD68-4D08-4D1A-ADEE-708CF89FBB60}.Release|Any CPU.ActiveCfg = Release|Any CPU
+                {A0A9AD68-4D08-4D1A-ADEE-708CF89FBB60}.Release|Any CPU.Build.0 = Release|Any CPU
+                {A0A9AD68-4D08-4D1A-ADEE-708CF89FBB60}.Release|x64.ActiveCfg = Release|Any CPU
+                {A0A9AD68-4D08-4D1A-ADEE-708CF89FBB60}.Release|x64.Build.0 = Release|Any CPU
+        EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection

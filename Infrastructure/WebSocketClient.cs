@@ -5,43 +5,49 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Threading.Channels;
+using ToNRoundCounter.Application;
 
-namespace ToNRoundCounter.Services
+namespace ToNRoundCounter.Infrastructure
 {
     /// <summary>
     /// Handles WebSocket connections and message dispatching.
     /// </summary>
-    public class WebSocketService
+    public class WebSocketClient : IWebSocketClient
     {
         private readonly Uri _uri;
         private ClientWebSocket _socket;
         private CancellationTokenSource _cts;
+        private readonly IEventBus _bus;
+        private readonly ICancellationProvider _cancellation;
+        private readonly IEventLogger _logger;
+        private readonly Channel<string> _channel = Channel.CreateUnbounded<string>();
 
-        public event Action Connected;
-        public event Action Disconnected;
-        public event Action<string> MessageReceived;
-
-        public WebSocketService(string url)
+        public WebSocketClient(string url, IEventBus bus, ICancellationProvider cancellation, IEventLogger logger)
         {
             _uri = new Uri(url);
+            _bus = bus;
+            _cancellation = cancellation;
+            _logger = logger;
         }
 
-        public async Task StartAsync(CancellationToken token)
+        public async Task StartAsync()
         {
-            _cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            _cts = CancellationTokenSource.CreateLinkedTokenSource(_cancellation.Token);
             while (!_cts.Token.IsCancellationRequested)
             {
                 _socket = new ClientWebSocket();
                 try
                 {
                     await _socket.ConnectAsync(_uri, _cts.Token);
-                    Connected?.Invoke();
+                    _bus.Publish(new WebSocketConnected());
+                    _ = Task.Run(ProcessMessagesAsync, _cts.Token);
                     await ReceiveLoopAsync();
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"WebSocket connection error: {ex.Message}");
-                    Disconnected?.Invoke();
+                    _logger.LogEvent("WebSocket", ex.Message, Serilog.Events.LogEventLevel.Error);
+                    _bus.Publish(new WebSocketDisconnected());
                     if (!_cts.Token.IsCancellationRequested)
                     {
                         await Task.Delay(300, _cts.Token);
@@ -76,17 +82,29 @@ namespace ToNRoundCounter.Services
                         messageBytes.AddRange(buffer.Take(result.Count));
                     }
                     var message = Encoding.UTF8.GetString(messageBytes.ToArray());
-                    MessageReceived?.Invoke(message);
+                    await _channel.Writer.WriteAsync(message, _cts.Token);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"WebSocket receive error: {ex.Message}");
+                _logger.LogEvent("WebSocketReceive", ex.Message, Serilog.Events.LogEventLevel.Error);
             }
             finally
             {
-                Disconnected?.Invoke();
+                _bus.Publish(new WebSocketDisconnected());
             }
+        }
+
+        private async Task ProcessMessagesAsync()
+        {
+            try
+            {
+                await foreach (var msg in _channel.Reader.ReadAllAsync(_cts.Token))
+                {
+                    _bus.Publish(new WebSocketMessageReceived(msg));
+                }
+            }
+            catch (OperationCanceledException) { }
         }
 
         public void Stop()

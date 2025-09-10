@@ -1,0 +1,61 @@
+using System;
+using System.Net;
+using System.Threading;
+using System.Threading.Tasks;
+using Rug.Osc;
+using ToNRoundCounter.Application;
+using System.Threading.Channels;
+
+namespace ToNRoundCounter.Infrastructure
+{
+    /// <summary>
+    /// OSC listener implementation.
+    /// </summary>
+    public class OSCListener : IOSCListener
+    {
+        private readonly IEventBus _bus;
+        private readonly ICancellationProvider _cancellation;
+        private readonly IEventLogger _logger;
+        private readonly Channel<OscMessage> _channel = Channel.CreateUnbounded<OscMessage>();
+
+        public OSCListener(IEventBus bus, ICancellationProvider cancellation, IEventLogger logger)
+        {
+            _bus = bus;
+            _cancellation = cancellation;
+            _logger = logger;
+        }
+
+        public async Task StartAsync(int port)
+        {
+            _ = Task.Run(ProcessMessagesAsync, _cancellation.Token);
+            await Task.Run(() =>
+            {
+                using (var listener = new OscReceiver(IPAddress.Parse("127.0.0.1"), port))
+                {
+                    listener.Connect();
+                    while (!_cancellation.Token.IsCancellationRequested)
+                    {
+                        if (listener.State != OscSocketState.Connected)
+                            break;
+                        if (listener.TryReceive(out OscPacket packet) && packet is OscMessage msg)
+                        {
+                            _channel.Writer.TryWrite(msg);
+                        }
+                    }
+                }
+            }, _cancellation.Token).ConfigureAwait(false);
+        }
+
+        private async Task ProcessMessagesAsync()
+        {
+            try
+            {
+                await foreach (var msg in _channel.Reader.ReadAllAsync(_cancellation.Token))
+                {
+                    _bus.Publish(new OscMessageReceived(msg));
+                }
+            }
+            catch (OperationCanceledException) { }
+        }
+    }
+}
