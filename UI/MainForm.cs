@@ -18,11 +18,11 @@ using Newtonsoft.Json.Linq;
 using Rug.Osc;
 using ToNRoundCounter.Models;
 using ToNRoundCounter.Properties;
-using ToNRoundCounter.UI;
 using ToNRoundCounter.Utils;
+using ToNRoundCounter.Services;
 using MediaPlayer = System.Windows.Media.MediaPlayer;
 
-namespace ToNRoundCounter
+namespace ToNRoundCounter.UI
 {
     public partial class MainForm : Form
     {
@@ -49,23 +49,14 @@ namespace ToNRoundCounter
 
         // その他のフィールド
         private CancellationTokenSource cancellationTokenSource;
-        private ClientWebSocket webSocket;
+        private WebSocketService webSocketService;
+        private StateService stateService;
 
-        private string playerDisplayName = "";
-        private RoundData currentRound = null;
-        private Dictionary<string, RoundAggregate> roundAggregates;
-        private Dictionary<string, Dictionary<string, TerrorAggregate>> terrorAggregates;
         private Dictionary<string, Color> terrorColors;
-        private Dictionary<string, string> roundMapNames;
-        private Dictionary<string, Dictionary<string, string>> terrorMapNames;
         private bool lastOptedIn = true;
 
-        // 次ラウンド予測用：roundCycle==1 → 通常ラウンド, ==2 → 「通常ラウンド or 特殊ラウンド」, >=3 → 特殊ラウンド
-        private int roundCycle = 0;
+        // 次ラウンド予測用：stateService.RoundCycle==1 → 通常ラウンド, ==2 → 「通常ラウンド or 特殊ラウンド」, >=3 → 特殊ラウンド
         private Random randomGenerator = new Random();
-
-        // ラウンドログ内部リスト
-        private List<Tuple<RoundData, string>> roundLogHistory;
 
         // OSC/Velocity 関連
         private float currentVelocity = 0;
@@ -103,8 +94,7 @@ namespace ToNRoundCounter
 
         private string version = "1.10.0";
 
-        private CancellationTokenSource autoSuicideTokenSource = null;
-        private DateTime autoSuicideRoundStartTime;
+        private AutoSuicideService autoSuicideService;
 
 
         // P/Invoke 宣言
@@ -206,19 +196,30 @@ namespace ToNRoundCounter
             tester_BATOU_03Player.Stop();
 
             this.Name = "MainForm";
-            roundAggregates = new Dictionary<string, RoundAggregate>();
-            terrorAggregates = new Dictionary<string, Dictionary<string, TerrorAggregate>>();
+            stateService = new StateService();
             terrorColors = new Dictionary<string, Color>();
-            roundMapNames = new Dictionary<string, string>();
-            terrorMapNames = new Dictionary<string, Dictionary<string, string>>();
-            roundLogHistory = new List<Tuple<RoundData, string>>();
             LoadTerrorInfo();
             AppSettings.Load();
             LoadAutoSuicideRules();
             InitializeComponents();
             this.Load += MainForm_Load;
             cancellationTokenSource = new CancellationTokenSource();
-            _ = Task.Run(() => ConnectWebSocketAsync(cancellationTokenSource.Token));
+            autoSuicideService = new AutoSuicideService();
+
+            webSocketService = new WebSocketService("ws://127.0.0.1:11398");
+            webSocketService.Connected += () => this.Invoke(new Action(() =>
+            {
+                lblStatus.Text = "WebSocket: " + LanguageManager.Translate("Connected");
+                lblStatus.ForeColor = Color.Green;
+            }));
+            webSocketService.Disconnected += () => this.Invoke(new Action(() =>
+            {
+                lblStatus.Text = "WebSocket: " + LanguageManager.Translate("Disconnected");
+                lblStatus.ForeColor = Color.Red;
+            }));
+            webSocketService.MessageReceived += async (msg) => await HandleEventAsync(msg);
+            _ = webSocketService.StartAsync(cancellationTokenSource.Token);
+
             _ = Task.Run(() => StartOSCListenerAsync(cancellationTokenSource.Token));
 
             velocityTimer = new System.Windows.Forms.Timer();
@@ -586,6 +587,7 @@ namespace ToNRoundCounter
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             cancellationTokenSource.Cancel();
+            webSocketService.Stop();
             if (oscRepeaterProcess != null && !oscRepeaterProcess.HasExited)
             {
                 try
@@ -596,68 +598,6 @@ namespace ToNRoundCounter
                 catch { }
             }
             base.OnFormClosing(e);
-        }
-
-        private async Task ConnectWebSocketAsync(CancellationToken token)
-        {
-            while (!token.IsCancellationRequested)
-            {
-                webSocket = new ClientWebSocket();
-                try
-                {
-                    await webSocket.ConnectAsync(new Uri("ws://127.0.0.1:11398"), token);
-                    this.Invoke(new Action(() =>
-                    {
-                        lblStatus.Text = "WebSocket: " + LanguageManager.Translate("Connected");
-                        lblStatus.ForeColor = Color.Green;
-                    }));
-                    await ReceiveMessagesAsync(webSocket, token);
-                }
-                catch (Exception)
-                {
-                    this.Invoke(new Action(() =>
-                    {
-                        lblStatus.Text = "WebSocket: " + LanguageManager.Translate("Disconnected");
-                        lblStatus.ForeColor = Color.Red;
-                    }));
-                    await Task.Delay(300, token);
-                }
-            }
-        }
-
-        private async Task ReceiveMessagesAsync(ClientWebSocket ws, CancellationToken token)
-        {
-            var buffer = new byte[8192];
-            while (ws.State == WebSocketState.Open && !token.IsCancellationRequested)
-            {
-                var segment = new ArraySegment<byte>(buffer);
-                WebSocketReceiveResult result = null;
-                try
-                {
-                    result = await ws.ReceiveAsync(segment, token);
-                }
-                catch (Exception)
-                {
-                    break;
-                }
-                if (result.MessageType == WebSocketMessageType.Close)
-                {
-                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", token);
-                    break;
-                }
-                else
-                {
-                    var messageBytes = new List<byte>();
-                    messageBytes.AddRange(buffer.Take(result.Count));
-                    while (!result.EndOfMessage)
-                    {
-                        result = await ws.ReceiveAsync(segment, token);
-                        messageBytes.AddRange(buffer.Take(result.Count));
-                    }
-                    var message = Encoding.UTF8.GetString(messageBytes.ToArray());
-                    await HandleEventAsync(message);
-                }
-            }
         }
 
         private async Task HandleEventAsync(string message)
@@ -674,7 +614,7 @@ namespace ToNRoundCounter
                 }
                 if (eventType == "CONNECTED")
                 {
-                    playerDisplayName = json.Value<string>("DisplayName") ?? "";
+                    stateService.PlayerDisplayName = json.Value<string>("DisplayName") ?? "";
                     if (isRestarted == false)
                     {
                         UpdateAndRestart();
@@ -688,37 +628,33 @@ namespace ToNRoundCounter
                 else if (eventType == "ROUND_TYPE" && command == 1)
                 {
                     string roundType = json.Value<string>("DisplayName") ?? "Default";
-                    currentRound = new RoundData();
-                    currentRound.RoundType = roundType;
-                    currentRound.IsDeath = false;
-                    currentRound.TerrorKey = "";
-                    currentRound.MapName = InfoPanel.MapValue.Text;
-                    currentRound.Damage = 0;
+                    stateService.CurrentRound = new RoundData();
+                    stateService.CurrentRound.RoundType = roundType;
+                    stateService.CurrentRound.IsDeath = false;
+                    stateService.CurrentRound.TerrorKey = "";
+                    stateService.CurrentRound.MapName = InfoPanel.MapValue.Text;
+                    stateService.CurrentRound.Damage = 0;
                     if (!string.IsNullOrEmpty(InfoPanel.ItemValue.Text))
-                        currentRound.ItemNames.Add(InfoPanel.ItemValue.Text);
+                        stateService.CurrentRound.ItemNames.Add(InfoPanel.ItemValue.Text);
                     this.Invoke(new Action(() =>
                     {
                         InfoPanel.RoundTypeValue.Text = roundType;
                         InfoPanel.RoundTypeValue.ForeColor = ConvertColorFromInt(json.Value<int>("DisplayColor"));
                     }));
                     //もしtesterNamesに含まれているかつオルタネイトなら、オルタネイトラウンド開始の音を鳴らす
-                    if (testerNames.Contains(playerDisplayName) && roundType == "オルタネイト")
+                    if (testerNames.Contains(stateService.PlayerDisplayName) && roundType == "オルタネイト")
                     {
                         PlayFromStart(tester_roundStartAlternatePlayer);
                     }
                     //issetAllSelfKillModeがtrueなら13秒後に自殺入力をする
-                    if (autoSuicideRoundStartTime == default)
-                    {
-                        autoSuicideRoundStartTime = DateTime.UtcNow;
-                    }
                     int autoAction = ShouldAutoSuicide(roundType, null);
                     if (issetAllSelfKillMode || autoAction == 1)
                     {
-                        ScheduleAutoSuicide(TimeSpan.FromSeconds(13), true);
+                        autoSuicideService.Schedule(TimeSpan.FromSeconds(13), true, PerformAutoSuicide);
                     }
                     else if (autoAction == 2)
                     {
-                        ScheduleAutoSuicide(TimeSpan.FromSeconds(40), true);
+                        autoSuicideService.Schedule(TimeSpan.FromSeconds(40), true, PerformAutoSuicide);
                     }
 
                 }
@@ -729,26 +665,26 @@ namespace ToNRoundCounter
                     {
                         if (lastOptedIn != false)
                         {
-                            currentRound = new RoundData();
-                            currentRound.RoundType = "";
-                            currentRound.IsDeath = false;
-                            currentRound.TerrorKey = "";
-                            currentRound.MapName = InfoPanel.MapValue.Text;
-                            currentRound.Damage = 0;
+                            stateService.CurrentRound = new RoundData();
+                            stateService.CurrentRound.RoundType = "";
+                            stateService.CurrentRound.IsDeath = false;
+                            stateService.CurrentRound.TerrorKey = "";
+                            stateService.CurrentRound.MapName = InfoPanel.MapValue.Text;
+                            stateService.CurrentRound.Damage = 0;
                         }
                     }
                     else if (trackerEvent == "round_won")
                     {
-                        if (currentRound != null)
+                        if (stateService.CurrentRound != null)
                         {
-                            FinalizeCurrentRound(currentRound.IsDeath ? "☠" : "✅");
+                            FinalizeCurrentRound(stateService.CurrentRound.IsDeath ? "☠" : "✅");
                         }
                     }
                     else if (trackerEvent == "round_lost")
                     {
-                        if (currentRound != null && !currentRound.IsDeath)
+                        if (stateService.CurrentRound != null && !stateService.CurrentRound.IsDeath)
                         {
-                            currentRound.IsDeath = true;
+                            stateService.CurrentRound.IsDeath = true;
                             FinalizeCurrentRound("☠");
                         }
                     }
@@ -759,21 +695,21 @@ namespace ToNRoundCounter
                     {
                         InfoPanel.MapValue.Text = json.Value<string>("Name") ?? "";
                     }));
-                    if (currentRound != null)
+                    if (stateService.CurrentRound != null)
                     {
-                        currentRound.MapName = json.Value<string>("Name") ?? "";
+                        stateService.CurrentRound.MapName = json.Value<string>("Name") ?? "";
                     }
                 }
                 else if (eventType == "TERRORS" && (command == 0 || command == 1))
                 {
                     this.Invoke(new Action(() => { UpdateTerrorDisplay(json); }));
-                    if (currentRound != null)
+                    if (stateService.CurrentRound != null)
                     {
                         var names = json.Value<JArray>("Names")?.Select(token => token.ToString()).ToList();
                         if (names != null && names.Count > 0)
                         {
                             string joinedNames = string.Join(" & ", names);
-                            currentRound.TerrorKey = joinedNames;
+                            stateService.CurrentRound.TerrorKey = joinedNames;
                         }
 
                         var roundType = InfoPanel.RoundTypeValue.Text;
@@ -782,7 +718,7 @@ namespace ToNRoundCounter
                             roundType = "EX";
                         }
                         //もしroundTypeが自動自殺ラウンド対象なら自動自殺
-                        int terrorAction = ShouldAutoSuicide(roundType, currentRound.TerrorKey);
+                        int terrorAction = ShouldAutoSuicide(roundType, stateService.CurrentRound.TerrorKey);
                         if (issetAllSelfKillMode || terrorAction == 1)
                         {
 
@@ -791,10 +727,10 @@ namespace ToNRoundCounter
                         }
                         else if (terrorAction == 2)
                         {
-                            TimeSpan remaining = TimeSpan.FromSeconds(40) - (DateTime.UtcNow - autoSuicideRoundStartTime);
+                            TimeSpan remaining = TimeSpan.FromSeconds(40) - (DateTime.UtcNow - autoSuicideService.RoundStartTime);
                             if (remaining > TimeSpan.Zero)
                             {
-                                ScheduleAutoSuicide(remaining, false);
+                                autoSuicideService.Schedule(remaining, false, PerformAutoSuicide);
                             }
                         }
                     }
@@ -809,12 +745,12 @@ namespace ToNRoundCounter
                 else if (eventType == "DAMAGED")
                 {
                     int damageValue = json.Value<int>("Value");
-                    if (currentRound != null)
+                    if (stateService.CurrentRound != null)
                     {
-                        currentRound.Damage += damageValue;
+                        stateService.CurrentRound.Damage += damageValue;
                         this.Invoke(new Action(() =>
                         {
-                            InfoPanel.DamageValue.Text = currentRound.Damage.ToString();
+                            InfoPanel.DamageValue.Text = stateService.CurrentRound.Damage.ToString();
                         }));
                     }
                 }
@@ -822,12 +758,12 @@ namespace ToNRoundCounter
                 {
                     string deathName = json.Value<string>("Name") ?? "";
                     bool isLocal = json.Value<bool?>("IsLocal") ?? false;
-                    if (currentRound != null && (deathName == playerDisplayName || isLocal))
+                    if (stateService.CurrentRound != null && (deathName == stateService.PlayerDisplayName || isLocal))
                     {
-                        currentRound.IsDeath = true;
+                        stateService.CurrentRound.IsDeath = true;
                         FinalizeCurrentRound("☠");
-                        if (playerDisplayName == "Kotetsu Wilde")
-                        //if (playerDisplayName == "yussy5373")
+                        if (stateService.PlayerDisplayName == "Kotetsu Wilde")
+                        //if (stateService.PlayerDisplayName == "yussy5373")
                         {
                             int randomNum = randomGenerator.Next(1, 4);
                             if (randomNum == 1)
@@ -854,8 +790,8 @@ namespace ToNRoundCounter
                     }
                     bool optedIn = json.Value<bool?>("Value") ?? true;
                     lastOptedIn = optedIn;
-                    if (currentRound != null && optedIn == false)
-                        currentRound.IsDeath = true;
+                    if (stateService.CurrentRound != null && optedIn == false)
+                        stateService.CurrentRound.IsDeath = true;
                 }
                 else if (eventType == "INSTANCE")
                 {
@@ -874,7 +810,7 @@ namespace ToNRoundCounter
                 }
                 else if (eventType == "MASTER_CHANGE")
                 {
-                    roundCycle = 1; // 確定特殊カウントをリセット
+                    stateService.RoundCycle = 1; // 確定特殊カウントをリセット
                     this.Invoke(new Action(() =>
                     {
                         UpdateNextRoundPrediction();
@@ -885,9 +821,9 @@ namespace ToNRoundCounter
                 {
                     bool isSaboteur = json.Value<bool?>("Value") ?? false;
                     //もしtesterNamesに含まれている場合、サボタージュの音を鳴らす
-                    if (currentRound != null && isSaboteur)
+                    if (stateService.CurrentRound != null && isSaboteur)
                     {
-                        if (testerNames.Contains(playerDisplayName) && !punishSoundPlayed)
+                        if (testerNames.Contains(stateService.PlayerDisplayName) && !punishSoundPlayed)
                         {
                             PlayFromStart(tester_IDICIDEDKILLALLPlayer);
                             punishSoundPlayed = true;
@@ -932,9 +868,9 @@ namespace ToNRoundCounter
                             int playerCount = json.Value<int>("Value");
                             this.Invoke(new Action(() =>
                             {
-                                if (currentRound != null)
+                                if (stateService.CurrentRound != null)
                                 {
-                                    currentRound.InstancePlayersCount = playerCount;
+                                    stateService.CurrentRound.InstancePlayersCount = playerCount;
 
                                     this.Invoke(new Action(() =>
                                     {
@@ -963,28 +899,28 @@ namespace ToNRoundCounter
         /// <param name="status">"☠" または "✅"</param>
         private void FinalizeCurrentRound(string status)
         {
-            if (currentRound != null)
+            if (stateService.CurrentRound != null)
             {
-                string roundType = currentRound.RoundType;
-                roundMapNames[roundType] = currentRound.MapName ?? "";
-                if (!roundAggregates.ContainsKey(roundType))
-                    roundAggregates[roundType] = new RoundAggregate();
-                roundAggregates[roundType].Total++;
-                if (currentRound.IsDeath)
-                    roundAggregates[roundType].Death++;
+                string roundType = stateService.CurrentRound.RoundType;
+                stateService.RoundMapNames[roundType] = stateService.CurrentRound.MapName ?? "";
+                if (!stateService.RoundAggregates.ContainsKey(roundType))
+                    stateService.RoundAggregates[roundType] = new RoundAggregate();
+                stateService.RoundAggregates[roundType].Total++;
+                if (stateService.CurrentRound.IsDeath)
+                    stateService.RoundAggregates[roundType].Death++;
                 else
-                    roundAggregates[roundType].Survival++;
-                if (!string.IsNullOrEmpty(currentRound.TerrorKey))
+                    stateService.RoundAggregates[roundType].Survival++;
+                if (!string.IsNullOrEmpty(stateService.CurrentRound.TerrorKey))
                 {
-                    if (!terrorAggregates.ContainsKey(roundType))
-                        terrorAggregates[roundType] = new Dictionary<string, TerrorAggregate>();
-                    var terrorDict = terrorAggregates[roundType];
-                    string terrorKey = currentRound.TerrorKey;
+                    if (!stateService.TerrorAggregates.ContainsKey(roundType))
+                        stateService.TerrorAggregates[roundType] = new Dictionary<string, TerrorAggregate>();
+                    var terrorDict = stateService.TerrorAggregates[roundType];
+                    string terrorKey = stateService.CurrentRound.TerrorKey;
                     if (!terrorDict.ContainsKey(terrorKey))
                         terrorDict[terrorKey] = new TerrorAggregate();
                     if (lastOptedIn)
                     {
-                        if (currentRound.IsDeath)
+                        if (stateService.CurrentRound.IsDeath)
                             terrorDict[terrorKey].Death++;
                         else
                             terrorDict[terrorKey].Survival++;
@@ -994,12 +930,12 @@ namespace ToNRoundCounter
                         terrorDict[terrorKey].Death++;
                     }
                     terrorDict[terrorKey].Total++;
-                    if (!terrorMapNames.ContainsKey(roundType))
-                        terrorMapNames[roundType] = new Dictionary<string, string>();
-                    terrorMapNames[roundType][terrorKey] = currentRound.MapName ?? "";
+                    if (!stateService.TerrorMapNames.ContainsKey(roundType))
+                        stateService.TerrorMapNames[roundType] = new Dictionary<string, string>();
+                    stateService.TerrorMapNames[roundType][terrorKey] = stateService.CurrentRound.MapName ?? "";
                 }
-                if (!string.IsNullOrEmpty(currentRound.MapName))
-                    roundMapNames[currentRound.RoundType] = currentRound.MapName;
+                if (!string.IsNullOrEmpty(stateService.CurrentRound.MapName))
+                    stateService.RoundMapNames[stateService.CurrentRound.RoundType] = stateService.CurrentRound.MapName;
 
                 // 新規追加：特殊ラウンド出現方式のロジック
                 var normalTypes = new List<string> { "クラシック", "Classic", "RUN", "走れ" };
@@ -1007,41 +943,41 @@ namespace ToNRoundCounter
                 var confirmedSpecialTypes = new List<string> { "オルタネイト", "パニッシュ", "サボタージュ", "ブラッドバス", "ミッドナイト", "狂気", "ダブル・トラブル", "EX" };
 
                 // 既存のロジックを以下のように変更
-                if (normalTypes.Any(type => currentRound.RoundType.Contains(type)))
+                if (normalTypes.Any(type => stateService.CurrentRound.RoundType.Contains(type)))
                 {
                     // 通常ラウンドの場合
-                    if (roundCycle >= 3)
+                    if (stateService.RoundCycle >= 3)
                     {
                         // 次ラウンド特殊の可能性を維持
                     }
                 }
-                else if (overrideSpecialTypes.Contains(currentRound.RoundType))
+                else if (overrideSpecialTypes.Contains(stateService.CurrentRound.RoundType))
                 {
                     // "アンバウンド", "8ページ", "ゴースト"の場合：通常を上書き（特殊として確定しない）
-                    // roundCycle はそのまま維持（特殊カウントはリセットしない）
+                    // stateService.RoundCycle はそのまま維持（特殊カウントはリセットしない）
                 }
-                else if (confirmedSpecialTypes.Contains(currentRound.RoundType))
+                else if (confirmedSpecialTypes.Contains(stateService.CurrentRound.RoundType))
                 {
                     // "オルタネイト", "パニッシュ", "サボタージュ", "ブラッドバス", "ミッドナイト", "狂気", "ダブル・トラブル", "EX"の場合：特殊抽選が確定
-                    roundCycle = 1;  // 確定特殊カウントをリセット
+                    stateService.RoundCycle = 1;  // 確定特殊カウントをリセット
                 }
                 else
                 {
                     // その他の場合は特殊ラウンドとみなし、確定特殊カウントをリセット
-                    roundCycle = 1;
+                    stateService.RoundCycle = 1;
                 }
 
                 this.Invoke(new Action(() =>
                 {
                     UpdateNextRoundPrediction();
                     UpdateAggregateStatsDisplay();
-                    AppendRoundLog(currentRound, status);
+                    AppendRoundLog(stateService.CurrentRound, status);
                     ClearEventDisplays();
                     ClearItemDisplay();
-                    uoloadRoundLog(currentRound, status);
+                    uoloadRoundLog(stateService.CurrentRound, status);
                     lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2}";
                 }));
-                currentRound = null;
+                stateService.CurrentRound = null;
             }
         }
 
@@ -1187,7 +1123,7 @@ namespace ToNRoundCounter
         private void VelocityTimer_Tick(object sender, EventArgs e)
         {
             // 無操作判定：VelocityMagnitudeの絶対値が1未満の場合、最低1秒連続してidleと判定する
-            if (currentRound != null && currentVelocity < 1)
+            if (stateService.CurrentRound != null && currentVelocity < 1)
             {
                 if (idleStartTime == DateTime.MinValue)
                 {
@@ -1235,7 +1171,7 @@ namespace ToNRoundCounter
             }
 
             // パニッシュ・8ページ検出条件の更新
-            if (currentRound == null)
+            if (stateService.CurrentRound == null)
             {
                 string itemText = InfoPanel.ItemValue.Text;
                 bool hasCoil = itemText.IndexOf("Coil", StringComparison.OrdinalIgnoreCase) >= 0;
@@ -1278,15 +1214,15 @@ namespace ToNRoundCounter
 
         private void UpdateNextRoundPrediction()
         {
-            // roundCycle == 1: 次は通常ラウンド
-            // roundCycle == 2: 「通常ラウンド or 特殊ラウンド」と表示（50/50の抽選結果によるため不明）
-            // roundCycle >= 3: 次は特殊ラウンド
-            if (roundCycle == 1)
+            // stateService.RoundCycle == 1: 次は通常ラウンド
+            // stateService.RoundCycle == 2: 「通常ラウンド or 特殊ラウンド」と表示（50/50の抽選結果によるため不明）
+            // stateService.RoundCycle >= 3: 次は特殊ラウンド
+            if (stateService.RoundCycle == 1)
             {
                 InfoPanel.NextRoundType.Text = "通常ラウンド";
                 InfoPanel.NextRoundType.ForeColor = Color.White;
             }
-            else if (roundCycle == 2)
+            else if (stateService.RoundCycle == 2)
             {
                 InfoPanel.NextRoundType.Text = "通常ラウンド or 特殊ラウンド";
                 InfoPanel.NextRoundType.ForeColor = Color.Orange;
@@ -1301,8 +1237,8 @@ namespace ToNRoundCounter
         private void UpdateAggregateStatsDisplay()
         {
             rtbStatsDisplay.Clear();
-            int overallTotal = roundAggregates.Values.Sum(r => r.Total);
-            foreach (var kvp in roundAggregates)
+            int overallTotal = stateService.RoundAggregates.Values.Sum(r => r.Total);
+            foreach (var kvp in stateService.RoundAggregates)
             {
                 string roundType = kvp.Key;
                 // ラウンドタイプごとのフィルターが有効なら対象のラウンドタイプのみ表示
@@ -1329,9 +1265,9 @@ namespace ToNRoundCounter
                 AppendLine(rtbStatsDisplay, roundLine, Color.Black);
 
                 // テラーのフィルター
-                if (AppSettings.Filter_Terror && terrorAggregates.ContainsKey(roundType))
+                if (AppSettings.Filter_Terror && stateService.TerrorAggregates.ContainsKey(roundType))
                 {
-                    var terrorDict = terrorAggregates[roundType];
+                    var terrorDict = stateService.TerrorAggregates[roundType];
                     foreach (var terrorKvp in terrorDict)
                     {
                         string terrorKey = terrorKvp.Key;
@@ -1401,7 +1337,7 @@ namespace ToNRoundCounter
             string items = round.ItemNames.Count > 0 ? string.Join("、", round.ItemNames) : LanguageManager.Translate("アイテム未使用");
             string logEntry = string.Format("ラウンドタイプ: {0}, テラー: {1}, MAP: {2}, アイテム: {3}, ダメージ: {4}, 生死: {5}",
                 round.RoundType, round.TerrorKey, round.MapName, items, round.Damage, status);
-            roundLogHistory.Add(new Tuple<RoundData, string>(round, logEntry));
+            stateService.RoundLogHistory.Add(new Tuple<RoundData, string>(round, logEntry));
             UpdateRoundLogDisplay();
         }
 
@@ -1413,7 +1349,7 @@ namespace ToNRoundCounter
                 return;
             }
             logPanel.RoundLogTextBox.Clear();
-            foreach (var entry in roundLogHistory)
+            foreach (var entry in stateService.RoundLogHistory)
             {
                 logPanel.RoundLogTextBox.AppendText(entry.Item2 + Environment.NewLine);
             }
@@ -1432,10 +1368,10 @@ namespace ToNRoundCounter
         {
             string itemName = json.Value<string>("Name") ?? "";
             InfoPanel.ItemValue.Text = itemName;
-            if (currentRound != null)
+            if (stateService.CurrentRound != null)
             {
-                if (!currentRound.ItemNames.Contains(itemName))
-                    currentRound.ItemNames.Add(itemName);
+                if (!stateService.CurrentRound.ItemNames.Contains(itemName))
+                    stateService.CurrentRound.ItemNames.Add(itemName);
             }
         }
 
@@ -1489,13 +1425,9 @@ namespace ToNRoundCounter
             bool active = json["Value"] != null && json["Value"].ToObject<bool>();
             if (active)
             {
-                if (autoSuicideRoundStartTime == default)
+                if (stateService.CurrentRound == null)
                 {
-                    autoSuicideRoundStartTime = DateTime.UtcNow;
-                }
-                if (currentRound == null)
-                {
-                    currentRound = new RoundData
+                    stateService.CurrentRound = new RoundData
                     {
                         RoundType = "Active Round",
                         IsDeath = false,
@@ -1504,85 +1436,49 @@ namespace ToNRoundCounter
                         Damage = 0
                     };
                     if (!string.IsNullOrEmpty(InfoPanel.ItemValue.Text))
-                        currentRound.ItemNames.Add(InfoPanel.ItemValue.Text);
+                        stateService.CurrentRound.ItemNames.Add(InfoPanel.ItemValue.Text);
                     this.Invoke(new Action(() =>
                     {
-                        InfoPanel.RoundTypeValue.Text = currentRound.RoundType;
+                        InfoPanel.RoundTypeValue.Text = stateService.CurrentRound.RoundType;
                         InfoPanel.RoundTypeValue.ForeColor = Color.White;
                         InfoPanel.DamageValue.Text = "0";
                     }));
                 }
 
-                if (currentRound != null)
+                if (stateService.CurrentRound != null)
                 {
-                    string checkType = currentRound.RoundType;
-                    string terror = currentRound.TerrorKey;
+                    string checkType = stateService.CurrentRound.RoundType;
+                    string terror = stateService.CurrentRound.TerrorKey;
                     if (checkType == "ブラッドバス" && !string.IsNullOrEmpty(terror) && terror.Contains("LVL 3"))
                     {
                         checkType = "EX";
                     }
-                    if (autoSuicideTokenSource == null)
+                    if (!autoSuicideService.HasScheduled)
                     {
                         int action = ShouldAutoSuicide(checkType, terror);
                         if (issetAllSelfKillMode || action == 1)
                         {
-                            ScheduleAutoSuicide(TimeSpan.FromSeconds(13), true);
+                            autoSuicideService.Schedule(TimeSpan.FromSeconds(13), true, PerformAutoSuicide);
                         }
                         else if (action == 2)
                         {
-                            ScheduleAutoSuicide(TimeSpan.FromSeconds(40), true);
+                            autoSuicideService.Schedule(TimeSpan.FromSeconds(40), true, PerformAutoSuicide);
                         }
                     }
                 }
             }
             else
             {
-                if (currentRound != null)
+                if (stateService.CurrentRound != null)
                 {
-                    FinalizeCurrentRound(currentRound.IsDeath ? "☠" : "✅");
+                    FinalizeCurrentRound(stateService.CurrentRound.IsDeath ? "☠" : "✅");
                 }
-                autoSuicideTokenSource?.Cancel();
-                autoSuicideTokenSource = null;
-                autoSuicideRoundStartTime = default;
+                autoSuicideService.Cancel();
             }
-        }
-
-        private void ScheduleAutoSuicide(TimeSpan delay, bool resetStartTime)
-        {
-            autoSuicideTokenSource?.Cancel();
-            if (resetStartTime || autoSuicideRoundStartTime == default)
-            {
-                autoSuicideRoundStartTime = DateTime.UtcNow;
-            }
-            var cts = new CancellationTokenSource();
-            autoSuicideTokenSource = cts;
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await Task.Delay(delay, cts.Token);
-                    if (!cts.IsCancellationRequested)
-                    {
-                        PerformAutoSuicide();
-                    }
-                }
-                catch (TaskCanceledException)
-                {
-                }
-                finally
-                {
-                    if (autoSuicideTokenSource == cts)
-                    {
-                        autoSuicideTokenSource = null;
-                    }
-                }
-            });
         }
 
         private void PerformAutoSuicide()
         {
-            autoSuicideTokenSource?.Cancel();
-            autoSuicideTokenSource = null;
             EventLogger.LogEvent("Suicide", "Performing Suside");
             LaunchSuicideInputIfExists();
             EventLogger.LogEvent("Suicide", "finish");
@@ -1711,10 +1607,9 @@ namespace ToNRoundCounter
                 {
                     try { abortFlag = Convert.ToBoolean(message.ToArray()[0]); } catch { }
                 }
-                if (abortFlag && autoSuicideTokenSource != null)
+                if (abortFlag)
                 {
-                    autoSuicideTokenSource.Cancel();
-                    autoSuicideTokenSource = null;
+                    autoSuicideService.Cancel();
                 }
             }
             else if (message.Address == "/avatar/parameters/delayAutoSuside")
@@ -1724,12 +1619,12 @@ namespace ToNRoundCounter
                 {
                     try { delayFlag = Convert.ToBoolean(message.ToArray()[0]); } catch { }
                 }
-                if (delayFlag && autoSuicideTokenSource != null)
+                if (delayFlag && autoSuicideService.HasScheduled)
                 {
-                    TimeSpan remaining = TimeSpan.FromSeconds(40) - (DateTime.UtcNow - autoSuicideRoundStartTime);
+                    TimeSpan remaining = TimeSpan.FromSeconds(40) - (DateTime.UtcNow - autoSuicideService.RoundStartTime);
                     if (remaining > TimeSpan.Zero)
                     {
-                        ScheduleAutoSuicide(remaining, false);
+                        autoSuicideService.Schedule(remaining, false, PerformAutoSuicide);
                     }
                 }
             }
