@@ -967,21 +967,22 @@ namespace ToNRoundCounter.UI
                     stateService.RoundCycle = 1;
                 }
 
+                var round = stateService.CurrentRound;
                 this.Invoke(new Action(() =>
                 {
                     UpdateNextRoundPrediction();
                     UpdateAggregateStatsDisplay();
-                    AppendRoundLog(stateService.CurrentRound, status);
+                    AppendRoundLog(round, status);
                     ClearEventDisplays();
                     ClearItemDisplay();
-                    uoloadRoundLog(stateService.CurrentRound, status);
                     lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2}";
                 }));
+                _ = UploadRoundLogAsync(round, status);
                 stateService.CurrentRound = null;
             }
         }
 
-        private void uoloadRoundLog(RoundData round, string status)
+        private async Task UploadRoundLogAsync(RoundData round, string status)
         {
             // ラウンドログをアップロードする処理を実装
             /**
@@ -1000,12 +1001,13 @@ namespace ToNRoundCounter.UI
             using (var client = new HttpClient())
             {
                 client.BaseAddress = new Uri("https://toncloud.sprink.cloud/api/roundlogs/create/" + AppSettings.apikey);
+                var terrors = (round.TerrorKey ?? string.Empty).Split('&');
                 var payload = new
                 {
                     roundType = round.RoundType,
-                    terror1 = round.TerrorKey.Split('&').ElementAtOrDefault(0)?.Trim(),
-                    terror2 = round.TerrorKey.Split('&').ElementAtOrDefault(1)?.Trim(),
-                    terror3 = round.TerrorKey.Split('&').ElementAtOrDefault(2)?.Trim(),
+                    terror1 = terrors.ElementAtOrDefault(0)?.Trim(),
+                    terror2 = terrors.ElementAtOrDefault(1)?.Trim(),
+                    terror3 = terrors.ElementAtOrDefault(2)?.Trim(),
                     map = round.MapName,
                     item = round.ItemNames.Count > 0 ? string.Join("、", round.ItemNames) : LanguageManager.Translate("アイテム未使用"),
                     damage = round.Damage,
@@ -1015,7 +1017,7 @@ namespace ToNRoundCounter.UI
                 var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
                 try
                 {
-                    var response = client.PostAsync("", content).Result;
+                    var response = await client.PostAsync("", content);
                     if (response.IsSuccessStatusCode)
                     {
                         EventLogger.LogEvent("RoundLogUpload", "ラウンドログのアップロードに成功しました。");
@@ -1664,11 +1666,11 @@ namespace ToNRoundCounter.UI
                             client.BaseAddress = new Uri("https://toncloud.sprink.cloud/api/savecode/get/" + AppSettings.apikey + "/latest");
                             try
                             {
-                                var response = client.GetAsync("").Result;
+                                var response = await client.GetAsync("");
                                 if (response.IsSuccessStatusCode)
                                 {
                                     //jsonを取得して、"savecode"フィールドの値をクリップボードにコピー
-                                    var jsonResponse = response.Content.ReadAsStringAsync().Result;
+                                    var jsonResponse = await response.Content.ReadAsStringAsync();
                                     var json = JObject.Parse(jsonResponse);
                                     string saveCode = json.Value<string>("savecode") ?? "";
                                     Thread thread = new Thread(() => Clipboard.SetText(saveCode));
