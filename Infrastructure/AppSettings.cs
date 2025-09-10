@@ -90,7 +90,7 @@ namespace ToNRoundCounter.Infrastructure
             return errors;
         }
 
-        public async Task SaveAsync()
+        public Task SaveAsync()
         {
             var settings = new AppSettingsData
             {
@@ -119,7 +119,8 @@ namespace ToNRoundCounter.Infrastructure
                 apikey = apikey
             };
             string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
-            await File.WriteAllTextAsync(settingsFile, json);
+            File.WriteAllText(settingsFile, json);
+            return Task.CompletedTask;
         }
     }
 

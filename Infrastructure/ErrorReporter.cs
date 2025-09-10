@@ -1,6 +1,7 @@
 using System;
 using System.Windows.Forms;
 using ToNRoundCounter.Application;
+using WinFormsApp = System.Windows.Forms.Application;
 
 namespace ToNRoundCounter.Infrastructure
 {
@@ -18,7 +19,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void Register()
         {
-            Application.ThreadException += (s, e) => Handle(e.Exception);
+            WinFormsApp.ThreadException += (s, e) => Handle(e.Exception);
             AppDomain.CurrentDomain.UnhandledException += (s, e) => Handle(e.ExceptionObject as Exception);
         }
 

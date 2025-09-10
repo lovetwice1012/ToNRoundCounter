@@ -35,6 +35,12 @@ namespace ToNRoundCounter.Domain
         /// </summary>
         public static string ToJapanese(this RoundType type)
             => JapaneseNames.TryGetValue(type, out var name) ? name : type.ToString();
+
+        /// <summary>
+        /// Gets the display name for a round type.
+        /// </summary>
+        public static string GetDisplayName(RoundType type)
+            => type.ToJapanese();
     }
 }
 

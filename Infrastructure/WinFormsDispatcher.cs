@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Windows.Forms;
 using ToNRoundCounter.Application;
+using WinFormsApp = System.Windows.Forms.Application;
 
 namespace ToNRoundCounter.Infrastructure
 {
@@ -12,9 +13,9 @@ namespace ToNRoundCounter.Infrastructure
     {
         public void Invoke(Action action)
         {
-            if (Application.OpenForms.Count > 0)
+            if (WinFormsApp.OpenForms.Count > 0)
             {
-                var form = Application.OpenForms.Cast<Form>().First();
+                var form = WinFormsApp.OpenForms.Cast<Form>().First();
                 if (form.InvokeRequired)
                 {
                     form.BeginInvoke(action);

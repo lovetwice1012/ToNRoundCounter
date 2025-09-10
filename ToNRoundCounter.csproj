@@ -188,6 +188,7 @@
     <Compile Include="Infrastructure\NativeInputSender.cs" />
     <Compile Include="Infrastructure\ErrorReporter.cs" />
     <Compile Include="Infrastructure\WinFormsDispatcher.cs" />
+    <Compile Include="Infrastructure\ChannelReaderExtensions.cs" />
     <Compile Include="Infrastructure\HttpClientWrapper.cs" />
     <Compile Include="Infrastructure\ModuleLoader.cs" />
     <Compile Include="Infrastructure\SimpleServiceCollection.cs" />

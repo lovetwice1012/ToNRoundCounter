@@ -20,6 +20,7 @@ using ToNRoundCounter.Properties;
 using ToNRoundCounter.Infrastructure;
 using ToNRoundCounter.Application;
 using MediaPlayer = System.Windows.Media.MediaPlayer;
+using WinFormsApp = System.Windows.Forms.Application;
 
 namespace ToNRoundCounter.UI
 {
@@ -410,10 +411,10 @@ namespace ToNRoundCounter.UI
                             {
                                 Process.Start(new ProcessStartInfo(updaterExe)
                                 {
-                                    Arguments = $"\"{zipPath}\" \"{Application.ExecutablePath}\"",
+                                    Arguments = $"\"{zipPath}\" \"{WinFormsApp.ExecutablePath}\"",
                                     UseShellExecute = false
                                 });
-                                Application.Exit();
+                                WinFormsApp.Exit();
                             }
                             else
                             {
