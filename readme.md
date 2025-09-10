@@ -16,3 +16,6 @@ WebSocket や OSC による連携、オート自殺設定、クラウド同期�
 
 ## ライセンス
 本プロジェクトは [license.md](license.md) の条件の下で提供されます。
+
+
+[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/lovetwice1012/ToNRoundCounter)
