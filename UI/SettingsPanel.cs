@@ -168,6 +168,7 @@ namespace ToNRoundCounter.UI
             };
             autoSuicideDetailTextBox = new TextBox();
             autoSuicideDetailTextBox.Multiline = true;
+            autoSuicideDetailTextBox.AcceptsReturn = true;
             autoSuicideDetailTextBox.ScrollBars = ScrollBars.Vertical;
             autoSuicideDetailTextBox.Size = autoSuicideRoundListBox.Size;
             autoSuicideDetailTextBox.Location = autoSuicideRoundListBox.Location;
@@ -232,9 +233,12 @@ namespace ToNRoundCounter.UI
                         autoSuicideRoundListBox.SetItemChecked(i, preset.RoundTypes.Contains(item));
                     }
                     autoSuicideFuzzyCheckBox.Checked = preset.Fuzzy;
-                    var autoLinesLocal = GenerateAutoSuicideLines();
-                    autoSuicideAutoRuleCount = autoLinesLocal.Length;
-                    autoSuicideDetailTextBox.Text = string.Join(Environment.NewLine, autoLinesLocal.Concat(preset.DetailCustom));
+                    autoSuicideAutoRuleCount = 0;
+                    autoSuicideDetailTextBox.Text = string.Join(Environment.NewLine, preset.DetailCustom);
+                    if (!autoSuicideUseDetailCheckBox.Checked)
+                    {
+                        UpdateAutoSuicideDetailAutoLines();
+                    }
                 }
             };
             grpAutoSuicide.Controls.Add(autoSuicidePresetLoadButton);
