@@ -59,6 +59,19 @@ namespace ToNRoundCounter.Models
             }
         }
 
+        private class NotNode : ConditionNode
+        {
+            public ConditionNode Inner { get; }
+            public NotNode(ConditionNode inner)
+            {
+                Inner = inner;
+            }
+            public override bool Evaluate(string input, Func<string, string, bool> comparer)
+            {
+                return !Inner.Evaluate(input, comparer);
+            }
+        }
+
         public static bool TryParse(string line, out AutoSuicideRule rule)
         {
             rule = null;
@@ -341,6 +354,13 @@ namespace ToNRoundCounter.Models
                 node = parts[0];
                 for (int i = 1; i < parts.Count; i++)
                     node = new OrNode(node, parts[i]);
+                return true;
+            }
+            if (expr.StartsWith("!"))
+            {
+                var sub = expr.Substring(1);
+                if (!TryParseCondition(sub, out var inner, out error)) return false;
+                node = new NotNode(inner);
                 return true;
             }
             node = new ValueNode(expr.Trim());
