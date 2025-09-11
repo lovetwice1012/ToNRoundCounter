@@ -79,13 +79,16 @@ namespace ToNRoundCounter
             var provider = services.BuildServiceProvider();
             provider.GetRequiredService<IErrorReporter>().Register();
 
+            var mainForm = provider.GetRequiredService<MainForm>();
+            ((WinFormsDispatcher)provider.GetRequiredService<IUiDispatcher>()).SetMainForm(mainForm);
+
             if (args.Contains("--debug") &&
                 args.SkipWhile(a => a != "--test").Skip(1).FirstOrDefault() == "crashreporting")
             {
                 throw new InvalidOperationException("Crash report test triggered");
             }
 
-            WinFormsApp.Run(provider.GetRequiredService<MainForm>());
+            WinFormsApp.Run(mainForm);
             (provider as IDisposable)?.Dispose();
         }
     }
