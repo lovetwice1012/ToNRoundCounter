@@ -37,6 +37,7 @@
   <ItemGroup>
     <Compile Include="AutoSuicideRuleTests.cs" />
     <Compile Include="StateServiceTests.cs" />
+    <Compile Include="AutoSuicideCancelTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ToNRoundCounter.csproj">
