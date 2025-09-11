@@ -552,11 +552,18 @@ namespace ToNRoundCounter.UI
                     stateService.CurrentRound.RoundType = roundType;
                     stateService.CurrentRound.IsDeath = false;
                     stateService.CurrentRound.TerrorKey = "";
-                    stateService.CurrentRound.MapName = InfoPanel.MapValue.Text;
+                    string mapName = string.Empty;
+                    string itemName = string.Empty;
+                    _dispatcher.Invoke(() =>
+                    {
+                        mapName = InfoPanel.MapValue.Text;
+                        itemName = InfoPanel.ItemValue.Text;
+                    });
+                    stateService.CurrentRound.MapName = mapName;
                     stateService.CurrentRound.Damage = 0;
                     stateService.CurrentRound.PageCount = 0;
-                    if (!string.IsNullOrEmpty(InfoPanel.ItemValue.Text))
-                        stateService.CurrentRound.ItemNames.Add(InfoPanel.ItemValue.Text);
+                    if (!string.IsNullOrEmpty(itemName))
+                        stateService.CurrentRound.ItemNames.Add(itemName);
                     _dispatcher.Invoke(() =>
                     {
                         UpdateRoundTypeLabel();
@@ -590,7 +597,9 @@ namespace ToNRoundCounter.UI
                             stateService.CurrentRound.RoundType = "";
                             stateService.CurrentRound.IsDeath = false;
                             stateService.CurrentRound.TerrorKey = "";
-                            stateService.CurrentRound.MapName = InfoPanel.MapValue.Text;
+                            string mapName = string.Empty;
+                            _dispatcher.Invoke(() => mapName = InfoPanel.MapValue.Text);
+                            stateService.CurrentRound.MapName = mapName;
                             stateService.CurrentRound.Damage = 0;
                         }
                     }
@@ -635,7 +644,7 @@ namespace ToNRoundCounter.UI
                         terrors = arr.Select(n => (n, 1)).ToList();
                     }
 
-                    var roundType = InfoPanel.RoundTypeValue.Text;
+                    var roundType = stateService.CurrentRound?.RoundType ?? string.Empty;
                     if ((terrors == null || terrors.Count == 0) && roundType == "アンバウンド")
                     {
                         var lookup = UnboundRoundDefinitions.GetTerrors(displayName);
@@ -1260,17 +1269,24 @@ namespace ToNRoundCounter.UI
             {
                 if (stateService.CurrentRound == null)
                 {
+                    string mapName = string.Empty;
+                    string itemName = string.Empty;
+                    _dispatcher.Invoke(() =>
+                    {
+                        mapName = InfoPanel.MapValue.Text;
+                        itemName = InfoPanel.ItemValue.Text;
+                    });
                     stateService.UpdateCurrentRound(new Round
                     {
                         RoundType = "Active Round",
                         IsDeath = false,
                         TerrorKey = "",
-                        MapName = InfoPanel.MapValue.Text,
+                        MapName = mapName,
                         Damage = 0,
                         PageCount = 0
                     });
-                    if (!string.IsNullOrEmpty(InfoPanel.ItemValue.Text))
-                        stateService.CurrentRound.ItemNames.Add(InfoPanel.ItemValue.Text);
+                    if (!string.IsNullOrEmpty(itemName))
+                        stateService.CurrentRound.ItemNames.Add(itemName);
                     _dispatcher.Invoke(() =>
                     {
                         UpdateRoundTypeLabel();
