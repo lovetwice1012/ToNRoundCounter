@@ -1,10 +1,13 @@
 using System;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.IO;
 using System.Diagnostics;
+using Newtonsoft.Json.Linq;
 using Rug.Osc;
 
 namespace ToNRoundCounter.UI
@@ -79,6 +82,106 @@ namespace ToNRoundCounter.UI
                 if (suicideFlag)
                 {
                     _ = Task.Run(() => PerformAutoSuicide());
+                }
+            }
+            else if (message.Address == "/avatar/parameters/autosuside")
+            {
+                bool autoSuicideOSC = false;
+                if (message.Count > 0)
+                {
+                    try { autoSuicideOSC = Convert.ToBoolean(message.ToArray()[0]); } catch { }
+                    _settings.AutoSuicideEnabled = autoSuicideOSC;
+                }
+            }
+            else if (message.Address == "/avatar/parameters/abortAutoSuside")
+            {
+                bool abortFlag = true;
+                if (message.Count > 0)
+                {
+                    try { abortFlag = Convert.ToBoolean(message.ToArray()[0]); } catch { }
+                }
+                if (abortFlag)
+                {
+                    autoSuicideService.Cancel();
+                }
+            }
+            else if (message.Address == "/avatar/parameters/delayAutoSuside")
+            {
+                bool delayFlag = true;
+                if (message.Count > 0)
+                {
+                    try { delayFlag = Convert.ToBoolean(message.ToArray()[0]); } catch { }
+                }
+                if (delayFlag && autoSuicideService.HasScheduled)
+                {
+                    TimeSpan remaining = TimeSpan.FromSeconds(40) - (DateTime.UtcNow - autoSuicideService.RoundStartTime);
+                    if (remaining > TimeSpan.Zero)
+                    {
+                        autoSuicideService.Schedule(remaining, false, PerformAutoSuicide);
+                    }
+                }
+            }
+            else if (message.Address == "/avatar/parameters/setalert")
+            {
+                float setAlertValue = 0;
+                if (message.Count > 0)
+                {
+                    try { setAlertValue = Convert.ToSingle(message.ToArray()[0]); } catch { }
+                }
+                if (setAlertValue != 0)
+                {
+                    _ = SendAlertToTonSprinkAsync(setAlertValue);
+                }
+            }
+            else if (message.Address == "/avatar/parameters/getlatestsavecode")
+            {
+                bool getLatestSaveCode = false;
+                if (message.Count > 0)
+                {
+                    try { getLatestSaveCode = Convert.ToBoolean(message.ToArray()[0]); } catch { }
+                }
+                if (getLatestSaveCode)
+                {
+                    if (!string.IsNullOrEmpty(_settings.apikey))
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            using (var client = new HttpClient())
+                            {
+                                client.BaseAddress = new Uri("https://toncloud.sprink.cloud/api/savecode/get/" + _settings.apikey + "/latest");
+                                try
+                                {
+                                    var response = await client.GetAsync("");
+                                    if (response.IsSuccessStatusCode)
+                                    {
+                                        var jsonResponse = await response.Content.ReadAsStringAsync();
+                                        var json = JObject.Parse(jsonResponse);
+                                        string saveCode = json.Value<string>("savecode") ?? "";
+                                        Thread thread = new Thread(() => Clipboard.SetText(saveCode));
+                                        thread.SetApartmentState(ApartmentState.STA);
+                                        thread.Start();
+                                        thread.Join();
+                                        _logger.LogEvent("SaveCode", "Latest save code copied to clipboard: " + saveCode);
+                                    }
+                                    else
+                                    {
+                                        _logger.LogEvent("SaveCodeError", $"Failed to get latest save code: {response.StatusCode}");
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogEvent("SaveCodeError", $"Exception occurred: {ex.Message}");
+                                }
+                            }
+                        });
+                    }
+                }
+            }
+            else if (message.Address == "/avatar/parameters/isAllSelfKill")
+            {
+                if (message.Count > 0)
+                {
+                    try { issetAllSelfKillMode = Convert.ToBoolean(message.ToArray()[0]); } catch { }
                 }
             }
             else if (message.Address == "/avatar/parameters/followAutoSelfKill")
