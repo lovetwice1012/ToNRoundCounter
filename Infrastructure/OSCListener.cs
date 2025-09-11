@@ -11,12 +11,13 @@ namespace ToNRoundCounter.Infrastructure
     /// <summary>
     /// OSC listener implementation.
     /// </summary>
-    public class OSCListener : IOSCListener
+    public class OSCListener : IOSCListener, IDisposable
     {
         private readonly IEventBus _bus;
         private readonly ICancellationProvider _cancellation;
         private readonly IEventLogger _logger;
         private readonly Channel<OscMessage> _channel = Channel.CreateUnbounded<OscMessage>();
+        private Task? _processingTask;
 
         public OSCListener(IEventBus bus, ICancellationProvider cancellation, IEventLogger logger)
         {
@@ -27,7 +28,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public async Task StartAsync(int port)
         {
-            _ = Task.Run(ProcessMessagesAsync, _cancellation.Token);
+            _processingTask = Task.Run(ProcessMessagesAsync, _cancellation.Token);
             await Task.Run(() =>
             {
                 using (var listener = new OscReceiver(IPAddress.Parse("127.0.0.1"), port))
@@ -64,6 +65,11 @@ namespace ToNRoundCounter.Infrastructure
                 }
             }
             catch (OperationCanceledException) { }
+        }
+
+        public void Dispose()
+        {
+            _processingTask?.GetAwaiter().GetResult();
         }
     }
 }
