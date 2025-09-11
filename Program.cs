@@ -25,9 +25,12 @@ namespace ToNRoundCounter
 
             var services = new ServiceCollection();
 
+            var eventLogger = new EventLogger();
+            var eventBus = new EventBus();
+
             services.AddSingleton<ICancellationProvider, CancellationProvider>();
-            services.AddSingleton<IEventLogger, EventLogger>();
-            services.AddSingleton<IEventBus, EventBus>();
+            services.AddSingleton<IEventLogger>(eventLogger);
+            services.AddSingleton<IEventBus>(eventBus);
             services.AddSingleton<IOSCListener>(sp => new OSCListener(sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ICancellationProvider>(), sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<IWebSocketClient>(sp => new WebSocketClient("ws://127.0.0.1:11398", sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ICancellationProvider>(), sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<AutoSuicideService>();
@@ -42,7 +45,7 @@ namespace ToNRoundCounter
                 sp.GetRequiredService<IAppSettings>(),
                 sp.GetRequiredService<IEventLogger>(),
                 sp.GetRequiredService<IHttpClient>()));
-            ModuleLoader.LoadModules(services);
+            ModuleLoader.LoadModules(services, eventLogger, eventBus);
             services.AddSingleton<MainForm>(sp => new MainForm(
                 sp.GetRequiredService<IWebSocketClient>(),
                 sp.GetRequiredService<IOSCListener>(),
