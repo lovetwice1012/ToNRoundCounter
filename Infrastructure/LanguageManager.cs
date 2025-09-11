@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Resources;
+using System.Threading;
 
 namespace ToNRoundCounter.Infrastructure
 {
@@ -12,12 +13,13 @@ namespace ToNRoundCounter.Infrastructure
 
         public static void SetLanguage(string cultureCode)
         {
-            _culture = new CultureInfo(cultureCode);
+            Interlocked.Exchange(ref _culture, new CultureInfo(cultureCode));
         }
 
         public static string Translate(string key)
         {
-            return _resourceManager.GetString(key, _culture) ?? key;
+            var culture = Volatile.Read(ref _culture);
+            return _resourceManager.GetString(key, culture) ?? key;
         }
     }
 }
