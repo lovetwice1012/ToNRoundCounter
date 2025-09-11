@@ -71,5 +71,15 @@ namespace ToNRoundCounter.Tests
             Assert.True(ok);
             Assert.True(rule.Matches("C", null, (a, b) => a == b));
         }
+
+        [Fact]
+        public void TryParse_AllowsEscapedColon()
+        {
+            var ok = AutoSuicideRule.TryParse(@"A\:B:C\:D:1", out var rule);
+            Assert.True(ok);
+            Assert.Equal("A:B", rule.Round);
+            Assert.Equal("C:D", rule.Terror);
+            Assert.Equal(1, rule.Value);
+        }
     }
 }
