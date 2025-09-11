@@ -12,7 +12,7 @@ namespace ToNRoundCounter.Infrastructure
     /// </summary>
     public static class ModuleLoader
     {
-        public static void LoadModules(IServiceCollection services, string path = "Modules")
+        public static void LoadModules(IServiceCollection services, IEventLogger logger, IEventBus bus, string path = "Modules")
         {
             if (!Directory.Exists(path))
                 return;
@@ -32,9 +32,10 @@ namespace ToNRoundCounter.Infrastructure
                         }
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Ignore modules that fail to load
+                    logger.LogEvent("ModuleLoad", "Failed to load module " + file + ": " + ex.Message, Serilog.Events.LogEventLevel.Error);
+                    bus.Publish(new ModuleLoadFailed(file, ex));
                 }
             }
         }

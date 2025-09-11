@@ -7,4 +7,5 @@ namespace ToNRoundCounter.Application
     public record OscConnected;
     public record OscDisconnected;
     public record SettingsValidationFailed(System.Collections.Generic.IEnumerable<string> Errors);
+    public record ModuleLoadFailed(string File, System.Exception Exception);
 }
