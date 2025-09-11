@@ -234,7 +234,7 @@ namespace ToNRoundCounter.UI
             autoSuicidePresetSaveButton.Text = LanguageManager.Translate("保存");
             autoSuicidePresetSaveButton.AutoSize = true;
             autoSuicidePresetSaveButton.Location = new Point(autoSuicidePresetComboBox.Right + 10, autoSuicideRoundListBox.Bottom + 5);
-            autoSuicidePresetSaveButton.Click += async (s, e) =>
+            autoSuicidePresetSaveButton.Click += (s, e) =>
             {
                 string name = autoSuicidePresetComboBox.Text.Trim();
                 if (string.IsNullOrEmpty(name))
@@ -252,7 +252,6 @@ namespace ToNRoundCounter.UI
                 _settings.AutoSuicidePresets[name] = preset;
                 if (!autoSuicidePresetComboBox.Items.Contains(name))
                     autoSuicidePresetComboBox.Items.Add(name);
-                await _settings.SaveAsync();
                 MessageBox.Show(LanguageManager.Translate("プリセットを保存しました。"), LanguageManager.Translate("情報"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             };
             grpAutoSuicide.Controls.Add(autoSuicidePresetSaveButton);
@@ -287,7 +286,7 @@ namespace ToNRoundCounter.UI
             autoSuicidePresetImportButton.Text = LanguageManager.Translate("インポート");
             autoSuicidePresetImportButton.AutoSize = true;
             autoSuicidePresetImportButton.Location = new Point(autoSuicidePresetSaveButton.Left, autoSuicidePresetSaveButton.Bottom + 5);
-            autoSuicidePresetImportButton.Click += async (s, e) =>
+            autoSuicidePresetImportButton.Click += (s, e) =>
             {
                 OpenFileDialog dialog = new OpenFileDialog();
                 dialog.Filter = "JSON Files|*.json|All Files|*.*";
@@ -303,7 +302,6 @@ namespace ToNRoundCounter.UI
                             _settings.AutoSuicidePresets[name] = preset;
                             if (!autoSuicidePresetComboBox.Items.Contains(name))
                                 autoSuicidePresetComboBox.Items.Add(name);
-                            await _settings.SaveAsync();
                             MessageBox.Show(LanguageManager.Translate("プリセットをインポートしました。"), LanguageManager.Translate("情報"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                         }
                     }
