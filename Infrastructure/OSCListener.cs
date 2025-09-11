@@ -32,15 +32,23 @@ namespace ToNRoundCounter.Infrastructure
             {
                 using (var listener = new OscReceiver(IPAddress.Parse("127.0.0.1"), port))
                 {
-                    listener.Connect();
-                    while (!_cancellation.Token.IsCancellationRequested)
+                    try
                     {
-                        if (listener.State != OscSocketState.Connected)
-                            break;
-                        if (listener.TryReceive(out OscPacket packet) && packet is OscMessage msg)
+                        listener.Connect();
+                        _bus.Publish(new OscConnected());
+                        while (!_cancellation.Token.IsCancellationRequested)
                         {
-                            _channel.Writer.TryWrite(msg);
+                            if (listener.State != OscSocketState.Connected)
+                                break;
+                            if (listener.TryReceive(out OscPacket packet) && packet is OscMessage msg)
+                            {
+                                _channel.Writer.TryWrite(msg);
+                            }
                         }
+                    }
+                    finally
+                    {
+                        _bus.Publish(new OscDisconnected());
                     }
                 }
             }, _cancellation.Token).ConfigureAwait(false);
