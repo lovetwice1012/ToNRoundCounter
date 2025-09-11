@@ -16,6 +16,30 @@ namespace ToNRoundCounter.Tests
         }
 
         [Fact]
+        public void TryParse_ValueOnlyLine_Parses()
+        {
+            var ok = AutoSuicideRule.TryParse("1", out var rule);
+            Assert.True(ok);
+            Assert.Null(rule.RoundExpression);
+            Assert.Null(rule.TerrorExpression);
+            Assert.Equal(1, rule.Value);
+        }
+
+        [Fact]
+        public void TryParse_InvalidSegmentCount_ReturnsFalse()
+        {
+            var ok = AutoSuicideRule.TryParse("A:B:C:D", out var _);
+            Assert.False(ok);
+        }
+
+        [Fact]
+        public void TryParse_InvalidValue_ReturnsFalse()
+        {
+            Assert.False(AutoSuicideRule.TryParse("A:B:3", out _));
+            Assert.False(AutoSuicideRule.TryParse("3", out _));
+        }
+
+        [Fact]
         public void Matches_NegatedGroup_Works()
         {
             var ok = AutoSuicideRule.TryParse("!(A||B)::1", out var rule);
