@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Channels;
+using System.Runtime.CompilerServices;
 
 namespace ToNRoundCounter.Infrastructure
 {
@@ -9,7 +10,7 @@ namespace ToNRoundCounter.Infrastructure
     /// </summary>
     public static class ChannelReaderExtensions
     {
-        public static async IAsyncEnumerable<T> ReadAllAsync<T>(this ChannelReader<T> reader, CancellationToken cancellationToken = default)
+        public static async IAsyncEnumerable<T> ReadAllAsync<T>(this ChannelReader<T> reader, [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             while (await reader.WaitToReadAsync(cancellationToken).ConfigureAwait(false))
             {
