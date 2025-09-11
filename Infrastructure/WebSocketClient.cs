@@ -34,56 +34,67 @@ namespace ToNRoundCounter.Infrastructure
 
         public async Task StartAsync()
         {
-            _cts = CancellationTokenSource.CreateLinkedTokenSource(_cancellation.Token);
-            while (!_cts.Token.IsCancellationRequested)
+            _cts?.Dispose();
+            var cts = CancellationTokenSource.CreateLinkedTokenSource(_cancellation.Token);
+            _cts = cts;
+            var token = cts.Token;
+            try
             {
-                _socket = new ClientWebSocket();
-                try
+                while (!token.IsCancellationRequested)
                 {
-                    await _socket.ConnectAsync(_uri, _cts.Token);
-                    _bus.Publish(new WebSocketConnected());
-                    _processingTask ??= Task.Run(ProcessMessagesAsync, _cts.Token);
-                    await ReceiveLoopAsync();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogEvent("WebSocket", ex.Message, Serilog.Events.LogEventLevel.Error);
-                    _bus.Publish(new WebSocketDisconnected());
-                    if (!_cts.Token.IsCancellationRequested)
+                    _socket = new ClientWebSocket();
+                    try
                     {
-                        await Task.Delay(300, _cts.Token);
+                        await _socket.ConnectAsync(_uri, token);
+                        _bus.Publish(new WebSocketConnected());
+                        _processingTask ??= Task.Run(() => ProcessMessagesAsync(token), token);
+                        await ReceiveLoopAsync(token);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogEvent("WebSocket", ex.Message, Serilog.Events.LogEventLevel.Error);
+                        _bus.Publish(new WebSocketDisconnected());
+                        if (!token.IsCancellationRequested)
+                        {
+                            await Task.Delay(300, token);
+                        }
+                    }
+                    finally
+                    {
+                        _socket?.Dispose();
                     }
                 }
-                finally
-                {
-                    _socket?.Dispose();
-                }
+            }
+            finally
+            {
+                cts.Dispose();
+                _cts = null;
             }
         }
 
-        private async Task ReceiveLoopAsync()
+        private async Task ReceiveLoopAsync(CancellationToken token)
         {
             var buffer = new byte[8192];
             try
             {
-                while (_socket.State == WebSocketState.Open && !_cts.Token.IsCancellationRequested)
+                while (_socket.State == WebSocketState.Open && !token.IsCancellationRequested)
                 {
                     var segment = new ArraySegment<byte>(buffer);
-                    var result = await _socket.ReceiveAsync(segment, _cts.Token);
+                    var result = await _socket.ReceiveAsync(segment, token);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", _cts.Token);
+                        await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", token);
                         break;
                     }
                     var messageBytes = new List<byte>();
                     messageBytes.AddRange(buffer.Take(result.Count));
                     while (!result.EndOfMessage)
                     {
-                        result = await _socket.ReceiveAsync(segment, _cts.Token);
+                        result = await _socket.ReceiveAsync(segment, token);
                         messageBytes.AddRange(buffer.Take(result.Count));
                     }
                     var message = Encoding.UTF8.GetString(messageBytes.ToArray());
-                    await _channel.Writer.WriteAsync(message, _cts.Token);
+                    await _channel.Writer.WriteAsync(message, token);
                 }
             }
             catch (Exception ex)
@@ -96,11 +107,11 @@ namespace ToNRoundCounter.Infrastructure
             }
         }
 
-        private async Task ProcessMessagesAsync()
+        private async Task ProcessMessagesAsync(CancellationToken token)
         {
             try
             {
-                await foreach (var msg in _channel.Reader.ReadAllAsync(_cts.Token))
+                await foreach (var msg in _channel.Reader.ReadAllAsync(token))
                 {
                     _bus.Publish(new WebSocketMessageReceived(msg));
                 }
@@ -119,7 +130,12 @@ namespace ToNRoundCounter.Infrastructure
             {
                 Console.WriteLine($"WebSocket stop error: {ex.Message}");
             }
-            _socket?.Dispose();
+            finally
+            {
+                _cts?.Dispose();
+                _cts = null;
+                _socket?.Dispose();
+            }
         }
 
         public void Dispose()
