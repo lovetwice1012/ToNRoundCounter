@@ -67,6 +67,11 @@ namespace ToNRoundCounter.Infrastructure
             catch (OperationCanceledException) { }
         }
 
+        public void Stop()
+        {
+            _cancellation.Cancel();
+        }
+
         public void Dispose()
         {
             _processingTask?.GetAwaiter().GetResult();

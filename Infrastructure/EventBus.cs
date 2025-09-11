@@ -21,6 +21,21 @@ namespace ToNRoundCounter.Infrastructure
             }
         }
 
+        public void Unsubscribe<T>(Action<T> handler)
+        {
+            if (_handlers.TryGetValue(typeof(T), out var list))
+            {
+                lock (list)
+                {
+                    list.Remove(handler);
+                    if (list.Count == 0)
+                    {
+                        _handlers.TryRemove(typeof(T), out _);
+                    }
+                }
+            }
+        }
+
         public void Publish<T>(T message)
         {
             if (_handlers.TryGetValue(typeof(T), out var list))
