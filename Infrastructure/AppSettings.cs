@@ -92,7 +92,7 @@ namespace ToNRoundCounter.Infrastructure
             return errors;
         }
 
-        public Task SaveAsync()
+        public async Task SaveAsync()
         {
             var settings = new AppSettingsData
             {
@@ -121,9 +121,17 @@ namespace ToNRoundCounter.Infrastructure
                 apikey = apikey,
                 Theme = Theme
             };
+
             string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
-            File.WriteAllText(settingsFile, json);
-            return Task.CompletedTask;
+            try
+            {
+                await File.WriteAllTextAsync(settingsFile, json);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogEvent("Error", "Failed to save app settings: " + ex.Message, Serilog.Events.LogEventLevel.Error);
+                throw;
+            }
         }
     }
 
