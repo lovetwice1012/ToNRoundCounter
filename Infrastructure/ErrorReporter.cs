@@ -149,7 +149,12 @@ namespace ToNRoundCounter.Infrastructure
                 if (!string.IsNullOrWhiteSpace(ex.StackTrace))
                 {
                     sb.AppendLine("Stack Trace:");
-                    sb.AppendLine(ex.StackTrace);
+                    foreach (var line in ex.StackTrace
+                        .Replace("\r\n", "\n")
+                        .Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        sb.AppendLine(line);
+                    }
                 }
                 else
                 {
