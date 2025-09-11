@@ -1,8 +1,6 @@
 using System;
-using System.Linq;
 using System.Windows.Forms;
 using ToNRoundCounter.Application;
-using WinFormsApp = System.Windows.Forms.Application;
 
 namespace ToNRoundCounter.Infrastructure
 {
@@ -11,19 +9,29 @@ namespace ToNRoundCounter.Infrastructure
     /// </summary>
     public class WinFormsDispatcher : IUiDispatcher
     {
+        private Form? _mainForm;
+
+        public void SetMainForm(Form form)
+        {
+            _mainForm = form;
+        }
+
         public void Invoke(Action action)
         {
-            if (WinFormsApp.OpenForms.Count > 0)
+            var form = _mainForm;
+            if (form == null || form.IsDisposed)
             {
-                var form = WinFormsApp.OpenForms.Cast<Form>().First();
-                if (form.InvokeRequired)
-                {
-                    form.BeginInvoke(action);
-                }
-                else
-                {
-                    action();
-                }
+                return;
+            }
+
+            if (!form.IsHandleCreated)
+            {
+                return;
+            }
+
+            if (form.InvokeRequired)
+            {
+                form.BeginInvoke(action);
             }
             else
             {
