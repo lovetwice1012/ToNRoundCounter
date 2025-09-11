@@ -144,7 +144,17 @@ namespace ToNRoundCounter.Infrastructure
                     sb.AppendLine("  <Failed to enumerate processes>");
                 }
                 sb.AppendLine();
-                sb.AppendLine(ex.ToString());
+                sb.AppendLine($"Exception Type: {ex.GetType()}");
+                sb.AppendLine($"Message: {ex.Message}");
+                if (!string.IsNullOrWhiteSpace(ex.StackTrace))
+                {
+                    sb.AppendLine("Stack Trace:");
+                    sb.AppendLine(ex.StackTrace);
+                }
+                else
+                {
+                    sb.AppendLine("Stack Trace: <none>");
+                }
                 File.WriteAllText(path, sb.ToString());
             }
             catch
