@@ -69,7 +69,7 @@ namespace ToNRoundCounter.Tests
         {
             var ok = AutoSuicideRule.TryParse("!(!(A||B)&&C)::1", out var rule);
             Assert.True(ok);
-            Assert.True(rule.Matches("C", null, (a, b) => a == b));
+            Assert.False(rule.Matches("C", null, (a, b) => a == b));
         }
 
         [Fact]
