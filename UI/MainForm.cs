@@ -662,6 +662,10 @@ namespace ToNRoundCounter.UI
                         }
                         //もしroundTypeが自動自殺ラウンド対象なら自動自殺
                         int terrorAction = ShouldAutoSuicide(roundType, stateService.CurrentRound.TerrorKey);
+                        if (terrorAction == 0 && autoSuicideService.HasScheduled)
+                        {
+                            autoSuicideService.Cancel();
+                        }
                         if (issetAllSelfKillMode || terrorAction == 1)
                         {
                             _ = Task.Run(() => PerformAutoSuicide());
