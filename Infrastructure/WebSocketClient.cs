@@ -13,7 +13,7 @@ namespace ToNRoundCounter.Infrastructure
     /// <summary>
     /// Handles WebSocket connections and message dispatching.
     /// </summary>
-    public class WebSocketClient : IWebSocketClient
+    public class WebSocketClient : IWebSocketClient, IDisposable
     {
         private readonly Uri _uri;
         private ClientWebSocket _socket;
@@ -22,6 +22,7 @@ namespace ToNRoundCounter.Infrastructure
         private readonly ICancellationProvider _cancellation;
         private readonly IEventLogger _logger;
         private readonly Channel<string> _channel = Channel.CreateUnbounded<string>();
+        private Task? _processingTask;
 
         public WebSocketClient(string url, IEventBus bus, ICancellationProvider cancellation, IEventLogger logger)
         {
@@ -41,7 +42,7 @@ namespace ToNRoundCounter.Infrastructure
                 {
                     await _socket.ConnectAsync(_uri, _cts.Token);
                     _bus.Publish(new WebSocketConnected());
-                    _ = Task.Run(ProcessMessagesAsync, _cts.Token);
+                    _processingTask ??= Task.Run(ProcessMessagesAsync, _cts.Token);
                     await ReceiveLoopAsync();
                 }
                 catch (Exception ex)
@@ -112,12 +113,18 @@ namespace ToNRoundCounter.Infrastructure
             try
             {
                 _cts?.Cancel();
+                _processingTask?.GetAwaiter().GetResult();
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"WebSocket stop error: {ex.Message}");
             }
             _socket?.Dispose();
+        }
+
+        public void Dispose()
+        {
+            Stop();
         }
     }
 }
