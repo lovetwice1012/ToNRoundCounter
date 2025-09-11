@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using ToNRoundCounter.UI;
@@ -11,7 +12,7 @@ namespace ToNRoundCounter
     static class Program
     {
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
             WinFormsApp.EnableVisualStyles();
             WinFormsApp.SetCompatibleTextRenderingDefault(false);
@@ -57,6 +58,13 @@ namespace ToNRoundCounter
 
             var provider = services.BuildServiceProvider();
             provider.GetRequiredService<IErrorReporter>().Register();
+
+            if (args.Contains("--debug") &&
+                args.SkipWhile(a => a != "--test").Skip(1).FirstOrDefault() == "crashreporting")
+            {
+                throw new InvalidOperationException("Crash report test triggered");
+            }
+
             WinFormsApp.Run(provider.GetRequiredService<MainForm>());
             (provider as IDisposable)?.Dispose();
         }
