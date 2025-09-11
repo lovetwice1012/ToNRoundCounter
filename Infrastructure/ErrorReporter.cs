@@ -151,7 +151,7 @@ namespace ToNRoundCounter.Infrastructure
                     sb.AppendLine("Stack Trace:");
                     foreach (var line in ex.StackTrace
                         .Replace("\r\n", "\n")
-                        .Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                        .Split('\n', (char)StringSplitOptions.RemoveEmptyEntries))
                     {
                         sb.AppendLine(line);
                     }
