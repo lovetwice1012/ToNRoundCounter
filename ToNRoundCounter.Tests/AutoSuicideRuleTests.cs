@@ -114,6 +114,30 @@ namespace ToNRoundCounter.Tests
         }
 
         [Fact]
+        public void TryParseDetailed_ReturnsSegmentError()
+        {
+            var ok = AutoSuicideRule.TryParseDetailed("A:1", out var _, out var err);
+            Assert.False(ok);
+            Assert.Equal("セグメント数不正", err);
+        }
+
+        [Fact]
+        public void TryParseDetailed_ReturnsValueError()
+        {
+            var ok = AutoSuicideRule.TryParseDetailed("A:B:5", out var _, out var err);
+            Assert.False(ok);
+            Assert.Equal("値が 0/1/2 以外", err);
+        }
+
+        [Fact]
+        public void TryParseDetailed_ReturnsExpressionError()
+        {
+            var ok = AutoSuicideRule.TryParseDetailed("(A:B:1", out var _, out var err);
+            Assert.False(ok);
+            Assert.Equal("括弧の不整合や演算子の誤用", err);
+        }
+
+        [Fact]
         public void Covers_DetectsBroaderRules()
         {
             AutoSuicideRule.TryParse("A::1", out var broad);

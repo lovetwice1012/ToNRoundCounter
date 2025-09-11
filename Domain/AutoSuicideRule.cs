@@ -73,11 +73,71 @@ namespace ToNRoundCounter.Domain
         {
             rule = null;
             error = null;
-            if (!TryParse(line, out rule))
+            if (string.IsNullOrWhiteSpace(line))
             {
                 error = "形式が不正です";
                 return false;
             }
+
+            var parts = SplitEscaped(line);
+            if (parts.Count == 1)
+            {
+                if (int.TryParse(parts[0], out var v) && (v == 0 || v == 1 || v == 2))
+                {
+                    rule = new AutoSuicideRule { Value = v };
+                    return true;
+                }
+                error = "値が 0/1/2 以外";
+                return false;
+            }
+
+            if (parts.Count != 3)
+            {
+                error = "セグメント数不正";
+                return false;
+            }
+
+            if (!(int.TryParse(parts[2], out var value) && (value == 0 || value == 1 || value == 2)))
+            {
+                error = "値が 0/1/2 以外";
+                return false;
+            }
+
+            string roundExpr = string.IsNullOrWhiteSpace(parts[0]) ? null : parts[0].Trim();
+            string terrorExpr = string.IsNullOrWhiteSpace(parts[1]) ? null : parts[1].Trim();
+
+            bool roundNeg = false;
+            if (!string.IsNullOrEmpty(roundExpr))
+            {
+                roundNeg = StripNegation(ref roundExpr);
+                if (!ValidateExpression(roundExpr))
+                {
+                    error = "括弧の不整合や演算子の誤用";
+                    return false;
+                }
+            }
+
+            bool terrorNeg = false;
+            if (!string.IsNullOrEmpty(terrorExpr))
+            {
+                terrorNeg = StripNegation(ref terrorExpr);
+                if (!ValidateExpression(terrorExpr))
+                {
+                    error = "括弧の不整合や演算子の誤用";
+                    return false;
+                }
+            }
+
+            rule = new AutoSuicideRule
+            {
+                RoundExpression = roundExpr,
+                TerrorExpression = terrorExpr,
+                RoundNegate = roundNeg,
+                TerrorNegate = terrorNeg,
+                Round = IsSimple(roundExpr) ? roundExpr : null,
+                Terror = IsSimple(terrorExpr) ? terrorExpr : null,
+                Value = value
+            };
             return true;
         }
 
