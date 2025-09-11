@@ -381,7 +381,7 @@ namespace ToNRoundCounter.UI
                     }
                     else
                     {
-                        errors.Add($"{i + 1}行目: {err}");
+                        errors.Add($"{i + 1}行目: {LanguageManager.Translate(err)}");
                     }
                 }
                 if (errors.Any())
