@@ -17,7 +17,7 @@ namespace ToNRoundCounter.Infrastructure
         private readonly ICancellationProvider _cancellation;
         private readonly IEventLogger _logger;
         private readonly Channel<OscMessage> _channel = Channel.CreateUnbounded<OscMessage>();
-        private Task? _processingTask;
+        private Task _processingTask;
 
         public OSCListener(IEventBus bus, ICancellationProvider cancellation, IEventLogger logger)
         {

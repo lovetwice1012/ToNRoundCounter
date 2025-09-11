@@ -129,7 +129,10 @@ namespace ToNRoundCounter.Infrastructure
             string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
             try
             {
-                await File.WriteAllTextAsync(settingsFile, json);
+                using (var writer = new StreamWriter(settingsFile, false))
+                {
+                    await writer.WriteAsync(json).ConfigureAwait(false);
+                }
             }
             catch (Exception ex)
             {
