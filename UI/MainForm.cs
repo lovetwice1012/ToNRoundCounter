@@ -1267,8 +1267,11 @@ namespace ToNRoundCounter.UI
         }
         private void ProcessRoundActive(JObject json)
         {
-            bool active = json["Value"] != null && json["Value"].ToObject<bool>();
-            if (active)
+            bool? active = json["Value"]?.ToObject<bool?>();
+            if (active == null)
+                return;
+
+            if (active == true)
             {
                 if (stateService.CurrentRound == null)
                 {
