@@ -8,5 +8,6 @@ namespace ToNRoundCounter.Application
     public interface IOSCListener
     {
         Task StartAsync(int port);
+        void Stop();
     }
 }

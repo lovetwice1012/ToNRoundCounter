@@ -59,6 +59,14 @@ namespace ToNRoundCounter.UI
         private readonly IInputSender _inputSender;
         private readonly IUiDispatcher _dispatcher;
 
+        private Action<WebSocketConnected> _wsConnectedHandler;
+        private Action<WebSocketDisconnected> _wsDisconnectedHandler;
+        private Action<OscConnected> _oscConnectedHandler;
+        private Action<OscDisconnected> _oscDisconnectedHandler;
+        private Action<WebSocketMessageReceived> _wsMessageHandler;
+        private Action<OscMessageReceived> _oscMessageHandler;
+        private Action<SettingsValidationFailed> _settingsValidationFailedHandler;
+
         private Dictionary<string, Color> terrorColors;
         private bool lastOptedIn = true;
 
@@ -112,30 +120,42 @@ namespace ToNRoundCounter.UI
             InitializeComponents();
             ApplyTheme();
             this.Load += MainForm_Load;
-
-            _eventBus.Subscribe<WebSocketConnected>(_ => _dispatcher.Invoke(() =>
+            _wsConnectedHandler = _ => _dispatcher.Invoke(() =>
             {
                 lblStatus.Text = "WebSocket: " + LanguageManager.Translate("Connected");
                 lblStatus.ForeColor = Color.Green;
-            }));
-            _eventBus.Subscribe<WebSocketDisconnected>(_ => _dispatcher.Invoke(() =>
+            });
+            _eventBus.Subscribe(_wsConnectedHandler);
+
+            _wsDisconnectedHandler = _ => _dispatcher.Invoke(() =>
             {
                 lblStatus.Text = "WebSocket: " + LanguageManager.Translate("Disconnected");
                 lblStatus.ForeColor = Color.Red;
-            }));
-            _eventBus.Subscribe<OscConnected>(_ => _dispatcher.Invoke(() =>
+            });
+            _eventBus.Subscribe(_wsDisconnectedHandler);
+
+            _oscConnectedHandler = _ => _dispatcher.Invoke(() =>
             {
                 lblOSCStatus.Text = "OSC: " + LanguageManager.Translate("Connected");
                 lblOSCStatus.ForeColor = Color.Green;
-            }));
-            _eventBus.Subscribe<OscDisconnected>(_ => _dispatcher.Invoke(() =>
+            });
+            _eventBus.Subscribe(_oscConnectedHandler);
+
+            _oscDisconnectedHandler = _ => _dispatcher.Invoke(() =>
             {
                 lblOSCStatus.Text = "OSC: " + LanguageManager.Translate("Disconnected");
                 lblOSCStatus.ForeColor = Color.Red;
-            }));
-            _eventBus.Subscribe<WebSocketMessageReceived>(async e => await HandleEventAsync(e.Message));
-            _eventBus.Subscribe<OscMessageReceived>(e => HandleOscMessage(e.Message));
-            _eventBus.Subscribe<SettingsValidationFailed>(e => _dispatcher.Invoke(() => MessageBox.Show(string.Join("\n", e.Errors), "Settings Error")));
+            });
+            _eventBus.Subscribe(_oscDisconnectedHandler);
+
+            _wsMessageHandler = async e => await HandleEventAsync(e.Message);
+            _eventBus.Subscribe(_wsMessageHandler);
+
+            _oscMessageHandler = e => HandleOscMessage(e.Message);
+            _eventBus.Subscribe(_oscMessageHandler);
+
+            _settingsValidationFailedHandler = e => _dispatcher.Invoke(() => MessageBox.Show(string.Join("\n", e.Errors), "Settings Error"));
+            _eventBus.Subscribe(_settingsValidationFailedHandler);
             _ = webSocketClient.StartAsync();
             _ = oscListener.StartAsync(_settings.OSCPort);
 
@@ -469,13 +489,23 @@ namespace ToNRoundCounter.UI
             }
         }
 
+        private void UnsubscribeEventBus()
+        {
+            if (_wsConnectedHandler != null) _eventBus.Unsubscribe(_wsConnectedHandler);
+            if (_wsDisconnectedHandler != null) _eventBus.Unsubscribe(_wsDisconnectedHandler);
+            if (_oscConnectedHandler != null) _eventBus.Unsubscribe(_oscConnectedHandler);
+            if (_oscDisconnectedHandler != null) _eventBus.Unsubscribe(_oscDisconnectedHandler);
+            if (_wsMessageHandler != null) _eventBus.Unsubscribe(_wsMessageHandler);
+            if (_oscMessageHandler != null) _eventBus.Unsubscribe(_oscMessageHandler);
+            if (_settingsValidationFailedHandler != null) _eventBus.Unsubscribe(_settingsValidationFailedHandler);
+        }
+
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             _cancellation.Cancel();
             webSocketClient.Stop();
-            velocityTimer?.Stop();
-            velocityTimer?.Dispose();
+            oscListener.Stop();
             if (oscRepeaterProcess != null && !oscRepeaterProcess.HasExited)
             {
                 try
