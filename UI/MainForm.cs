@@ -123,6 +123,16 @@ namespace ToNRoundCounter.UI
                 lblStatus.Text = "WebSocket: " + LanguageManager.Translate("Disconnected");
                 lblStatus.ForeColor = Color.Red;
             }));
+            _eventBus.Subscribe<OscConnected>(_ => _dispatcher.Invoke(() =>
+            {
+                lblOSCStatus.Text = "OSC: " + LanguageManager.Translate("Connected");
+                lblOSCStatus.ForeColor = Color.Green;
+            }));
+            _eventBus.Subscribe<OscDisconnected>(_ => _dispatcher.Invoke(() =>
+            {
+                lblOSCStatus.Text = "OSC: " + LanguageManager.Translate("Disconnected");
+                lblOSCStatus.ForeColor = Color.Red;
+            }));
             _eventBus.Subscribe<WebSocketMessageReceived>(async e => await HandleEventAsync(e.Message));
             _eventBus.Subscribe<OscMessageReceived>(e => HandleOscMessage(e.Message));
             _eventBus.Subscribe<SettingsValidationFailed>(e => _dispatcher.Invoke(() => MessageBox.Show(string.Join("\n", e.Errors), "Settings Error")));
