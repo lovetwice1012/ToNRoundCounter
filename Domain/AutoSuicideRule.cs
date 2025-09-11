@@ -203,8 +203,6 @@ namespace ToNRoundCounter.Domain
         {
             if (string.IsNullOrWhiteSpace(expr)) return true;
             expr = expr.Trim();
-            if (expr.StartsWith("!"))
-                return !Evaluate(expr.Substring(1), input, comparer);
             if (expr.StartsWith("(") && MatchingParen(expr) == expr.Length - 1)
                 return Evaluate(expr.Substring(1, expr.Length - 2), input, comparer);
             var orParts = SplitTopLevel(expr, "||").ToList();
@@ -213,6 +211,8 @@ namespace ToNRoundCounter.Domain
             var andParts = SplitTopLevel(expr, "&&").ToList();
             if (andParts.Count > 1)
                 return andParts.All(p => Evaluate(p, input, comparer));
+            if (expr.StartsWith("!"))
+                return !Evaluate(expr.Substring(1), input, comparer);
             return input != null && comparer(input, expr);
         }
 
