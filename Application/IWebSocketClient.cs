@@ -7,6 +7,6 @@ namespace ToNRoundCounter.Application
     public interface IWebSocketClient
     {
         Task StartAsync();
-        void Stop();
+        Task StopAsync();
     }
 }

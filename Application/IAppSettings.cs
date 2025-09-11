@@ -32,6 +32,8 @@ namespace ToNRoundCounter.Application
         bool AutoSuicideEnabled { get; set; }
         string apikey { get; set; }
         ThemeType Theme { get; set; }
+        string LogFilePath { get; set; }
+        string WebSocketIp { get; set; }
         void Load();
         Task SaveAsync();
     }

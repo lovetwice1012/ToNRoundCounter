@@ -12,12 +12,12 @@ namespace ToNRoundCounter.Tests
             service.RecordRoundResult("RoundA", "Terror1", true);
             service.RecordRoundResult("RoundA", "Terror1", false);
 
-            var roundAgg = service.RoundAggregates["RoundA"];
+            var roundAgg = service.GetRoundAggregates()["RoundA"];
             Assert.Equal(2, roundAgg.Total);
             Assert.Equal(1, roundAgg.Survival);
             Assert.Equal(1, roundAgg.Death);
 
-            service.TerrorAggregates.TryGetRound("RoundA", out var terrorDict);
+            Assert.True(service.TryGetTerrorAggregates("RoundA", out var terrorDict));
             Assert.True(terrorDict.ContainsKey("Terror1"));
             var terrorAgg = terrorDict["Terror1"];
             Assert.Equal(2, terrorAgg.Total);
@@ -30,10 +30,11 @@ namespace ToNRoundCounter.Tests
         {
             var service = new StateService();
             service.UpdateStat("Survivals", 5);
-            Assert.True(service.Stats.ContainsKey("Survivals"));
-            Assert.Equal(5, service.Stats["Survivals"]);
+            var stats = service.GetStats();
+            Assert.True(stats.ContainsKey("Survivals"));
+            Assert.Equal(5, stats["Survivals"]);
             service.Reset();
-            Assert.Empty(service.Stats);
+            Assert.Empty(service.GetStats());
         }
     }
 }
