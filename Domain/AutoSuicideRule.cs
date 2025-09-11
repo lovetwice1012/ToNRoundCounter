@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 
 namespace ToNRoundCounter.Domain
 {
@@ -23,8 +24,9 @@ namespace ToNRoundCounter.Domain
         {
             rule = null;
             if (string.IsNullOrWhiteSpace(line)) return false;
-            var parts = line.Split(':');
-            if (parts.Length == 1)
+
+            var parts = SplitEscaped(line);
+            if (parts.Count == 1)
             {   // only value specified
                 if (int.TryParse(parts[0], out var v) && (v == 0 || v == 1 || v == 2))
                 {
@@ -33,7 +35,7 @@ namespace ToNRoundCounter.Domain
                 }
                 return false;
             }
-            if (parts.Length != 3) return false;
+            if (parts.Count != 3) return false;
             if (!(int.TryParse(parts[2], out var value) && (value == 0 || value == 1 || value == 2)))
                 return false;
 
@@ -126,7 +128,7 @@ namespace ToNRoundCounter.Domain
                 return Value.ToString();
             string r = RoundExpression == null ? "" : (RoundNegate ? "!" + RoundExpression : RoundExpression);
             string t = TerrorExpression == null ? "" : (TerrorNegate ? "!" + TerrorExpression : TerrorExpression);
-            return $"{r}:{t}:{Value}";
+            return $"{EscapeSegment(r)}:{EscapeSegment(t)}:{Value}";
         }
 
         /// <summary>
@@ -252,6 +254,49 @@ namespace ToNRoundCounter.Domain
         {
             if (string.IsNullOrEmpty(expr)) return false;
             return !(expr.Contains("&&") || expr.Contains("||") || expr.Contains("!") || expr.Contains("(") || expr.Contains(")"));
+        }
+
+        private static List<string> SplitEscaped(string line)
+        {
+            var result = new List<string>();
+            var sb = new StringBuilder();
+            bool escape = false;
+            foreach (var c in line)
+            {
+                if (escape)
+                {
+                    sb.Append(c);
+                    escape = false;
+                }
+                else if (c == '\\')
+                {
+                    escape = true;
+                }
+                else if (c == ':')
+                {
+                    result.Add(sb.ToString());
+                    sb.Clear();
+                }
+                else
+                {
+                    sb.Append(c);
+                }
+            }
+            if (escape) sb.Append('\\');
+            result.Add(sb.ToString());
+            return result;
+        }
+
+        private static string EscapeSegment(string s)
+        {
+            if (s == null) return null;
+            var sb = new StringBuilder();
+            foreach (var c in s)
+            {
+                if (c == ':' || c == '\\') sb.Append('\\');
+                sb.Append(c);
+            }
+            return sb.ToString();
         }
     }
 }
