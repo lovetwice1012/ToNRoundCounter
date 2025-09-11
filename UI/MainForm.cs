@@ -704,7 +704,10 @@ namespace ToNRoundCounter.UI
                         stateService.CurrentRound.Damage += damageValue;
                         _dispatcher.Invoke(() =>
                         {
-                            InfoPanel.DamageValue.Text = stateService.CurrentRound.Damage.ToString();
+                            if (InfoPanel?.DamageValue != null)
+                            {
+                                InfoPanel.DamageValue.Text = stateService.CurrentRound.Damage.ToString();
+                            }
                         });
                     }
                 }
