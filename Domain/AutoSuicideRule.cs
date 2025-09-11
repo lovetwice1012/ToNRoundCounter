@@ -248,15 +248,53 @@ namespace ToNRoundCounter.Domain
         private static bool ValidateExpression(string expr)
         {
             if (string.IsNullOrWhiteSpace(expr)) return true;
-            try
+
+            int depth = 0;
+            bool expectTerm = true;
+
+            for (int i = 0; i < expr.Length; i++)
             {
-                Evaluate(expr, "dummy", (a, b) => a == b);
-                return true;
+                char c = expr[i];
+
+                if (char.IsWhiteSpace(c))
+                    continue;
+
+                if (c == '(')
+                {
+                    if (!expectTerm) return false;
+                    depth++;
+                    expectTerm = true;
+                }
+                else if (c == ')')
+                {
+                    if (depth == 0 || expectTerm) return false;
+                    depth--;
+                    expectTerm = false;
+                }
+                else if (c == '!')
+                {
+                    if (!expectTerm) return false;
+                }
+                else if (c == '&' || c == '|')
+                {
+                    if (i + 1 >= expr.Length || expr[i + 1] != c) return false; // single & or |
+                    if (expectTerm) return false;
+                    expectTerm = true;
+                    i++; // skip next char
+                }
+                else
+                {
+                    // read identifier token
+                    int start = i;
+                    while (i < expr.Length && !char.IsWhiteSpace(expr[i]) && expr[i] != '!' && expr[i] != '&' && expr[i] != '|' && expr[i] != '(' && expr[i] != ')')
+                        i++;
+                    if (start == i) return false;
+                    i--; // compensate for for-loop increment
+                    expectTerm = false;
+                }
             }
-            catch
-            {
-                return false;
-            }
+
+            return depth == 0 && !expectTerm;
         }
 
         private static bool Evaluate(string expr, string input, Func<string, string, bool> comparer)
