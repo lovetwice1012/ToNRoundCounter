@@ -51,6 +51,8 @@ namespace ToNRoundCounter.Infrastructure
         public bool AutoSuicideEnabled { get; set; }
         public string apikey { get; set; } = string.Empty;
         public ThemeType Theme { get; set; } = ThemeType.Light;
+        public string LogFilePath { get; set; } = "logs/log-.txt";
+        public string WebSocketIp { get; set; } = "127.0.0.1";
 
         public void Load()
         {
@@ -119,7 +121,9 @@ namespace ToNRoundCounter.Infrastructure
                 AutoSuicideFuzzyMatch = AutoSuicideFuzzyMatch,
                 AutoSuicideUseDetail = AutoSuicideUseDetail,
                 apikey = apikey,
-                Theme = Theme
+                Theme = Theme,
+                LogFilePath = LogFilePath,
+                WebSocketIp = WebSocketIp
             };
 
             string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
@@ -161,5 +165,7 @@ namespace ToNRoundCounter.Infrastructure
         public bool AutoSuicideUseDetail { get; set; }
         public string apikey { get; set; }
         public ThemeType Theme { get; set; }
+        public string LogFilePath { get; set; }
+        public string WebSocketIp { get; set; }
     }
 }

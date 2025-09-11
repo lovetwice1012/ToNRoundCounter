@@ -18,7 +18,6 @@
                 UnsubscribeEventBus();
                 velocityTimer?.Stop();
                 velocityTimer?.Dispose();
-                webSocketClient?.Stop();
                 oscListener?.Stop();
                 _cancellation.Cancel();
                 components?.Dispose();

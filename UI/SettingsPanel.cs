@@ -18,6 +18,7 @@ namespace ToNRoundCounter.UI
 
 
         public NumericUpDown oscPortNumericUpDown { get; private set; }
+        public TextBox webSocketIpTextBox { get; private set; }
         // 統計情報表示・デバッグ情報チェック
         public CheckBox ShowStatsCheckBox { get; private set; }
         public CheckBox DebugInfoCheckBox { get; private set; }
@@ -96,10 +97,22 @@ namespace ToNRoundCounter.UI
             grpOsc.Size = new Size(columnWidth, 60);
             this.Controls.Add(grpOsc);
 
+            Label wsIpLabel = new Label();
+            wsIpLabel.Text = LanguageManager.Translate("WebSocket IP:");
+            wsIpLabel.AutoSize = true;
+            wsIpLabel.Location = new Point(margin, 20);
+            grpOsc.Controls.Add(wsIpLabel);
+
+            webSocketIpTextBox = new TextBox();
+            webSocketIpTextBox.Text = _settings.WebSocketIp;
+            webSocketIpTextBox.Location = new Point(wsIpLabel.Right + 10, 18);
+            webSocketIpTextBox.Width = 120;
+            grpOsc.Controls.Add(webSocketIpTextBox);
+
             Label oscPortLabel = new Label();
             oscPortLabel.Text = LanguageManager.Translate("OSC接続ポート:");
             oscPortLabel.AutoSize = true;
-            oscPortLabel.Location = new Point(margin, 20);
+            oscPortLabel.Location = new Point(webSocketIpTextBox.Right + 20, 20);
             grpOsc.Controls.Add(oscPortLabel);
 
             oscPortNumericUpDown = new NumericUpDown();

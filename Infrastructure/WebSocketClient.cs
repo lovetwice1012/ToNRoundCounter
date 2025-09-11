@@ -119,16 +119,19 @@ namespace ToNRoundCounter.Infrastructure
             catch (OperationCanceledException) { }
         }
 
-        public void Stop()
+        public async Task StopAsync()
         {
             try
             {
                 _cts?.Cancel();
-                _processingTask?.GetAwaiter().GetResult();
+                if (_processingTask != null)
+                {
+                    try { await _processingTask.ConfigureAwait(false); } catch { }
+                }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"WebSocket stop error: {ex.Message}");
+                _logger.LogEvent("WebSocket", $"Stop error: {ex.Message}", Serilog.Events.LogEventLevel.Error);
             }
             finally
             {
@@ -140,7 +143,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void Dispose()
         {
-            Stop();
+            _ = StopAsync();
         }
     }
 }

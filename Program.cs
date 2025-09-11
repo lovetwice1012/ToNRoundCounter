@@ -1,6 +1,8 @@
 using System;
+using System.IO;
 using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
+using Newtonsoft.Json;
 using Serilog;
 using ToNRoundCounter.UI;
 using ToNRoundCounter.Application;
@@ -17,10 +19,25 @@ namespace ToNRoundCounter
             WinFormsApp.EnableVisualStyles();
             WinFormsApp.SetCompatibleTextRenderingDefault(false);
 
+            var bootstrap = new AppSettingsData();
+            try
+            {
+                if (File.Exists("appsettings.json"))
+                {
+                    var json = File.ReadAllText("appsettings.json");
+                    bootstrap = JsonConvert.DeserializeObject<AppSettingsData>(json) ?? new AppSettingsData();
+                }
+            }
+            catch { }
+
+            var logPath = string.IsNullOrWhiteSpace(bootstrap.LogFilePath) ? "logs/log-.txt" : bootstrap.LogFilePath;
+            var wsIp = string.IsNullOrWhiteSpace(bootstrap.WebSocketIp) ? "127.0.0.1" : bootstrap.WebSocketIp;
+            var wsUrl = $"ws://{wsIp}:11398";
+
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Debug()
                 .WriteTo.Console()
-                .WriteTo.File("logs/log-.txt", rollingInterval: RollingInterval.Day)
+                .WriteTo.File(logPath, rollingInterval: RollingInterval.Day)
                 .CreateLogger();
 
             var services = new ServiceCollection();
@@ -32,7 +49,7 @@ namespace ToNRoundCounter
             services.AddSingleton<IEventLogger>(eventLogger);
             services.AddSingleton<IEventBus>(eventBus);
             services.AddSingleton<IOSCListener>(sp => new OSCListener(sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ICancellationProvider>(), sp.GetRequiredService<IEventLogger>()));
-            services.AddSingleton<IWebSocketClient>(sp => new WebSocketClient("ws://127.0.0.1:11398", sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ICancellationProvider>(), sp.GetRequiredService<IEventLogger>()));
+            services.AddSingleton<IWebSocketClient>(sp => new WebSocketClient(wsUrl, sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ICancellationProvider>(), sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<AutoSuicideService>();
             services.AddSingleton<StateService>();
             services.AddSingleton<IAppSettings>(sp => new AppSettings(sp.GetRequiredService<IEventLogger>(), sp.GetRequiredService<IEventBus>()));

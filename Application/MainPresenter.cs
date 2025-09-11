@@ -39,7 +39,7 @@ namespace ToNRoundCounter.Application
             string logEntry = string.Format("ラウンドタイプ: {0}, テラー: {1}, MAP: {2}, アイテム: {3}, ダメージ: {4}, 生死: {5}",
                 round.RoundType, round.TerrorKey, round.MapName, items, round.Damage, status);
             _stateService.AddRoundLog(round, logEntry);
-            _view?.UpdateRoundLog(_stateService.RoundLogHistory.Select(e => e.Item2));
+            _view?.UpdateRoundLog(_stateService.GetRoundLogHistory().Select(e => e.Item2));
         }
 
         public async Task UploadRoundLogAsync(Round round, string status)

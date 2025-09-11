@@ -12,12 +12,12 @@ namespace ToNRoundCounter.Application
 
         public string PlayerDisplayName { get; set; } = string.Empty;
         public Round CurrentRound { get; private set; }
-        public Dictionary<string, RoundAggregate> RoundAggregates { get; } = new Dictionary<string, RoundAggregate>();
-        public TerrorAggregateCollection TerrorAggregates { get; } = new TerrorAggregateCollection();
-        public Dictionary<string, string> RoundMapNames { get; } = new Dictionary<string, string>();
-        public TerrorMapNameCollection TerrorMapNames { get; } = new TerrorMapNameCollection();
-        public List<Tuple<Round, string>> RoundLogHistory { get; } = new List<Tuple<Round, string>>();
-        public Dictionary<string, object> Stats { get; } = new Dictionary<string, object>();
+        private readonly Dictionary<string, RoundAggregate> _roundAggregates = new();
+        private readonly TerrorAggregateCollection _terrorAggregates = new();
+        private readonly Dictionary<string, string> _roundMapNames = new();
+        private readonly TerrorMapNameCollection _terrorMapNames = new();
+        private readonly List<Tuple<Round, string>> _roundLogHistory = new();
+        private readonly Dictionary<string, object> _stats = new();
         public int RoundCycle { get; private set; } = 0;
 
         public void UpdateCurrentRound(Round round)
@@ -33,7 +33,7 @@ namespace ToNRoundCounter.Application
         {
             lock (_sync)
             {
-                RoundLogHistory.Add(new Tuple<Round, string>(round, logEntry));
+                _roundLogHistory.Add(new Tuple<Round, string>(round, logEntry));
             }
             StateChanged?.Invoke();
         }
@@ -60,17 +60,17 @@ namespace ToNRoundCounter.Application
         {
             lock (_sync)
             {
-                if (!RoundAggregates.TryGetValue(roundType, out var roundAgg))
+                if (!_roundAggregates.TryGetValue(roundType, out var roundAgg))
                 {
                     roundAgg = new RoundAggregate();
-                    RoundAggregates[roundType] = roundAgg;
+                    _roundAggregates[roundType] = roundAgg;
                 }
                 roundAgg.Total++;
                 if (survived) roundAgg.Survival++; else roundAgg.Death++;
 
                 if (!string.IsNullOrEmpty(terrorType))
                 {
-                    var terrorAgg = TerrorAggregates.Get(roundType, terrorType);
+                    var terrorAgg = _terrorAggregates.Get(roundType, terrorType);
                     terrorAgg.Total++;
                     if (survived) terrorAgg.Survival++; else terrorAgg.Death++;
                 }
@@ -83,7 +83,7 @@ namespace ToNRoundCounter.Application
         {
             lock (_sync)
             {
-                Stats[name] = value;
+                _stats[name] = value;
             }
             StateChanged?.Invoke();
         }
@@ -93,16 +93,80 @@ namespace ToNRoundCounter.Application
             lock (_sync)
             {
                 CurrentRound = null;
-                RoundAggregates.Clear();
-                TerrorAggregates.Clear();
-                RoundMapNames.Clear();
-                TerrorMapNames.Clear();
-                RoundLogHistory.Clear();
+                _roundAggregates.Clear();
+                _terrorAggregates.Clear();
+                _roundMapNames.Clear();
+                _terrorMapNames.Clear();
+                _roundLogHistory.Clear();
                 RoundCycle = 0;
-                Stats.Clear();
+                _stats.Clear();
             }
 
             StateChanged?.Invoke();
+        }
+
+        public IReadOnlyDictionary<string, RoundAggregate> GetRoundAggregates()
+        {
+            lock (_sync)
+            {
+                return new Dictionary<string, RoundAggregate>(_roundAggregates);
+            }
+        }
+
+        public bool TryGetTerrorAggregates(string round, out Dictionary<string, TerrorAggregate> terrorDict)
+        {
+            lock (_sync)
+            {
+                if (_terrorAggregates.TryGetRound(round, out var dict))
+                {
+                    terrorDict = new Dictionary<string, TerrorAggregate>(dict);
+                    return true;
+                }
+                terrorDict = null;
+                return false;
+            }
+        }
+
+        public IReadOnlyDictionary<string, string> GetRoundMapNames()
+        {
+            lock (_sync)
+            {
+                return new Dictionary<string, string>(_roundMapNames);
+            }
+        }
+
+        public void SetRoundMapName(string roundType, string mapName)
+        {
+            lock (_sync)
+            {
+                _roundMapNames[roundType] = mapName;
+            }
+            StateChanged?.Invoke();
+        }
+
+        public void SetTerrorMapName(string round, string terror, string mapName)
+        {
+            lock (_sync)
+            {
+                _terrorMapNames.Set(round, terror, mapName);
+            }
+            StateChanged?.Invoke();
+        }
+
+        public IReadOnlyList<Tuple<Round, string>> GetRoundLogHistory()
+        {
+            lock (_sync)
+            {
+                return _roundLogHistory.ToArray();
+            }
+        }
+
+        public IReadOnlyDictionary<string, object> GetStats()
+        {
+            lock (_sync)
+            {
+                return new Dictionary<string, object>(_stats);
+            }
         }
     }
 }

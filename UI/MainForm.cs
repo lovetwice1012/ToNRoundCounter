@@ -370,10 +370,12 @@ namespace ToNRoundCounter.UI
                     settingsForm.SettingsPanel.autoSuicideRoundListBox.SetItemChecked(i, _settings.AutoSuicideRoundTypes.Contains(item) != false);
                 }
                 settingsForm.SettingsPanel.oscPortNumericUpDown.Value = _settings.OSCPort;
+                settingsForm.SettingsPanel.webSocketIpTextBox.Text = _settings.WebSocketIp;
 
                 if (settingsForm.ShowDialog() == DialogResult.OK)
                 {
                     _settings.OSCPort = (int)settingsForm.SettingsPanel.oscPortNumericUpDown.Value;
+                    _settings.WebSocketIp = settingsForm.SettingsPanel.webSocketIpTextBox.Text;
                     _settings.ShowStats = settingsForm.SettingsPanel.ShowStatsCheckBox.Checked;
                     _settings.ShowDebug = settingsForm.SettingsPanel.DebugInfoCheckBox.Checked;
                     _settings.ShowRoundLog = settingsForm.SettingsPanel.ToggleRoundLogCheckBox.Checked;
@@ -501,10 +503,10 @@ namespace ToNRoundCounter.UI
         }
 
 
-        protected override void OnFormClosing(FormClosingEventArgs e)
+        protected override async void OnFormClosing(FormClosingEventArgs e)
         {
             _cancellation.Cancel();
-            webSocketClient.Stop();
+            await webSocketClient.StopAsync();
             oscListener.Stop();
             if (oscRepeaterProcess != null && !oscRepeaterProcess.HasExited)
             {
@@ -898,20 +900,20 @@ namespace ToNRoundCounter.UI
             if (stateService.CurrentRound != null)
             {
                 string roundType = stateService.CurrentRound.RoundType;
-                stateService.RoundMapNames[roundType] = stateService.CurrentRound.MapName ?? "";
+                stateService.SetRoundMapName(roundType, stateService.CurrentRound.MapName ?? "");
                 if (!string.IsNullOrEmpty(stateService.CurrentRound.TerrorKey))
                 {
                     string terrorKey = stateService.CurrentRound.TerrorKey;
                     bool survived = lastOptedIn && !stateService.CurrentRound.IsDeath;
                     stateService.RecordRoundResult(roundType, terrorKey, survived);
-                    stateService.TerrorMapNames.Set(roundType, terrorKey, stateService.CurrentRound.MapName ?? "");
+                    stateService.SetTerrorMapName(roundType, terrorKey, stateService.CurrentRound.MapName ?? "");
                 }
                 else
                 {
                     stateService.RecordRoundResult(roundType, null, !stateService.CurrentRound.IsDeath);
                 }
                 if (!string.IsNullOrEmpty(stateService.CurrentRound.MapName))
-                    stateService.RoundMapNames[stateService.CurrentRound.RoundType] = stateService.CurrentRound.MapName;
+                    stateService.SetRoundMapName(stateService.CurrentRound.RoundType, stateService.CurrentRound.MapName);
 
                 // 次ラウンド予測ロジック
                 var normalTypes = new[] { "クラシック", "Classic", "RUN", "走れ！" };
@@ -1075,8 +1077,9 @@ namespace ToNRoundCounter.UI
         private void UpdateAggregateStatsDisplay()
         {
             rtbStatsDisplay.Clear();
-            int overallTotal = stateService.RoundAggregates.Values.Sum(r => r.Total);
-            foreach (var kvp in stateService.RoundAggregates)
+            var roundAggregates = stateService.GetRoundAggregates();
+            int overallTotal = roundAggregates.Values.Sum(r => r.Total);
+            foreach (var kvp in roundAggregates)
             {
                 string roundType = kvp.Key;
                 // ラウンドタイプごとのフィルターが有効なら対象のラウンドタイプのみ表示
@@ -1103,7 +1106,7 @@ namespace ToNRoundCounter.UI
                 AppendLine(rtbStatsDisplay, roundLine, Theme.Current.Foreground);
 
                 // テラーのフィルター
-                if (_settings.Filter_Terror && stateService.TerrorAggregates.TryGetRound(roundType, out var terrorDict))
+                if (_settings.Filter_Terror && stateService.TryGetTerrorAggregates(roundType, out var terrorDict))
                 {
                     foreach (var terrorKvp in terrorDict)
                     {
