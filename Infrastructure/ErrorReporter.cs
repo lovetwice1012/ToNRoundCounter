@@ -48,8 +48,8 @@ namespace ToNRoundCounter.Infrastructure
                 try
                 {
                     var info = new ComputerInfo();
-                    sb.AppendLine($"Total Physical Memory: {info.TotalPhysicalMemory}");
-                    sb.AppendLine($"Available Physical Memory: {info.AvailablePhysicalMemory}");
+                    sb.AppendLine($"Total Physical Memory: {FormatBytes(info.TotalPhysicalMemory)}");
+                    sb.AppendLine($"Available Physical Memory: {FormatBytes(info.AvailablePhysicalMemory)}");
                 }
                 catch
                 {
@@ -123,8 +123,8 @@ namespace ToNRoundCounter.Infrastructure
                     {
                         // ignore SSD model query errors
                     }
-                    sb.AppendLine($"SSD Total Size: {total}");
-                    sb.AppendLine($"SSD Used Size: {used} ({percent:F2}%)");
+                    sb.AppendLine($"SSD Total Size: {FormatBytes((ulong)total)}");
+                    sb.AppendLine($"SSD Used Size: {FormatBytes((ulong)used)} ({percent:F2}%)");
                 }
                 catch
                 {
@@ -159,6 +159,20 @@ namespace ToNRoundCounter.Infrastructure
             {
                 // ignore UI errors
             }
+        }
+
+        private static string FormatBytes(ulong bytes)
+        {
+            string[] units = { "B", "KB", "MB", "GB", "TB", "PB" };
+            for (int i = units.Length - 1; i > 0; i--)
+            {
+                double value = bytes / Math.Pow(1024, i);
+                if (value >= 0.9)
+                {
+                    return $"{value:0.##}{units[i]}";
+                }
+            }
+            return $"{bytes}B";
         }
     }
 }
