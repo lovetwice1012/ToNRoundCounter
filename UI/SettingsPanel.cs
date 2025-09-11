@@ -9,6 +9,7 @@ using System.Linq;
 using System.IO;
 using Newtonsoft.Json;
 using System.Text;
+using System.Diagnostics;
 
 namespace ToNRoundCounter.UI
 {
@@ -62,6 +63,7 @@ namespace ToNRoundCounter.UI
         public TextBox autoSuicideDetailTextBox { get; private set; }
         public CheckBox autoSuicideFuzzyCheckBox { get; private set; }
         public Button autoSuicideSettingsConfirmButton { get; private set; }
+        public LinkLabel autoSuicideDetailDocLink { get; private set; }
         private int autoSuicideAutoRuleCount = 0;
 
         public Label apiKeyLabel { get; private set; }
@@ -150,8 +152,20 @@ namespace ToNRoundCounter.UI
             autoSuicideFuzzyCheckBox.AutoSize = true;
             autoSuicideFuzzyCheckBox.Location = new Point(autoSuicideUseDetailCheckBox.Right + 10, autoSuicideUseDetailCheckBox.Top);
             grpAutoSuicide.Controls.Add(autoSuicideFuzzyCheckBox);
+            autoSuicideDetailDocLink = new LinkLabel();
+            autoSuicideDetailDocLink.Text = LanguageManager.Translate("詳細設定ドキュメント");
+            autoSuicideDetailDocLink.AutoSize = true;
+            autoSuicideDetailDocLink.Location = new Point(innerMargin, autoSuicideUseDetailCheckBox.Bottom + 5);
+            autoSuicideDetailDocLink.Links.Add(0, autoSuicideDetailDocLink.Text.Length,
+                "https://github.com/lovetwice1012/ToNRoundCounter/blob/master/docs/auto-suicide-detail-settings.md");
+            autoSuicideDetailDocLink.LinkClicked += (s, e) =>
+            {
+                var psi = new ProcessStartInfo(e.Link.LinkData.ToString()) { UseShellExecute = true };
+                Process.Start(psi);
+            };
+            grpAutoSuicide.Controls.Add(autoSuicideDetailDocLink);
 
-            autoInnerY = autoSuicideUseDetailCheckBox.Bottom + 10;
+            autoInnerY = autoSuicideDetailDocLink.Bottom + 10;
             autoSuicideRoundLabel = new Label();
             autoSuicideRoundLabel.Text = LanguageManager.Translate("自動自殺対象ラウンド:");
             autoSuicideRoundLabel.AutoSize = true;
@@ -966,7 +980,8 @@ namespace ToNRoundCounter.UI
                 autoSuicideRoundLabel == null ||
                 autoSuicideDetailTextBox == null ||
                 autoSuicideFuzzyCheckBox == null ||
-                autoSuicideSettingsConfirmButton == null)
+                autoSuicideSettingsConfirmButton == null ||
+                autoSuicideDetailDocLink == null)
             {
                 return;
             }
@@ -977,6 +992,7 @@ namespace ToNRoundCounter.UI
             autoSuicideRoundLabel.Visible = autoSuicideCheckBox.Checked && !useDetail;
             autoSuicideDetailTextBox.Visible = autoSuicideCheckBox.Checked && useDetail;
             autoSuicideFuzzyCheckBox.Visible = autoSuicideSettingsConfirmButton.Visible = autoSuicideCheckBox.Checked && useDetail;
+            autoSuicideDetailDocLink.Visible = autoSuicideCheckBox.Checked && useDetail;
 
             if (useDetail)
             {
@@ -1006,6 +1022,7 @@ namespace ToNRoundCounter.UI
                 autoSuicideRoundLabel.Visible = false;
                 autoSuicideRoundListBox.Visible = false;
                 autoSuicideDetailTextBox.Visible = false;
+                autoSuicideDetailDocLink.Visible = false;
             }
         }
     }
