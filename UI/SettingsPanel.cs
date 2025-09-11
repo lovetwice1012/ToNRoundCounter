@@ -10,6 +10,7 @@ using System.IO;
 using Newtonsoft.Json;
 using System.Text;
 using System.Diagnostics;
+using Serilog;
 
 namespace ToNRoundCounter.UI
 {
@@ -345,7 +346,11 @@ namespace ToNRoundCounter.UI
             }
             if (_settings.AutoSuicideDetailCustom != null)
                 lines.AddRange(_settings.AutoSuicideDetailCustom);
-            var cleaned = CleanRules(lines);
+            var (cleaned, unparsedLines) = CleanRules(lines);
+            if (unparsedLines.Any())
+            {
+                Log.Warning("Failed to parse auto-suicide rule lines: {Lines}", string.Join(", ", unparsedLines));
+            }
             if (!_settings.AutoSuicideUseDetail)
             {
                 var split = SplitAutoAndCustom(cleaned);
@@ -389,7 +394,13 @@ namespace ToNRoundCounter.UI
                     MessageBox.Show(string.Join(Environment.NewLine, errors), LanguageManager.Translate("構文エラー"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
-                var rulesCheck = CleanRules(trimmed);
+                var (rulesCheck, unparsedLines) = CleanRules(trimmed);
+                if (unparsedLines.Any())
+                {
+                    var msg = LanguageManager.Translate("解析できなかった行があります:") + Environment.NewLine + string.Join(Environment.NewLine, unparsedLines);
+                    MessageBox.Show(msg, LanguageManager.Translate("警告"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    Log.Warning("Failed to parse auto-suicide rule lines: {Lines}", string.Join(", ", unparsedLines));
+                }
                 if (rulesCheck.All(r => r.Value == 0))
                 {
                     MessageBox.Show(LanguageManager.Translate("現在の設定では自動自殺を行いません"), LanguageManager.Translate("設定内容"), MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -897,13 +908,20 @@ namespace ToNRoundCounter.UI
             autoSuicideDetailTextBox.Text = string.Join(Environment.NewLine, autoLines.Concat(custom));
         }
 
-        private List<AutoSuicideRule> CleanRules(IEnumerable<string> lines)
+        private (List<AutoSuicideRule> cleaned, List<string> unparsedLines) CleanRules(IEnumerable<string> lines)
         {
             var rules = new List<AutoSuicideRule>();
+            var unparsedLines = new List<string>();
             foreach (var line in lines)
             {
                 if (AutoSuicideRule.TryParse(line, out var r))
+                {
                     rules.Add(r);
+                }
+                else
+                {
+                    unparsedLines.Add(line);
+                }
             }
             var cleaned = new List<AutoSuicideRule>();
             for (int i = rules.Count - 1; i >= 0; i--)
@@ -914,7 +932,7 @@ namespace ToNRoundCounter.UI
                     cleaned.Add(r);
             }
             cleaned.Reverse();
-            return cleaned;
+            return (cleaned, unparsedLines);
         }
 
         private (List<string> autoLines, List<string> customLines) SplitAutoAndCustom(List<AutoSuicideRule> rules)
@@ -943,7 +961,13 @@ namespace ToNRoundCounter.UI
                 return autoSuicideDetailTextBox.Lines
                     .Select(l => l.Trim()).Where(l => !string.IsNullOrEmpty(l)).ToList();
             }
-            var cleaned = CleanRules(autoSuicideDetailTextBox.Lines);
+            var (cleaned, unparsedLines) = CleanRules(autoSuicideDetailTextBox.Lines);
+            if (unparsedLines.Any())
+            {
+                Log.Warning("Failed to parse auto-suicide rule lines: {Lines}", string.Join(", ", unparsedLines));
+                MessageBox.Show(LanguageManager.Translate("解析できなかった行があります:") + Environment.NewLine + string.Join(Environment.NewLine, unparsedLines),
+                    LanguageManager.Translate("警告"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
             var split = SplitAutoAndCustom(cleaned);
             return split.customLines;
         }
@@ -952,12 +976,24 @@ namespace ToNRoundCounter.UI
         {
             if (autoSuicideUseDetailCheckBox != null && autoSuicideUseDetailCheckBox.Checked)
             {
-                var cleaned = CleanRules(autoSuicideDetailTextBox.Lines);
+                var (cleaned, unparsedLines) = CleanRules(autoSuicideDetailTextBox.Lines);
+                if (unparsedLines.Any())
+                {
+                    Log.Warning("Failed to parse auto-suicide rule lines: {Lines}", string.Join(", ", unparsedLines));
+                    MessageBox.Show(LanguageManager.Translate("解析できなかった行があります:") + Environment.NewLine + string.Join(Environment.NewLine, unparsedLines),
+                        LanguageManager.Translate("警告"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
                 autoSuicideDetailTextBox.Text = string.Join(Environment.NewLine, cleaned.Select(r => r.ToString()));
             }
             else
             {
-                var cleanedCurrent = CleanRules(autoSuicideDetailTextBox.Lines);
+                var (cleanedCurrent, unparsedLines) = CleanRules(autoSuicideDetailTextBox.Lines);
+                if (unparsedLines.Any())
+                {
+                    Log.Warning("Failed to parse auto-suicide rule lines: {Lines}", string.Join(", ", unparsedLines));
+                    MessageBox.Show(LanguageManager.Translate("解析できなかった行があります:") + Environment.NewLine + string.Join(Environment.NewLine, unparsedLines),
+                        LanguageManager.Translate("警告"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
                 var split = SplitAutoAndCustom(cleanedCurrent);
                 var autoLines = GenerateAutoSuicideLines();
                 autoSuicideAutoRuleCount = autoLines.Length;
