@@ -286,6 +286,19 @@ namespace ToNRoundCounter.UI
             this.Controls.Add(splitContainerMain);
         }
 
+        private void ReinitializeInfoPanel()
+        {
+            InfoPanel = new InfoPanel();
+            InfoPanel.BackColor = _settings.BackgroundColor_InfoPanel;
+            this.Controls.Add(InfoPanel);
+            if (terrorInfoPanel != null)
+            {
+                this.Controls.SetChildIndex(InfoPanel, this.Controls.GetChildIndex(terrorInfoPanel));
+            }
+            ApplyTheme();
+            MainForm_Resize(this, EventArgs.Empty);
+        }
+
         private void ApplyTheme()
         {
             this.BackColor = Theme.Current.Background;
@@ -1389,7 +1402,12 @@ namespace ToNRoundCounter.UI
         private void UpdateRoundTypeLabel()
         {
             if (InfoPanel == null)
-                return;
+            {
+                _logger.LogEvent("InfoPanel disposed");
+                ReinitializeInfoPanel();
+                if (InfoPanel == null)
+                    return;
+            }
 
             var round = stateService.CurrentRound;
             if (round == null)
