@@ -177,7 +177,7 @@ namespace ToNRoundCounter.UI
             // デバッグ情報用ラベル
             lblDebugInfo = new Label();
             lblDebugInfo.Text = "";
-            lblDebugInfo.ForeColor = Theme.Current.Foreground;
+            lblDebugInfo.ForeColor = Color.Blue;
             lblDebugInfo.AutoSize = true;
             lblDebugInfo.Location = new Point(lblOSCStatus.Right + 10, currentY);
             this.Controls.Add(lblDebugInfo);
@@ -269,7 +269,7 @@ namespace ToNRoundCounter.UI
         private void ApplyTheme()
         {
             this.BackColor = Theme.Current.Background;
-            lblDebugInfo.ForeColor = Theme.Current.Foreground;
+            lblDebugInfo.ForeColor = Color.Blue;
             InfoPanel.ApplyTheme();
             InfoPanel.BackColor = _settings.Theme == ThemeType.Dark ? Theme.Current.PanelBackground : _settings.BackgroundColor_InfoPanel;
             rtbStatsDisplay.ForeColor = Theme.Current.Foreground;
