@@ -22,7 +22,7 @@ namespace ToNRoundCounter.Infrastructure
         private readonly ICancellationProvider _cancellation;
         private readonly IEventLogger _logger;
         private readonly Channel<string> _channel = Channel.CreateUnbounded<string>();
-        private Task? _processingTask;
+        private Task _processingTask;
 
         public WebSocketClient(string url, IEventBus bus, ICancellationProvider cancellation, IEventLogger logger)
         {
