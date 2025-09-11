@@ -81,5 +81,22 @@ namespace ToNRoundCounter.Tests
             Assert.Equal("C:D", rule.Terror);
             Assert.Equal(1, rule.Value);
         }
+
+        [Fact]
+        public void ToString_PreservesEscapes()
+        {
+            AutoSuicideRule.TryParse(@"A\:B:C\\D:1", out var rule);
+            Assert.Equal(@"A\:B:C\\D:1", rule.ToString());
+        }
+
+        [Fact]
+        public void Covers_DetectsBroaderRules()
+        {
+            AutoSuicideRule.TryParse("A::1", out var broad);
+            AutoSuicideRule.TryParse("A:B:0", out var specific);
+
+            Assert.True(broad.Covers(specific));
+            Assert.False(specific.Covers(broad));
+        }
     }
 }
