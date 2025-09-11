@@ -8,6 +8,8 @@ namespace ToNRoundCounter.Application
     {
         public event Action StateChanged;
 
+        private readonly object _sync = new object();
+
         public string PlayerDisplayName { get; set; } = string.Empty;
         public Round CurrentRound { get; private set; }
         public Dictionary<string, RoundAggregate> RoundAggregates { get; } = new Dictionary<string, RoundAggregate>();
@@ -20,43 +22,58 @@ namespace ToNRoundCounter.Application
 
         public void UpdateCurrentRound(Round round)
         {
-            CurrentRound = round;
+            lock (_sync)
+            {
+                CurrentRound = round;
+            }
             StateChanged?.Invoke();
         }
 
         public void AddRoundLog(Round round, string logEntry)
         {
-            RoundLogHistory.Add(new Tuple<Round, string>(round, logEntry));
+            lock (_sync)
+            {
+                RoundLogHistory.Add(new Tuple<Round, string>(round, logEntry));
+            }
             StateChanged?.Invoke();
         }
 
         public void IncrementRoundCycle()
         {
-            RoundCycle++;
+            lock (_sync)
+            {
+                RoundCycle++;
+            }
             StateChanged?.Invoke();
         }
 
         public void SetRoundCycle(int value)
         {
-            RoundCycle = value;
+            lock (_sync)
+            {
+                RoundCycle = value;
+            }
             StateChanged?.Invoke();
         }
 
         public void RecordRoundResult(string roundType, string terrorType, bool survived)
         {
-            if (!RoundAggregates.TryGetValue(roundType, out var roundAgg))
+            lock (_sync)
             {
-                roundAgg = new RoundAggregate();
-                RoundAggregates[roundType] = roundAgg;
-            }
-            roundAgg.Total++;
-            if (survived) roundAgg.Survival++; else roundAgg.Death++;
+                if (!RoundAggregates.TryGetValue(roundType, out var roundAgg))
+                {
+                    roundAgg = new RoundAggregate();
+                    RoundAggregates[roundType] = roundAgg;
+                }
+                roundAgg.Total++;
+                if (survived) roundAgg.Survival++; else roundAgg.Death++;
 
-            if (!string.IsNullOrEmpty(terrorType))
-            {
-                var terrorAgg = TerrorAggregates.Get(roundType, terrorType);
-                terrorAgg.Total++;
-                if (survived) terrorAgg.Survival++; else terrorAgg.Death++;
+                if (!string.IsNullOrEmpty(terrorType))
+                {
+                    var terrorAgg = TerrorAggregates.Get(roundType, terrorType);
+                    terrorAgg.Total++;
+                    if (survived) terrorAgg.Survival++; else terrorAgg.Death++;
+                }
             }
 
             StateChanged?.Invoke();
@@ -64,20 +81,27 @@ namespace ToNRoundCounter.Application
 
         public void UpdateStat(string name, object value)
         {
-            Stats[name] = value;
+            lock (_sync)
+            {
+                Stats[name] = value;
+            }
             StateChanged?.Invoke();
         }
 
         public void Reset()
         {
-            CurrentRound = null;
-            RoundAggregates.Clear();
-            TerrorAggregates.Clear();
-            RoundMapNames.Clear();
-            TerrorMapNames.Clear();
-            RoundLogHistory.Clear();
-            RoundCycle = 0;
-            Stats.Clear();
+            lock (_sync)
+            {
+                CurrentRound = null;
+                RoundAggregates.Clear();
+                TerrorAggregates.Clear();
+                RoundMapNames.Clear();
+                TerrorMapNames.Clear();
+                RoundLogHistory.Clear();
+                RoundCycle = 0;
+                Stats.Clear();
+            }
+
             StateChanged?.Invoke();
         }
     }
