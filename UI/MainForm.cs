@@ -712,14 +712,15 @@ namespace ToNRoundCounter.UI
                 else if (eventType == "DAMAGED")
                 {
                     int damageValue = json.Value<int>("Value");
-                    if (stateService.CurrentRound != null)
+                    var currentRound = stateService.CurrentRound;
+                    if (currentRound != null)
                     {
-                        stateService.CurrentRound.Damage += damageValue;
+                        currentRound.Damage += damageValue;
                         _dispatcher.Invoke(() =>
                         {
                             if (InfoPanel?.DamageValue != null)
                             {
-                                InfoPanel.DamageValue.Text = stateService.CurrentRound.Damage.ToString();
+                                InfoPanel.DamageValue.Text = currentRound.Damage.ToString();
                             }
                         });
                     }
