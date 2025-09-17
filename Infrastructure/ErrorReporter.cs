@@ -146,7 +146,7 @@ namespace ToNRoundCounter.Infrastructure
                 sb.AppendLine();
                 sb.AppendLine($"Exception Type: {ex.GetType()}");
                 sb.AppendLine($"Message: {ex.Message}");
-                if (!string.IsNullOrWhiteSpace(ex.StackTrace))
+                if (!string.IsNullOrWhiteSpace(ex.ToString()))
                 {
                     sb.AppendLine("Stack Trace:");
                     foreach (var line in ex.StackTrace

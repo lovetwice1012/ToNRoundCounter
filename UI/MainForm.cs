@@ -753,15 +753,18 @@ namespace ToNRoundCounter.UI
                 }
                 else if (eventType == "STATS")
                 {
+                    /*
                     string statName = json.Value<string>("Name") ?? string.Empty;
                     JToken valueToken = json["Value"];
                     if (!string.IsNullOrEmpty(statName) && valueToken != null)
                     {
                         stateService.UpdateStat(statName, valueToken.ToObject<object>());
                     }
+                    */
                 }
                 else if (eventType == "ALIVE")
                 {
+                    /*
                     bool isAlive = json.Value<bool?>("Value") ?? true;
                     if (stateService.CurrentRound != null)
                     {
@@ -775,14 +778,17 @@ namespace ToNRoundCounter.UI
                             stateService.CurrentRound.IsDeath = false;
                         }
                     }
+                    */
                 }
                 else if (eventType == "REBORN")
                 {
+                    /*
                     bool reborn = json.Value<bool?>("Value") ?? false;
                     if (stateService.CurrentRound != null && reborn)
                     {
                         stateService.CurrentRound.IsDeath = false;
                     }
+                    */
                 }
                 else if (eventType == "PAGE_COUNT")
                 {
@@ -795,17 +801,21 @@ namespace ToNRoundCounter.UI
                 }
                 else if (eventType == "PLAYER_JOIN")
                 {
+                    /*
                     if (stateService.CurrentRound != null)
                     {
                         stateService.CurrentRound.InstancePlayersCount++;
                     }
+                    */
                 }
                 else if (eventType == "PLAYER_LEAVE")
                 {
+                    /*
                     if (stateService.CurrentRound != null && stateService.CurrentRound.InstancePlayersCount > 0)
                     {
                         stateService.CurrentRound.InstancePlayersCount--;
                     }
+                    */
                 }
                 else if (eventType == "OPTED_IN")
                 {
@@ -1403,7 +1413,7 @@ namespace ToNRoundCounter.UI
         {
             if (InfoPanel == null)
             {
-                _logger.LogEvent("InfoPanel disposed");
+                _logger.LogEvent("Error regen Infopanel", "InfoPanel disposed");
                 ReinitializeInfoPanel();
                 if (InfoPanel == null)
                     return;
@@ -1583,15 +1593,15 @@ namespace ToNRoundCounter.UI
                 }
             }
             catch (Exception ex)
-        {
-            // エラー内容を標準出力に表示
-            Console.Error.WriteLine(ex.Message);
-            if (ex.InnerException != null)
             {
-                Console.Error.WriteLine(ex.InnerException.Message);
+                // エラー内容を標準出力に表示
+                Console.Error.WriteLine(ex.Message);
+                if (ex.InnerException != null)
+                {
+                    Console.Error.WriteLine(ex.InnerException.Message);
+                }
+                throw;
             }
-            throw;
-        }
         }
 
         private class TypoMatchResult
