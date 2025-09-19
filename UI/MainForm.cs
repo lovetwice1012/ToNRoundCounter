@@ -15,6 +15,7 @@ using System.Windows.Forms;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Rug.Osc;
+using Serilog.Events;
 using ToNRoundCounter.Domain;
 using ToNRoundCounter.Properties;
 using ToNRoundCounter.Infrastructure;
@@ -58,6 +59,7 @@ namespace ToNRoundCounter.UI
         private readonly IEventBus _eventBus;
         private readonly IInputSender _inputSender;
         private readonly IUiDispatcher _dispatcher;
+        private readonly IReadOnlyList<IAfkWarningHandler> _afkWarningHandlers;
 
         private Action<WebSocketConnected> _wsConnectedHandler;
         private Action<WebSocketDisconnected> _wsDisconnectedHandler;
@@ -95,7 +97,7 @@ namespace ToNRoundCounter.UI
         private readonly AutoSuicideService autoSuicideService;
 
 
-        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher)
+        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers)
         {
             InitializeSoundPlayers();
             this.Name = "MainForm";
@@ -110,6 +112,7 @@ namespace ToNRoundCounter.UI
             _cancellation = cancellation;
             _inputSender = inputSender;
             _dispatcher = dispatcher;
+            _afkWarningHandlers = (afkWarningHandlers ?? Array.Empty<IAfkWarningHandler>()).ToList();
             _presenter.AttachView(this);
 
             terrorColors = new Dictionary<string, Color>();
@@ -1005,7 +1008,39 @@ namespace ToNRoundCounter.UI
         }
 
 
-        private void VelocityTimer_Tick(object sender, EventArgs e)
+        private async Task<bool> InvokeAfkWarningHandlersAsync(double idleSeconds)
+        {
+            if (_afkWarningHandlers.Count == 0)
+            {
+                return false;
+            }
+
+            var context = new AfkWarningContext(idleSeconds);
+            foreach (var handler in _afkWarningHandlers)
+            {
+                try
+                {
+                    if (await handler.HandleAsync(context, _cancellation.Token))
+                    {
+                        _logger.LogEvent("AfkWarningHandled", $"Handled by {handler.GetType().FullName}");
+                        return true;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.LogEvent("AfkWarningCancelled", "AFK warning handling cancelled.");
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogEvent("AfkWarningHandlerError", ex.ToString(), LogEventLevel.Error);
+                }
+            }
+
+            return false;
+        }
+
+        private async void VelocityTimer_Tick(object sender, EventArgs e)
         {
             // 無操作判定：VelocityMagnitudeの絶対値が1未満の場合、最低1秒連続してidleと判定する
             if (stateService.CurrentRound != null && currentVelocity < 1)
@@ -1020,9 +1055,13 @@ namespace ToNRoundCounter.UI
                     // 70秒以上無操作の場合、70秒時点で音声再生（まだ再生していなければ）
                     if (idleSeconds >= 70 && !afkSoundPlayed)
                     {
-                        PlayFromStart(afkPlayer);
+                        bool handled = await InvokeAfkWarningHandlersAsync(idleSeconds);
+                        if (!handled)
+                        {
+                            PlayFromStart(afkPlayer);
+                            _ = Task.Run(() => SendAlertOscMessagesAsync(0.1f));
+                        }
                         afkSoundPlayed = true;
-                        _ = Task.Run(() => SendAlertOscMessagesAsync(0.1f));
                     }
                     // 無操作時間に応じた文字色と点滅の制御
                     if (idleSeconds > 75)

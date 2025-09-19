@@ -193,6 +193,7 @@
     <Compile Include="Application\IOSCListener.cs" />
     <Compile Include="Application\IAppSettings.cs" />
     <Compile Include="Application\IInputSender.cs" />
+    <Compile Include="Application\IAfkWarningHandler.cs" />
     <Compile Include="Application\IErrorReporter.cs" />
     <Compile Include="Application\IUiDispatcher.cs" />
     <Compile Include="Application\IModule.cs" />
