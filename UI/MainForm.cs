@@ -588,10 +588,15 @@ namespace ToNRoundCounter.UI
                         PlayFromStart(tester_roundStartAlternatePlayer);
                     }
                     //issetAllSelfKillModeがtrueなら13秒後に自殺入力をする
-                    int autoAction = ShouldAutoSuicide(roundType, null);
-                    if (issetAllSelfKillMode || autoAction == 1)
+                    int autoAction = ShouldAutoSuicide(roundType, null, out var hasPendingDelayed);
+                    if (issetAllSelfKillMode)
                     {
                         autoSuicideService.Schedule(TimeSpan.FromSeconds(13), true, PerformAutoSuicide);
+                    }
+                    else if (autoAction == 1)
+                    {
+                        var delay = hasPendingDelayed ? TimeSpan.FromSeconds(40) : TimeSpan.FromSeconds(13);
+                        autoSuicideService.Schedule(delay, true, PerformAutoSuicide);
                     }
                     else if (autoAction == 2)
                     {
@@ -1335,10 +1340,15 @@ namespace ToNRoundCounter.UI
                     }
                     if (!autoSuicideService.HasScheduled)
                     {
-                        int action = ShouldAutoSuicide(checkType, terror);
-                        if (issetAllSelfKillMode || action == 1)
+                        int action = ShouldAutoSuicide(checkType, terror, out var hasPendingDelayed);
+                        if (issetAllSelfKillMode)
                         {
                             autoSuicideService.Schedule(TimeSpan.FromSeconds(13), true, PerformAutoSuicide);
+                        }
+                        else if (action == 1)
+                        {
+                            var delay = hasPendingDelayed ? TimeSpan.FromSeconds(40) : TimeSpan.FromSeconds(13);
+                            autoSuicideService.Schedule(delay, true, PerformAutoSuicide);
                         }
                         else if (action == 2)
                         {
@@ -1393,14 +1403,25 @@ namespace ToNRoundCounter.UI
             autoSuicideRules = cleaned;
         }
 
-        private int ShouldAutoSuicide(string roundType, string terrorName)
+        private int ShouldAutoSuicide(string roundType, string terrorName, out bool hasPendingDelayed)
         {
+            hasPendingDelayed = false;
             if (!_settings.AutoSuicideEnabled) return 0;
             Func<string, string, bool> comparer;
             if (_settings.AutoSuicideFuzzyMatch)
                 comparer = (a, b) => MatchWithTypoTolerance(a, b).result;
             else
                 comparer = (a, b) => a == b;
+
+            if (string.IsNullOrWhiteSpace(terrorName))
+            {
+                terrorName = null;
+                hasPendingDelayed = autoSuicideRules.Any(r =>
+                    r.Value == 2 &&
+                    r.MatchesRound(roundType, comparer) &&
+                    !r.Matches(roundType, null, comparer));
+            }
+
             for (int i = autoSuicideRules.Count - 1; i >= 0; i--)
             {
                 var r = autoSuicideRules[i];
@@ -1408,6 +1429,11 @@ namespace ToNRoundCounter.UI
                     return r.Value;
             }
             return 0;
+        }
+
+        private int ShouldAutoSuicide(string roundType, string terrorName)
+        {
+            return ShouldAutoSuicide(roundType, terrorName, out _);
         }
 
         private void UpdateRoundTypeLabel()

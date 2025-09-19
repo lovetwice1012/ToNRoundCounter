@@ -148,6 +148,14 @@ namespace ToNRoundCounter.Domain
             return roundMatch && terrorMatch;
         }
 
+        public bool MatchesRound(string round, Func<string, string, bool> comparer)
+        {
+            if (RoundExpression == null)
+                return true;
+            bool match = Evaluate(RoundExpression, round, comparer);
+            return RoundNegate ? !match : match;
+        }
+
         public bool Covers(AutoSuicideRule other)
         {
             // Determine if this rule's conditions cover another rule's conditions.
