@@ -433,10 +433,11 @@ namespace ToNRoundCounter.UI
                     sb.AppendLine($"全てのラウンドの全てのテラーで{GetActionText(g.Key)}");
                 }
 
-                var roundWildcards = rulesCheck.Where(r => r.Round != null && r.Terror == null && !r.RoundNegate).ToList();
+                var roundWildcards = rulesCheck.Where(r => r.Round != null && r.TerrorExpression == null && !r.RoundNegate).ToList();
                 var detailRules = rulesCheck.Where(r => r.Round != null && r.Terror != null && !r.RoundNegate).ToList();
                 var processedDetail = new HashSet<AutoSuicideRule>();
                 var simpleRounds = new List<Tuple<string, int>>();
+                var roundsWithHeader = new HashSet<string>();
 
                 foreach (var rw in roundWildcards)
                 {
@@ -548,7 +549,8 @@ namespace ToNRoundCounter.UI
                                                 .GroupBy(d => d.Round);
                 foreach (var rg in remainingDetail)
                 {
-                    sb.AppendLine($"{rg.Key}では以下の設定が適用されています");
+                    if (roundsWithHeader.Add(rg.Key))
+                        sb.AppendLine($"{rg.Key}では以下の設定が適用されています");
                     foreach (var ag in rg.GroupBy(r => r.Value))
                     {
                         var terrors = ag.Select(a => a.Terror).ToList();
@@ -562,6 +564,39 @@ namespace ToNRoundCounter.UI
                         else
                         {
                             sb.AppendLine($"・{string.Join(",", terrors)}が出現した時、{GetActionText(ag.Key)}");
+                        }
+                    }
+                }
+
+                var complexRoundRules = rulesCheck.Where(r => r.Round != null && r.TerrorExpression != null && r.Terror == null && !r.RoundNegate)
+                                                   .GroupBy(r => r.Round);
+                foreach (var cg in complexRoundRules)
+                {
+                    if (roundsWithHeader.Add(cg.Key))
+                        sb.AppendLine($"{cg.Key}では以下の設定が適用されています");
+                    foreach (var rule in cg)
+                    {
+                        var terrors = rule.GetTerrorTerms();
+                        bool useBullet = terrors != null && ShouldBullet(terrors);
+                        string condition;
+                        if (terrors != null)
+                        {
+                            condition = rule.TerrorNegate
+                                ? (useBullet ? "以下のテラー以外が出現した時" : $"{string.Join(",", terrors)}以外が出現した時")
+                                : (useBullet ? "以下のテラーが出現した時" : $"{string.Join(",", terrors)}が出現した時");
+                        }
+                        else
+                        {
+                            condition = rule.TerrorNegate
+                                ? $"{rule.TerrorExpression}以外が出現した時"
+                                : $"{rule.TerrorExpression}が出現した時";
+                        }
+
+                        sb.AppendLine($"・{condition}、{GetActionText(rule.Value)}");
+                        if (useBullet)
+                        {
+                            foreach (var t in terrors)
+                                sb.AppendLine($"　・{t}");
                         }
                     }
                 }
