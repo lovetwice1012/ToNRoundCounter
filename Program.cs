@@ -74,7 +74,8 @@ namespace ToNRoundCounter
                 sp.GetRequiredService<IEventBus>(),
                 sp.GetRequiredService<ICancellationProvider>(),
                 sp.GetRequiredService<IInputSender>(),
-                sp.GetRequiredService<IUiDispatcher>()));
+                sp.GetRequiredService<IUiDispatcher>(),
+                sp.GetServices<IAfkWarningHandler>()));
 
             var provider = services.BuildServiceProvider();
             provider.GetRequiredService<IErrorReporter>().Register();
