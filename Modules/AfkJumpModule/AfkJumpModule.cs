@@ -13,7 +13,7 @@ namespace ToNRoundCounter.Modules.AfkJump
     {
         public void RegisterServices(IServiceCollection services)
         {
-            services.AddSingleton<IAfkWarningHandler, AfkJumpHandler>();
+            services.AddSingleton<IAfkWarningHandler>(sp => new AfkJumpHandler(sp.GetRequiredService<IEventLogger>()));
         }
     }
 
