@@ -103,6 +103,7 @@ namespace ToNRoundCounter.UI
         private bool itemMusicActive;
         private DateTime itemMusicMatchStart = DateTime.MinValue;
         private string lastLoadedItemMusicPath = string.Empty;
+        private ItemMusicEntry activeItemMusicEntry;
         private string currentTerrorBaseText = string.Empty;
         private bool terrorCountdownActive;
         private DateTime terrorCountdownStart = DateTime.MinValue;
@@ -133,7 +134,7 @@ namespace ToNRoundCounter.UI
             LoadTerrorInfo();
             _settings.Load();
             _lastSaveCode = _settings.LastSaveCode ?? string.Empty;
-            UpdateItemMusicPlayer();
+            UpdateItemMusicPlayer(null);
             Theme.SetTheme(_settings.Theme);
             LoadAutoSuicideRules();
             InitializeComponents();
@@ -404,23 +405,9 @@ namespace ToNRoundCounter.UI
             settingsForm.SettingsPanel.oscPortNumericUpDown.Value = _settings.OSCPort;
                 settingsForm.SettingsPanel.webSocketIpTextBox.Text = _settings.WebSocketIp;
                 settingsForm.SettingsPanel.AutoLaunchEnabledCheckBox.Checked = _settings.AutoLaunchEnabled;
-                settingsForm.SettingsPanel.AutoLaunchPathTextBox.Text = _settings.AutoLaunchExecutablePath;
-                settingsForm.SettingsPanel.AutoLaunchArgumentsTextBox.Text = _settings.AutoLaunchArguments;
+                settingsForm.SettingsPanel.LoadAutoLaunchEntries(_settings.AutoLaunchEntries);
                 settingsForm.SettingsPanel.ItemMusicEnabledCheckBox.Checked = _settings.ItemMusicEnabled;
-                settingsForm.SettingsPanel.ItemMusicItemTextBox.Text = _settings.ItemMusicItemName;
-                settingsForm.SettingsPanel.ItemMusicSoundPathTextBox.Text = _settings.ItemMusicSoundPath;
-                var minSpeedControl = settingsForm.SettingsPanel.ItemMusicMinSpeedNumericUpDown;
-                minSpeedControl.Value =
-                    (decimal)Math.Min(Math.Max(_settings.ItemMusicMinSpeed, (double)minSpeedControl.Minimum),
-                                      (double)minSpeedControl.Maximum);
-                var maxSpeedControl = settingsForm.SettingsPanel.ItemMusicMaxSpeedNumericUpDown;
-                maxSpeedControl.Value =
-                    (decimal)Math.Min(Math.Max(_settings.ItemMusicMaxSpeed, (double)maxSpeedControl.Minimum),
-                                      (double)maxSpeedControl.Maximum);
-                if (maxSpeedControl.Value < minSpeedControl.Value)
-                {
-                    maxSpeedControl.Value = minSpeedControl.Value;
-                }
+                settingsForm.SettingsPanel.LoadItemMusicEntries(_settings.ItemMusicEntries);
                 settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text = _settings.DiscordWebhookUrl;
 
             if (settingsForm.ShowDialog() == DialogResult.OK)
@@ -456,17 +443,19 @@ namespace ToNRoundCounter.UI
                 _settings.AutoSuicideDetailCustom = settingsForm.SettingsPanel.GetCustomAutoSuicideLines();
                 _settings.AutoSuicideFuzzyMatch = settingsForm.SettingsPanel.autoSuicideFuzzyCheckBox.Checked;
                 _settings.AutoLaunchEnabled = settingsForm.SettingsPanel.AutoLaunchEnabledCheckBox.Checked;
-                _settings.AutoLaunchExecutablePath = settingsForm.SettingsPanel.AutoLaunchPathTextBox.Text.Trim();
-                _settings.AutoLaunchArguments = settingsForm.SettingsPanel.AutoLaunchArgumentsTextBox.Text;
+                _settings.AutoLaunchEntries = settingsForm.SettingsPanel.GetAutoLaunchEntries();
                 _settings.ItemMusicEnabled = settingsForm.SettingsPanel.ItemMusicEnabledCheckBox.Checked;
-                _settings.ItemMusicItemName = settingsForm.SettingsPanel.ItemMusicItemTextBox.Text.Trim();
-                _settings.ItemMusicSoundPath = settingsForm.SettingsPanel.ItemMusicSoundPathTextBox.Text.Trim();
-                _settings.ItemMusicMinSpeed = (double)settingsForm.SettingsPanel.ItemMusicMinSpeedNumericUpDown.Value;
-                _settings.ItemMusicMaxSpeed = (double)settingsForm.SettingsPanel.ItemMusicMaxSpeedNumericUpDown.Value;
+                _settings.ItemMusicEntries = settingsForm.SettingsPanel.GetItemMusicEntries();
+                _settings.AutoLaunchExecutablePath = string.Empty;
+                _settings.AutoLaunchArguments = string.Empty;
+                _settings.ItemMusicItemName = string.Empty;
+                _settings.ItemMusicSoundPath = string.Empty;
+                _settings.ItemMusicMinSpeed = 0;
+                _settings.ItemMusicMaxSpeed = 0;
                 _settings.DiscordWebhookUrl = settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text.Trim();
                 _settings.Theme = settingsForm.SettingsPanel.DarkThemeCheckBox.Checked ? ThemeType.Dark : ThemeType.Light;
                 LoadAutoSuicideRules();
-                UpdateItemMusicPlayer();
+                UpdateItemMusicPlayer(null);
                 ResetItemMusicTracking();
 
                 _settings.apikey = settingsForm.SettingsPanel.apiKeyTextBox.Text.Trim();
@@ -1193,26 +1182,19 @@ namespace ToNRoundCounter.UI
 
             if (_settings.ItemMusicEnabled)
             {
-                string configuredItem = _settings.ItemMusicItemName ?? string.Empty;
-                bool hasItem = !string.IsNullOrWhiteSpace(configuredItem) &&
-                               currentItemText.IndexOf(configuredItem, StringComparison.OrdinalIgnoreCase) >= 0;
-
-                double minSpeed = _settings.ItemMusicMinSpeed;
-                if (double.IsNaN(minSpeed) || double.IsInfinity(minSpeed) || minSpeed < 0)
+                var matchingEntry = FindMatchingItemMusicEntry(currentItemText, currentVelocity);
+                if (matchingEntry != null)
                 {
-                    minSpeed = 0;
-                }
+                    if (!ReferenceEquals(activeItemMusicEntry, matchingEntry))
+                    {
+                        itemMusicMatchStart = DateTime.Now;
+                        UpdateItemMusicPlayer(matchingEntry);
+                    }
+                    else
+                    {
+                        EnsureItemMusicPlayer(matchingEntry);
+                    }
 
-                double maxSpeed = _settings.ItemMusicMaxSpeed;
-                if (double.IsNaN(maxSpeed) || double.IsInfinity(maxSpeed) || maxSpeed < minSpeed)
-                {
-                    maxSpeed = minSpeed;
-                }
-
-                bool meetsSpeed = currentVelocity >= minSpeed && currentVelocity <= maxSpeed;
-
-                if (hasItem && meetsSpeed)
-                {
                     if (itemMusicMatchStart == DateTime.MinValue)
                     {
                         itemMusicMatchStart = DateTime.Now;
@@ -1221,7 +1203,7 @@ namespace ToNRoundCounter.UI
                     {
                         if (!itemMusicActive)
                         {
-                            StartItemMusic();
+                            StartItemMusic(matchingEntry);
                         }
                     }
                 }
@@ -1904,6 +1886,52 @@ namespace ToNRoundCounter.UI
                 }
                 throw;
             }
+        }
+
+        private ItemMusicEntry FindMatchingItemMusicEntry(string text, double velocity)
+        {
+            if (!_settings.ItemMusicEnabled || _settings.ItemMusicEntries == null)
+            {
+                return null;
+            }
+
+            foreach (var entry in _settings.ItemMusicEntries)
+            {
+                if (entry == null || !entry.Enabled)
+                {
+                    continue;
+                }
+
+                string itemName = entry.ItemName ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(itemName))
+                {
+                    continue;
+                }
+
+                if (text.IndexOf(itemName, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+
+                double minSpeed = entry.MinSpeed;
+                if (double.IsNaN(minSpeed) || double.IsInfinity(minSpeed) || minSpeed < 0)
+                {
+                    minSpeed = 0;
+                }
+
+                double maxSpeed = entry.MaxSpeed;
+                if (double.IsNaN(maxSpeed) || double.IsInfinity(maxSpeed) || maxSpeed < minSpeed)
+                {
+                    maxSpeed = minSpeed;
+                }
+
+                if (velocity >= minSpeed && velocity <= maxSpeed)
+                {
+                    return entry;
+                }
+            }
+
+            return null;
         }
 
         private class TypoMatchResult

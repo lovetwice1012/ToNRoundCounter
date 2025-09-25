@@ -54,9 +54,12 @@ namespace ToNRoundCounter.Infrastructure
         public string LogFilePath { get; set; } = "logs/log-.txt";
         public string WebSocketIp { get; set; } = "127.0.0.1";
         public bool AutoLaunchEnabled { get; set; }
+        public List<AutoLaunchEntry> AutoLaunchEntries { get; set; } = new List<AutoLaunchEntry>();
+        // Legacy properties retained for migration of single-entry settings
         public string AutoLaunchExecutablePath { get; set; } = string.Empty;
         public string AutoLaunchArguments { get; set; } = string.Empty;
         public bool ItemMusicEnabled { get; set; }
+        public List<ItemMusicEntry> ItemMusicEntries { get; set; } = new List<ItemMusicEntry>();
         public string ItemMusicItemName { get; set; } = string.Empty;
         public string ItemMusicSoundPath { get; set; } = string.Empty;
         public double ItemMusicMinSpeed { get; set; }
@@ -93,7 +96,8 @@ namespace ToNRoundCounter.Infrastructure
                 ItemMusicSoundPath ??= string.Empty;
                 DiscordWebhookUrl ??= string.Empty;
                 LastSaveCode ??= string.Empty;
-                NormalizeItemMusicSpeeds();
+                NormalizeAutoLaunchEntries();
+                NormalizeItemMusicEntries();
             }
             catch (Exception ex)
             {
@@ -102,21 +106,87 @@ namespace ToNRoundCounter.Infrastructure
             }
         }
 
-        private void NormalizeItemMusicSpeeds()
+        private void NormalizeAutoLaunchEntries()
         {
-            if (double.IsNaN(ItemMusicMinSpeed) || double.IsInfinity(ItemMusicMinSpeed) || ItemMusicMinSpeed < 0)
+            AutoLaunchEntries ??= new List<AutoLaunchEntry>();
+
+            foreach (var entry in AutoLaunchEntries)
             {
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                entry.ExecutablePath ??= string.Empty;
+                entry.Arguments ??= string.Empty;
+            }
+
+            if (!string.IsNullOrWhiteSpace(AutoLaunchExecutablePath))
+            {
+                AutoLaunchEntries.Add(new AutoLaunchEntry
+                {
+                    Enabled = AutoLaunchEnabled,
+                    ExecutablePath = AutoLaunchExecutablePath ?? string.Empty,
+                    Arguments = AutoLaunchArguments ?? string.Empty
+                });
+
+                AutoLaunchExecutablePath = string.Empty;
+                AutoLaunchArguments = string.Empty;
+            }
+        }
+
+        private void NormalizeItemMusicEntries()
+        {
+            ItemMusicEntries ??= new List<ItemMusicEntry>();
+
+            foreach (var entry in ItemMusicEntries)
+            {
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                entry.ItemName ??= string.Empty;
+                entry.SoundPath ??= string.Empty;
+                NormalizeItemMusicSpeeds(entry);
+            }
+
+            if (!string.IsNullOrWhiteSpace(ItemMusicItemName) || !string.IsNullOrWhiteSpace(ItemMusicSoundPath))
+            {
+                var legacyEntry = new ItemMusicEntry
+                {
+                    Enabled = ItemMusicEnabled,
+                    ItemName = ItemMusicItemName ?? string.Empty,
+                    SoundPath = ItemMusicSoundPath ?? string.Empty,
+                    MinSpeed = ItemMusicMinSpeed,
+                    MaxSpeed = ItemMusicMaxSpeed
+                };
+
+                NormalizeItemMusicSpeeds(legacyEntry);
+                ItemMusicEntries.Add(legacyEntry);
+
+                ItemMusicItemName = string.Empty;
+                ItemMusicSoundPath = string.Empty;
                 ItemMusicMinSpeed = 0;
+                ItemMusicMaxSpeed = 0;
+            }
+        }
+
+        private static void NormalizeItemMusicSpeeds(ItemMusicEntry entry)
+        {
+            if (entry == null)
+            {
+                return;
             }
 
-            if (double.IsNaN(ItemMusicMaxSpeed) || double.IsInfinity(ItemMusicMaxSpeed) || ItemMusicMaxSpeed < 0)
+            if (double.IsNaN(entry.MinSpeed) || double.IsInfinity(entry.MinSpeed) || entry.MinSpeed < 0)
             {
-                ItemMusicMaxSpeed = ItemMusicMinSpeed;
+                entry.MinSpeed = 0;
             }
 
-            if (ItemMusicMaxSpeed < ItemMusicMinSpeed)
+            if (double.IsNaN(entry.MaxSpeed) || double.IsInfinity(entry.MaxSpeed) || entry.MaxSpeed < entry.MinSpeed)
             {
-                ItemMusicMaxSpeed = ItemMusicMinSpeed;
+                entry.MaxSpeed = entry.MinSpeed;
             }
         }
 
@@ -132,7 +202,8 @@ namespace ToNRoundCounter.Infrastructure
 
         public async Task SaveAsync()
         {
-            NormalizeItemMusicSpeeds();
+            NormalizeAutoLaunchEntries();
+            NormalizeItemMusicEntries();
             var settings = new AppSettingsData
             {
                 OSCPort = OSCPort,
@@ -162,13 +233,9 @@ namespace ToNRoundCounter.Infrastructure
                 LogFilePath = LogFilePath,
                 WebSocketIp = WebSocketIp,
                 AutoLaunchEnabled = AutoLaunchEnabled,
-                AutoLaunchExecutablePath = AutoLaunchExecutablePath,
-                AutoLaunchArguments = AutoLaunchArguments,
+                AutoLaunchEntries = AutoLaunchEntries,
                 ItemMusicEnabled = ItemMusicEnabled,
-                ItemMusicItemName = ItemMusicItemName,
-                ItemMusicSoundPath = ItemMusicSoundPath,
-                ItemMusicMinSpeed = ItemMusicMinSpeed,
-                ItemMusicMaxSpeed = ItemMusicMaxSpeed,
+                ItemMusicEntries = ItemMusicEntries,
                 DiscordWebhookUrl = DiscordWebhookUrl,
                 LastSaveCode = LastSaveCode
             };
@@ -218,13 +285,9 @@ namespace ToNRoundCounter.Infrastructure
         public string LogFilePath { get; set; }
         public string WebSocketIp { get; set; }
         public bool AutoLaunchEnabled { get; set; }
-        public string AutoLaunchExecutablePath { get; set; } = string.Empty;
-        public string AutoLaunchArguments { get; set; } = string.Empty;
+        public List<AutoLaunchEntry> AutoLaunchEntries { get; set; } = new List<AutoLaunchEntry>();
         public bool ItemMusicEnabled { get; set; }
-        public string ItemMusicItemName { get; set; } = string.Empty;
-        public string ItemMusicSoundPath { get; set; } = string.Empty;
-        public double ItemMusicMinSpeed { get; set; }
-        public double ItemMusicMaxSpeed { get; set; }
+        public List<ItemMusicEntry> ItemMusicEntries { get; set; } = new List<ItemMusicEntry>();
         public string DiscordWebhookUrl { get; set; } = string.Empty;
         public string LastSaveCode { get; set; } = string.Empty;
     }

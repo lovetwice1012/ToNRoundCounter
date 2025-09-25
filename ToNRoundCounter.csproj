@@ -159,6 +159,8 @@
     <Compile Include="Domain\TerrorMapNameCollection.cs" />
     <Compile Include="Domain\AutoSuicideRule.cs" />
     <Compile Include="Domain\AutoSuicidePreset.cs" />
+    <Compile Include="Domain\AutoLaunchEntry.cs" />
+    <Compile Include="Domain\ItemMusicEntry.cs" />
     <Compile Include="Domain\UnboundRoundDefinitions.cs" />
     <Compile Include="Application\AutoSuicideService.cs" />
     <Compile Include="Application\StateService.cs" />

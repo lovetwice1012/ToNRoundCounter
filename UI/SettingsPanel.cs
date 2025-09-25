@@ -7,6 +7,7 @@ using ToNRoundCounter.Domain;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
+using System.Globalization;
 using Newtonsoft.Json;
 using System.Text;
 using System.Diagnostics;
@@ -72,16 +73,25 @@ namespace ToNRoundCounter.UI
 
         public CheckBox DarkThemeCheckBox { get; private set; }
         public CheckBox AutoLaunchEnabledCheckBox { get; private set; }
-        public TextBox AutoLaunchPathTextBox { get; private set; }
-        public Button AutoLaunchBrowseButton { get; private set; }
-        public TextBox AutoLaunchArgumentsTextBox { get; private set; }
+        private DataGridView autoLaunchEntriesGrid;
+        private Button autoLaunchAddButton;
+        private Button autoLaunchRemoveButton;
+        private Button autoLaunchBrowseButton;
         public CheckBox ItemMusicEnabledCheckBox { get; private set; }
-        public TextBox ItemMusicItemTextBox { get; private set; }
-        public TextBox ItemMusicSoundPathTextBox { get; private set; }
-        public Button ItemMusicSoundBrowseButton { get; private set; }
-        public NumericUpDown ItemMusicMinSpeedNumericUpDown { get; private set; }
-        public NumericUpDown ItemMusicMaxSpeedNumericUpDown { get; private set; }
+        private DataGridView itemMusicEntriesGrid;
+        private Button itemMusicAddButton;
+        private Button itemMusicRemoveButton;
+        private Button itemMusicBrowseButton;
         public TextBox DiscordWebhookUrlTextBox { get; private set; }
+
+        private const string AutoLaunchEnabledColumnName = "AutoLaunchEnabled";
+        private const string AutoLaunchPathColumnName = "AutoLaunchPath";
+        private const string AutoLaunchArgumentsColumnName = "AutoLaunchArguments";
+        private const string ItemMusicEnabledColumnName = "ItemMusicEnabled";
+        private const string ItemMusicItemColumnName = "ItemMusicItem";
+        private const string ItemMusicPathColumnName = "ItemMusicPath";
+        private const string ItemMusicMinSpeedColumnName = "ItemMusicMinSpeed";
+        private const string ItemMusicMaxSpeedColumnName = "ItemMusicMaxSpeed";
 
 
         public SettingsPanel(IAppSettings settings)
@@ -95,6 +105,7 @@ namespace ToNRoundCounter.UI
             this.Size = new Size(totalWidth, 1100);
 
             int currentY = margin;
+            int rightColumnY = margin;
             int innerMargin = 10;
 
             DarkThemeCheckBox = new CheckBox();
@@ -139,7 +150,7 @@ namespace ToNRoundCounter.UI
             // 自動自殺モードグループ（右列）
             GroupBox grpAutoSuicide = new GroupBox();
             grpAutoSuicide.Text = LanguageManager.Translate("自動自殺モード");
-            grpAutoSuicide.Location = new Point(margin * 2 + columnWidth, currentY);
+            grpAutoSuicide.Location = new Point(margin * 2 + columnWidth, rightColumnY);
             grpAutoSuicide.Size = new Size(columnWidth, 100);
             this.Controls.Add(grpAutoSuicide);
 
@@ -657,6 +668,8 @@ namespace ToNRoundCounter.UI
             AutoSuicideUseDetailCheckBox_CheckedChanged(null, EventArgs.Empty);
             AutoSuicideCheckBox_CheckedChanged(null, EventArgs.Empty);
 
+            rightColumnY = grpAutoSuicide.Bottom + margin;
+
             currentY = currentY + grpOsc.Bottom + margin;
 
             // 表示設定グループ
@@ -734,11 +747,12 @@ namespace ToNRoundCounter.UI
 
             GroupBox grpAutoLaunch = new GroupBox();
             grpAutoLaunch.Text = LanguageManager.Translate("自動起動設定");
-            grpAutoLaunch.Location = new Point(margin, currentY);
-            grpAutoLaunch.Size = new Size(columnWidth, 150);
+            grpAutoLaunch.Location = new Point(margin * 2 + columnWidth, rightColumnY);
+            grpAutoLaunch.Size = new Size(columnWidth, 240);
             this.Controls.Add(grpAutoLaunch);
 
             int autoLaunchInnerY = 25;
+
             AutoLaunchEnabledCheckBox = new CheckBox();
             AutoLaunchEnabledCheckBox.Text = LanguageManager.Translate("外部アプリを自動起動する");
             AutoLaunchEnabledCheckBox.AutoSize = true;
@@ -747,70 +761,95 @@ namespace ToNRoundCounter.UI
 
             autoLaunchInnerY = AutoLaunchEnabledCheckBox.Bottom + 10;
 
-            Label autoLaunchPathLabel = new Label();
-            autoLaunchPathLabel.Text = LanguageManager.Translate("実行ファイル:");
-            autoLaunchPathLabel.AutoSize = true;
-            autoLaunchPathLabel.Location = new Point(innerMargin, autoLaunchInnerY);
-            grpAutoLaunch.Controls.Add(autoLaunchPathLabel);
+            autoLaunchEntriesGrid = new DataGridView();
+            autoLaunchEntriesGrid.Name = "AutoLaunchEntriesGrid";
+            autoLaunchEntriesGrid.Location = new Point(innerMargin, autoLaunchInnerY);
+            autoLaunchEntriesGrid.Size = new Size(columnWidth - innerMargin * 2, 120);
+            autoLaunchEntriesGrid.AllowUserToAddRows = false;
+            autoLaunchEntriesGrid.AllowUserToResizeRows = false;
+            autoLaunchEntriesGrid.RowHeadersVisible = false;
+            autoLaunchEntriesGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            autoLaunchEntriesGrid.MultiSelect = false;
+            autoLaunchEntriesGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
 
-            AutoLaunchPathTextBox = new TextBox();
-            AutoLaunchPathTextBox.Location = new Point(autoLaunchPathLabel.Right + 10, autoLaunchInnerY - 3);
-            AutoLaunchPathTextBox.Width = 280;
-            AutoLaunchPathTextBox.Text = _settings.AutoLaunchExecutablePath;
-            grpAutoLaunch.Controls.Add(AutoLaunchPathTextBox);
+            var autoLaunchEnabledColumn = new DataGridViewCheckBoxColumn();
+            autoLaunchEnabledColumn.Name = AutoLaunchEnabledColumnName;
+            autoLaunchEnabledColumn.HeaderText = LanguageManager.Translate("有効");
+            autoLaunchEnabledColumn.Width = 70;
+            autoLaunchEnabledColumn.FillWeight = 20;
+            autoLaunchEntriesGrid.Columns.Add(autoLaunchEnabledColumn);
 
-            AutoLaunchBrowseButton = new Button();
-            AutoLaunchBrowseButton.Text = LanguageManager.Translate("参照...");
-            AutoLaunchBrowseButton.AutoSize = true;
-            AutoLaunchBrowseButton.Location = new Point(AutoLaunchPathTextBox.Right + 10, autoLaunchInnerY - 5);
-            AutoLaunchBrowseButton.Click += (s, e) =>
+            var autoLaunchPathColumn = new DataGridViewTextBoxColumn();
+            autoLaunchPathColumn.Name = AutoLaunchPathColumnName;
+            autoLaunchPathColumn.HeaderText = LanguageManager.Translate("実行ファイル");
+            autoLaunchPathColumn.FillWeight = 55;
+            autoLaunchEntriesGrid.Columns.Add(autoLaunchPathColumn);
+
+            var autoLaunchArgumentsColumn = new DataGridViewTextBoxColumn();
+            autoLaunchArgumentsColumn.Name = AutoLaunchArgumentsColumnName;
+            autoLaunchArgumentsColumn.HeaderText = LanguageManager.Translate("引数");
+            autoLaunchArgumentsColumn.FillWeight = 25;
+            autoLaunchEntriesGrid.Columns.Add(autoLaunchArgumentsColumn);
+
+            grpAutoLaunch.Controls.Add(autoLaunchEntriesGrid);
+
+            autoLaunchAddButton = new Button();
+            autoLaunchAddButton.Text = LanguageManager.Translate("追加");
+            autoLaunchAddButton.AutoSize = true;
+            autoLaunchAddButton.Location = new Point(innerMargin, autoLaunchEntriesGrid.Bottom + 10);
+            autoLaunchAddButton.Click += (s, e) =>
             {
-                using (OpenFileDialog dialog = new OpenFileDialog())
+                autoLaunchEntriesGrid.Rows.Add(true, string.Empty, string.Empty);
+                if (autoLaunchEntriesGrid.Rows.Count > 0)
                 {
-                    dialog.Filter = "実行ファイル|*.exe;*.bat;*.cmd;*.com|すべてのファイル|*.*";
-                    dialog.FileName = AutoLaunchPathTextBox.Text;
-                    if (dialog.ShowDialog() == DialogResult.OK)
+                    autoLaunchEntriesGrid.ClearSelection();
+                    autoLaunchEntriesGrid.Rows[autoLaunchEntriesGrid.Rows.Count - 1].Selected = true;
+                }
+                RefreshAutoLaunchControlsState();
+            };
+            grpAutoLaunch.Controls.Add(autoLaunchAddButton);
+
+            autoLaunchRemoveButton = new Button();
+            autoLaunchRemoveButton.Text = LanguageManager.Translate("削除");
+            autoLaunchRemoveButton.AutoSize = true;
+            autoLaunchRemoveButton.Location = new Point(autoLaunchAddButton.Right + 10, autoLaunchEntriesGrid.Bottom + 10);
+            autoLaunchRemoveButton.Click += (s, e) =>
+            {
+                foreach (DataGridViewRow row in autoLaunchEntriesGrid.SelectedRows)
+                {
+                    if (!row.IsNewRow)
                     {
-                        AutoLaunchPathTextBox.Text = dialog.FileName;
+                        autoLaunchEntriesGrid.Rows.Remove(row);
                     }
                 }
+                RefreshAutoLaunchControlsState();
             };
-            grpAutoLaunch.Controls.Add(AutoLaunchBrowseButton);
+            grpAutoLaunch.Controls.Add(autoLaunchRemoveButton);
 
-            autoLaunchInnerY += AutoLaunchPathTextBox.Height + 10;
-
-            Label autoLaunchArgsLabel = new Label();
-            autoLaunchArgsLabel.Text = LanguageManager.Translate("引数:");
-            autoLaunchArgsLabel.AutoSize = true;
-            autoLaunchArgsLabel.Location = new Point(innerMargin, autoLaunchInnerY);
-            grpAutoLaunch.Controls.Add(autoLaunchArgsLabel);
-
-            AutoLaunchArgumentsTextBox = new TextBox();
-            AutoLaunchArgumentsTextBox.Location = new Point(autoLaunchArgsLabel.Right + 10, autoLaunchInnerY - 3);
-            AutoLaunchArgumentsTextBox.Width = 320;
-            AutoLaunchArgumentsTextBox.Text = _settings.AutoLaunchArguments;
-            grpAutoLaunch.Controls.Add(AutoLaunchArgumentsTextBox);
-
-            grpAutoLaunch.Height = AutoLaunchArgumentsTextBox.Bottom + 15;
-
-            Action updateAutoLaunchInputs = () =>
+            autoLaunchBrowseButton = new Button();
+            autoLaunchBrowseButton.Text = LanguageManager.Translate("参照...");
+            autoLaunchBrowseButton.AutoSize = true;
+            autoLaunchBrowseButton.Location = new Point(autoLaunchRemoveButton.Right + 10, autoLaunchEntriesGrid.Bottom + 10);
+            autoLaunchBrowseButton.Click += (s, e) =>
             {
-                bool enabled = AutoLaunchEnabledCheckBox.Checked;
-                AutoLaunchPathTextBox.Enabled = enabled;
-                AutoLaunchBrowseButton.Enabled = enabled;
-                AutoLaunchArgumentsTextBox.Enabled = enabled;
+                BrowseForAutoLaunchExecutable();
+                RefreshAutoLaunchControlsState();
             };
+            grpAutoLaunch.Controls.Add(autoLaunchBrowseButton);
 
-            AutoLaunchEnabledCheckBox.CheckedChanged += (s, e) => updateAutoLaunchInputs();
+            grpAutoLaunch.Height = autoLaunchBrowseButton.Bottom + 15;
+
+            AutoLaunchEnabledCheckBox.CheckedChanged += (s, e) => RefreshAutoLaunchControlsState();
+            autoLaunchEntriesGrid.SelectionChanged += (s, e) => RefreshAutoLaunchControlsState();
             AutoLaunchEnabledCheckBox.Checked = _settings.AutoLaunchEnabled;
-            updateAutoLaunchInputs();
+            LoadAutoLaunchEntries(_settings.AutoLaunchEntries);
 
-            currentY += grpAutoLaunch.Height + margin;
+            rightColumnY += grpAutoLaunch.Height + margin;
 
             GroupBox grpItemMusic = new GroupBox();
             grpItemMusic.Text = LanguageManager.Translate("アイテム音楽ギミック");
-            grpItemMusic.Location = new Point(margin, currentY);
-            grpItemMusic.Size = new Size(columnWidth, 200);
+            grpItemMusic.Location = new Point(margin * 2 + columnWidth, rightColumnY);
+            grpItemMusic.Size = new Size(columnWidth, 270);
             this.Controls.Add(grpItemMusic);
 
             int itemMusicInnerY = 25;
@@ -823,159 +862,108 @@ namespace ToNRoundCounter.UI
 
             itemMusicInnerY = ItemMusicEnabledCheckBox.Bottom + 10;
 
-            Label itemMusicItemLabel = new Label();
-            itemMusicItemLabel.Text = LanguageManager.Translate("対象アイテム名:");
-            itemMusicItemLabel.AutoSize = true;
-            itemMusicItemLabel.Location = new Point(innerMargin, itemMusicInnerY);
-            grpItemMusic.Controls.Add(itemMusicItemLabel);
+            itemMusicEntriesGrid = new DataGridView();
+            itemMusicEntriesGrid.Name = "ItemMusicEntriesGrid";
+            itemMusicEntriesGrid.Location = new Point(innerMargin, itemMusicInnerY);
+            itemMusicEntriesGrid.Size = new Size(columnWidth - innerMargin * 2, 150);
+            itemMusicEntriesGrid.AllowUserToAddRows = false;
+            itemMusicEntriesGrid.AllowUserToResizeRows = false;
+            itemMusicEntriesGrid.RowHeadersVisible = false;
+            itemMusicEntriesGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            itemMusicEntriesGrid.MultiSelect = false;
+            itemMusicEntriesGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
 
-            ItemMusicItemTextBox = new TextBox();
-            ItemMusicItemTextBox.Location = new Point(itemMusicItemLabel.Right + 10, itemMusicInnerY - 3);
-            ItemMusicItemTextBox.Width = 260;
-            ItemMusicItemTextBox.Text = _settings.ItemMusicItemName;
-            grpItemMusic.Controls.Add(ItemMusicItemTextBox);
+            var itemMusicEnabledColumn = new DataGridViewCheckBoxColumn();
+            itemMusicEnabledColumn.Name = ItemMusicEnabledColumnName;
+            itemMusicEnabledColumn.HeaderText = LanguageManager.Translate("有効");
+            itemMusicEnabledColumn.Width = 60;
+            itemMusicEnabledColumn.FillWeight = 15;
+            itemMusicEntriesGrid.Columns.Add(itemMusicEnabledColumn);
 
-            itemMusicInnerY += ItemMusicItemTextBox.Height + 10;
+            var itemMusicItemColumn = new DataGridViewTextBoxColumn();
+            itemMusicItemColumn.Name = ItemMusicItemColumnName;
+            itemMusicItemColumn.HeaderText = LanguageManager.Translate("対象アイテム名");
+            itemMusicItemColumn.FillWeight = 35;
+            itemMusicEntriesGrid.Columns.Add(itemMusicItemColumn);
 
-            Label itemMusicSoundLabel = new Label();
-            itemMusicSoundLabel.Text = LanguageManager.Translate("再生する音声:");
-            itemMusicSoundLabel.AutoSize = true;
-            itemMusicSoundLabel.Location = new Point(innerMargin, itemMusicInnerY);
-            grpItemMusic.Controls.Add(itemMusicSoundLabel);
+            var itemMusicPathColumn = new DataGridViewTextBoxColumn();
+            itemMusicPathColumn.Name = ItemMusicPathColumnName;
+            itemMusicPathColumn.HeaderText = LanguageManager.Translate("再生する音声");
+            itemMusicPathColumn.FillWeight = 35;
+            itemMusicEntriesGrid.Columns.Add(itemMusicPathColumn);
 
-            ItemMusicSoundPathTextBox = new TextBox();
-            ItemMusicSoundPathTextBox.Location = new Point(itemMusicSoundLabel.Right + 10, itemMusicInnerY - 3);
-            ItemMusicSoundPathTextBox.Width = 260;
-            ItemMusicSoundPathTextBox.Text = _settings.ItemMusicSoundPath;
-            grpItemMusic.Controls.Add(ItemMusicSoundPathTextBox);
+            var itemMusicMinSpeedColumn = new DataGridViewTextBoxColumn();
+            itemMusicMinSpeedColumn.Name = ItemMusicMinSpeedColumnName;
+            itemMusicMinSpeedColumn.HeaderText = LanguageManager.Translate("最小速度");
+            itemMusicMinSpeedColumn.ValueType = typeof(double);
+            itemMusicMinSpeedColumn.DefaultCellStyle.Format = "0.##";
+            itemMusicMinSpeedColumn.FillWeight = 7;
+            itemMusicEntriesGrid.Columns.Add(itemMusicMinSpeedColumn);
 
-            ItemMusicSoundBrowseButton = new Button();
-            ItemMusicSoundBrowseButton.Text = LanguageManager.Translate("参照...");
-            ItemMusicSoundBrowseButton.AutoSize = true;
-            ItemMusicSoundBrowseButton.Location = new Point(ItemMusicSoundPathTextBox.Right + 10, itemMusicInnerY - 5);
-            ItemMusicSoundBrowseButton.Click += (s, e) =>
+            var itemMusicMaxSpeedColumn = new DataGridViewTextBoxColumn();
+            itemMusicMaxSpeedColumn.Name = ItemMusicMaxSpeedColumnName;
+            itemMusicMaxSpeedColumn.HeaderText = LanguageManager.Translate("最大速度");
+            itemMusicMaxSpeedColumn.ValueType = typeof(double);
+            itemMusicMaxSpeedColumn.DefaultCellStyle.Format = "0.##";
+            itemMusicMaxSpeedColumn.FillWeight = 8;
+            itemMusicEntriesGrid.Columns.Add(itemMusicMaxSpeedColumn);
+
+            grpItemMusic.Controls.Add(itemMusicEntriesGrid);
+
+            itemMusicAddButton = new Button();
+            itemMusicAddButton.Text = LanguageManager.Translate("追加");
+            itemMusicAddButton.AutoSize = true;
+            itemMusicAddButton.Location = new Point(innerMargin, itemMusicEntriesGrid.Bottom + 10);
+            itemMusicAddButton.Click += (s, e) =>
             {
-                using (OpenFileDialog dialog = new OpenFileDialog())
+                itemMusicEntriesGrid.Rows.Add(true, string.Empty, string.Empty, 0d, 0d);
+                if (itemMusicEntriesGrid.Rows.Count > 0)
                 {
-                    dialog.Filter = "音声ファイル|*.mp3;*.wav;*.ogg;*.wma|すべてのファイル|*.*";
-                    dialog.FileName = ItemMusicSoundPathTextBox.Text;
-                    if (dialog.ShowDialog() == DialogResult.OK)
+                    itemMusicEntriesGrid.ClearSelection();
+                    itemMusicEntriesGrid.Rows[itemMusicEntriesGrid.Rows.Count - 1].Selected = true;
+                }
+                RefreshItemMusicControlsState();
+            };
+            grpItemMusic.Controls.Add(itemMusicAddButton);
+
+            itemMusicRemoveButton = new Button();
+            itemMusicRemoveButton.Text = LanguageManager.Translate("削除");
+            itemMusicRemoveButton.AutoSize = true;
+            itemMusicRemoveButton.Location = new Point(itemMusicAddButton.Right + 10, itemMusicEntriesGrid.Bottom + 10);
+            itemMusicRemoveButton.Click += (s, e) =>
+            {
+                foreach (DataGridViewRow row in itemMusicEntriesGrid.SelectedRows)
+                {
+                    if (!row.IsNewRow)
                     {
-                        ItemMusicSoundPathTextBox.Text = dialog.FileName;
+                        itemMusicEntriesGrid.Rows.Remove(row);
                     }
                 }
+                RefreshItemMusicControlsState();
             };
-            grpItemMusic.Controls.Add(ItemMusicSoundBrowseButton);
+            grpItemMusic.Controls.Add(itemMusicRemoveButton);
 
-            itemMusicInnerY = ItemMusicSoundPathTextBox.Bottom + 10;
-
-            Label itemMusicMinSpeedLabel = new Label();
-            itemMusicMinSpeedLabel.Text = LanguageManager.Translate("速度下限(>=)");
-            itemMusicMinSpeedLabel.AutoSize = true;
-            itemMusicMinSpeedLabel.Location = new Point(innerMargin, itemMusicInnerY);
-            grpItemMusic.Controls.Add(itemMusicMinSpeedLabel);
-
-            ItemMusicMinSpeedNumericUpDown = new NumericUpDown();
-            ItemMusicMinSpeedNumericUpDown.DecimalPlaces = 2;
-            ItemMusicMinSpeedNumericUpDown.Minimum = 0;
-            ItemMusicMinSpeedNumericUpDown.Maximum = 100;
-            ItemMusicMinSpeedNumericUpDown.Increment = 0.1M;
-            ItemMusicMinSpeedNumericUpDown.Location = new Point(itemMusicMinSpeedLabel.Right + 10, itemMusicInnerY - 3);
-            ItemMusicMinSpeedNumericUpDown.Width = 80;
-            decimal initialSpeed = 0;
-            try
+            itemMusicBrowseButton = new Button();
+            itemMusicBrowseButton.Text = LanguageManager.Translate("参照...");
+            itemMusicBrowseButton.AutoSize = true;
+            itemMusicBrowseButton.Location = new Point(itemMusicRemoveButton.Right + 10, itemMusicEntriesGrid.Bottom + 10);
+            itemMusicBrowseButton.Click += (s, e) =>
             {
-                initialSpeed = (decimal)_settings.ItemMusicMinSpeed;
-            }
-            catch
-            {
-                initialSpeed = 0;
-            }
-            if (initialSpeed < ItemMusicMinSpeedNumericUpDown.Minimum)
-            {
-                initialSpeed = ItemMusicMinSpeedNumericUpDown.Minimum;
-            }
-            else if (initialSpeed > ItemMusicMinSpeedNumericUpDown.Maximum)
-            {
-                initialSpeed = ItemMusicMinSpeedNumericUpDown.Maximum;
-            }
-            ItemMusicMinSpeedNumericUpDown.Value = initialSpeed;
-            grpItemMusic.Controls.Add(ItemMusicMinSpeedNumericUpDown);
-
-            itemMusicInnerY = ItemMusicMinSpeedNumericUpDown.Bottom + 10;
-
-            Label itemMusicMaxSpeedLabel = new Label();
-            itemMusicMaxSpeedLabel.Text = LanguageManager.Translate("速度上限(<=)");
-            itemMusicMaxSpeedLabel.AutoSize = true;
-            itemMusicMaxSpeedLabel.Location = new Point(innerMargin, itemMusicInnerY);
-            grpItemMusic.Controls.Add(itemMusicMaxSpeedLabel);
-
-            ItemMusicMaxSpeedNumericUpDown = new NumericUpDown();
-            ItemMusicMaxSpeedNumericUpDown.DecimalPlaces = 2;
-            ItemMusicMaxSpeedNumericUpDown.Minimum = 0;
-            ItemMusicMaxSpeedNumericUpDown.Maximum = 100;
-            ItemMusicMaxSpeedNumericUpDown.Increment = 0.1M;
-            ItemMusicMaxSpeedNumericUpDown.Location = new Point(itemMusicMaxSpeedLabel.Right + 10, itemMusicInnerY - 3);
-            ItemMusicMaxSpeedNumericUpDown.Width = 80;
-            decimal initialMaxSpeed = 0;
-            try
-            {
-                initialMaxSpeed = (decimal)_settings.ItemMusicMaxSpeed;
-            }
-            catch
-            {
-                initialMaxSpeed = 0;
-            }
-            if (initialMaxSpeed < ItemMusicMaxSpeedNumericUpDown.Minimum)
-            {
-                initialMaxSpeed = ItemMusicMaxSpeedNumericUpDown.Minimum;
-            }
-            else if (initialMaxSpeed > ItemMusicMaxSpeedNumericUpDown.Maximum)
-            {
-                initialMaxSpeed = ItemMusicMaxSpeedNumericUpDown.Maximum;
-            }
-
-            if (initialMaxSpeed < ItemMusicMinSpeedNumericUpDown.Value)
-            {
-                initialMaxSpeed = ItemMusicMinSpeedNumericUpDown.Value;
-            }
-
-            ItemMusicMaxSpeedNumericUpDown.Value = initialMaxSpeed;
-            grpItemMusic.Controls.Add(ItemMusicMaxSpeedNumericUpDown);
-
-            ItemMusicMinSpeedNumericUpDown.ValueChanged += (s, e) =>
-            {
-                if (ItemMusicMaxSpeedNumericUpDown.Value < ItemMusicMinSpeedNumericUpDown.Value)
-                {
-                    ItemMusicMaxSpeedNumericUpDown.Value = ItemMusicMinSpeedNumericUpDown.Value;
-                }
+                BrowseForItemMusicSound();
+                RefreshItemMusicControlsState();
             };
+            grpItemMusic.Controls.Add(itemMusicBrowseButton);
 
-            ItemMusicMaxSpeedNumericUpDown.ValueChanged += (s, e) =>
-            {
-                if (ItemMusicMaxSpeedNumericUpDown.Value < ItemMusicMinSpeedNumericUpDown.Value)
-                {
-                    ItemMusicMaxSpeedNumericUpDown.Value = ItemMusicMinSpeedNumericUpDown.Value;
-                }
-            };
+            grpItemMusic.Height = itemMusicBrowseButton.Bottom + 15;
 
-            grpItemMusic.Height = ItemMusicMaxSpeedNumericUpDown.Bottom + 20;
-
-            Action updateItemMusicInputs = () =>
-            {
-                bool enabled = ItemMusicEnabledCheckBox.Checked;
-                ItemMusicItemTextBox.Enabled = enabled;
-                ItemMusicSoundPathTextBox.Enabled = enabled;
-                ItemMusicSoundBrowseButton.Enabled = enabled;
-                ItemMusicMinSpeedNumericUpDown.Enabled = enabled;
-                ItemMusicMaxSpeedNumericUpDown.Enabled = enabled;
-            };
-
-            ItemMusicEnabledCheckBox.CheckedChanged += (s, e) => updateItemMusicInputs();
+            ItemMusicEnabledCheckBox.CheckedChanged += (s, e) => RefreshItemMusicControlsState();
+            itemMusicEntriesGrid.SelectionChanged += (s, e) => RefreshItemMusicControlsState();
             ItemMusicEnabledCheckBox.Checked = _settings.ItemMusicEnabled;
-            updateItemMusicInputs();
+            LoadItemMusicEntries(_settings.ItemMusicEntries);
 
-            currentY += grpItemMusic.Height + margin;
+            rightColumnY += grpItemMusic.Height + margin;
+
+            
 
             // 追加設定グループ
             GroupBox grpAdditional = new GroupBox();
@@ -1171,7 +1159,7 @@ namespace ToNRoundCounter.UI
 
             GroupBox grpDiscord = new GroupBox();
             grpDiscord.Text = LanguageManager.Translate("Discord通知設定");
-            grpDiscord.Location = new Point(margin, currentY);
+            grpDiscord.Location = new Point(margin * 2 + columnWidth, rightColumnY);
             grpDiscord.Size = new Size(columnWidth, 130);
             this.Controls.Add(grpDiscord);
 
@@ -1201,12 +1189,277 @@ namespace ToNRoundCounter.UI
 
             grpDiscord.Height = DiscordWebhookUrlTextBox.Bottom + 20;
 
-            currentY += grpDiscord.Height + margin;
+            rightColumnY += grpDiscord.Height + margin;
 
             // 最後に、パネルの高さを調整
             this.Width = totalWidth;
-            this.Height = currentY + margin;
+            this.Height = Math.Max(currentY, rightColumnY) + margin;
 
+        }
+
+        public void LoadAutoLaunchEntries(IEnumerable<AutoLaunchEntry> entries)
+        {
+            if (autoLaunchEntriesGrid == null)
+            {
+                return;
+            }
+
+            autoLaunchEntriesGrid.Rows.Clear();
+
+            if (entries != null)
+            {
+                foreach (var entry in entries)
+                {
+                    if (entry == null)
+                    {
+                        continue;
+                    }
+
+                    autoLaunchEntriesGrid.Rows.Add(entry.Enabled, entry.ExecutablePath ?? string.Empty, entry.Arguments ?? string.Empty);
+                }
+            }
+
+            RefreshAutoLaunchControlsState();
+        }
+
+        public List<AutoLaunchEntry> GetAutoLaunchEntries()
+        {
+            var result = new List<AutoLaunchEntry>();
+
+            if (autoLaunchEntriesGrid == null)
+            {
+                return result;
+            }
+
+            foreach (DataGridViewRow row in autoLaunchEntriesGrid.Rows)
+            {
+                if (row.IsNewRow)
+                {
+                    continue;
+                }
+
+                string path = (Convert.ToString(row.Cells[AutoLaunchPathColumnName].Value) ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(path))
+                {
+                    continue;
+                }
+
+                string arguments = (Convert.ToString(row.Cells[AutoLaunchArgumentsColumnName].Value) ?? string.Empty).Trim();
+                bool enabled = row.Cells[AutoLaunchEnabledColumnName].Value is bool b && b;
+
+                result.Add(new AutoLaunchEntry
+                {
+                    Enabled = enabled,
+                    ExecutablePath = path,
+                    Arguments = arguments
+                });
+            }
+
+            return result;
+        }
+
+        public void LoadItemMusicEntries(IEnumerable<ItemMusicEntry> entries)
+        {
+            if (itemMusicEntriesGrid == null)
+            {
+                return;
+            }
+
+            itemMusicEntriesGrid.Rows.Clear();
+
+            if (entries != null)
+            {
+                foreach (var entry in entries)
+                {
+                    if (entry == null)
+                    {
+                        continue;
+                    }
+
+                    itemMusicEntriesGrid.Rows.Add(entry.Enabled,
+                        entry.ItemName ?? string.Empty,
+                        entry.SoundPath ?? string.Empty,
+                        entry.MinSpeed,
+                        entry.MaxSpeed);
+                }
+            }
+
+            RefreshItemMusicControlsState();
+        }
+
+        public List<ItemMusicEntry> GetItemMusicEntries()
+        {
+            var result = new List<ItemMusicEntry>();
+
+            if (itemMusicEntriesGrid == null)
+            {
+                return result;
+            }
+
+            foreach (DataGridViewRow row in itemMusicEntriesGrid.Rows)
+            {
+                if (row.IsNewRow)
+                {
+                    continue;
+                }
+
+                string itemName = Convert.ToString(row.Cells[ItemMusicItemColumnName].Value) ?? string.Empty;
+                string soundPath = Convert.ToString(row.Cells[ItemMusicPathColumnName].Value) ?? string.Empty;
+                bool enabled = row.Cells[ItemMusicEnabledColumnName].Value is bool b && b;
+
+                if (string.IsNullOrWhiteSpace(itemName) && string.IsNullOrWhiteSpace(soundPath))
+                {
+                    continue;
+                }
+
+                double minSpeed = Math.Max(0, GetDoubleFromCell(row.Cells[ItemMusicMinSpeedColumnName].Value, 0));
+                double maxSpeed = GetDoubleFromCell(row.Cells[ItemMusicMaxSpeedColumnName].Value, minSpeed);
+                if (maxSpeed < minSpeed)
+                {
+                    maxSpeed = minSpeed;
+                }
+
+                result.Add(new ItemMusicEntry
+                {
+                    Enabled = enabled,
+                    ItemName = itemName.Trim(),
+                    SoundPath = soundPath?.Trim() ?? string.Empty,
+                    MinSpeed = minSpeed,
+                    MaxSpeed = maxSpeed
+                });
+            }
+
+            return result;
+        }
+
+        private void BrowseForAutoLaunchExecutable()
+        {
+            if (autoLaunchEntriesGrid == null || autoLaunchEntriesGrid.SelectedRows.Count == 0)
+            {
+                return;
+            }
+
+            var row = autoLaunchEntriesGrid.SelectedRows[0];
+
+            using (OpenFileDialog dialog = new OpenFileDialog())
+            {
+                dialog.Filter = "実行ファイル|*.exe;*.bat;*.cmd;*.com|すべてのファイル|*.*";
+                string current = Convert.ToString(row.Cells[AutoLaunchPathColumnName].Value) ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(current))
+                {
+                    dialog.FileName = current;
+                }
+
+                if (dialog.ShowDialog() == DialogResult.OK)
+                {
+                    row.Cells[AutoLaunchPathColumnName].Value = dialog.FileName;
+                }
+            }
+        }
+
+        private void BrowseForItemMusicSound()
+        {
+            if (itemMusicEntriesGrid == null || itemMusicEntriesGrid.SelectedRows.Count == 0)
+            {
+                return;
+            }
+
+            var row = itemMusicEntriesGrid.SelectedRows[0];
+
+            using (OpenFileDialog dialog = new OpenFileDialog())
+            {
+                dialog.Filter = "音声ファイル|*.mp3;*.wav;*.ogg;*.flac;*.wma;*.aac;*.m4a|すべてのファイル|*.*";
+                string current = Convert.ToString(row.Cells[ItemMusicPathColumnName].Value) ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(current))
+                {
+                    dialog.FileName = current;
+                }
+
+                if (dialog.ShowDialog() == DialogResult.OK)
+                {
+                    row.Cells[ItemMusicPathColumnName].Value = dialog.FileName;
+                }
+            }
+        }
+
+        private void RefreshAutoLaunchControlsState()
+        {
+            bool enabled = AutoLaunchEnabledCheckBox?.Checked ?? false;
+            if (autoLaunchEntriesGrid != null)
+            {
+                autoLaunchEntriesGrid.Enabled = enabled;
+            }
+            if (autoLaunchAddButton != null)
+            {
+                autoLaunchAddButton.Enabled = enabled;
+            }
+
+            bool hasSelection = autoLaunchEntriesGrid != null && autoLaunchEntriesGrid.SelectedRows.Count > 0;
+
+            if (autoLaunchRemoveButton != null)
+            {
+                autoLaunchRemoveButton.Enabled = enabled && hasSelection;
+            }
+
+            if (autoLaunchBrowseButton != null)
+            {
+                autoLaunchBrowseButton.Enabled = enabled && hasSelection;
+            }
+        }
+
+        private void RefreshItemMusicControlsState()
+        {
+            bool enabled = ItemMusicEnabledCheckBox?.Checked ?? false;
+            if (itemMusicEntriesGrid != null)
+            {
+                itemMusicEntriesGrid.Enabled = enabled;
+            }
+            if (itemMusicAddButton != null)
+            {
+                itemMusicAddButton.Enabled = enabled;
+            }
+
+            bool hasSelection = itemMusicEntriesGrid != null && itemMusicEntriesGrid.SelectedRows.Count > 0;
+
+            if (itemMusicRemoveButton != null)
+            {
+                itemMusicRemoveButton.Enabled = enabled && hasSelection;
+            }
+
+            if (itemMusicBrowseButton != null)
+            {
+                itemMusicBrowseButton.Enabled = enabled && hasSelection;
+            }
+        }
+
+        private static double GetDoubleFromCell(object value, double fallback)
+        {
+            if (value == null)
+            {
+                return fallback;
+            }
+
+            if (value is double d)
+            {
+                if (double.IsNaN(d) || double.IsInfinity(d))
+                {
+                    return fallback;
+                }
+                return d;
+            }
+
+            string text = Convert.ToString(value) ?? string.Empty;
+            if (double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out double parsed) ||
+                double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed))
+            {
+                if (double.IsNaN(parsed) || double.IsInfinity(parsed))
+                {
+                    return fallback;
+                }
+                return parsed;
+            }
+
+            return fallback;
         }
 
         private string[] GenerateAutoSuicideLines()
