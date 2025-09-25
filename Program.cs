@@ -1,13 +1,15 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using Serilog;
-using ToNRoundCounter.UI;
 using ToNRoundCounter.Application;
 using ToNRoundCounter.Infrastructure;
+using ToNRoundCounter.Domain;
+using ToNRoundCounter.UI;
 using WinFormsApp = System.Windows.Forms.Application;
 
 namespace ToNRoundCounter
@@ -88,7 +90,6 @@ namespace ToNRoundCounter
 
             string? autoLaunchPath = null;
             string? autoLaunchArguments = null;
-            bool autoLaunchFromSettings = false;
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -115,53 +116,65 @@ namespace ToNRoundCounter
                 throw new InvalidOperationException("Crash report test triggered");
             }
 
-            if (string.IsNullOrWhiteSpace(autoLaunchPath) &&
-                appSettings.AutoLaunchEnabled &&
-                !string.IsNullOrWhiteSpace(appSettings.AutoLaunchExecutablePath))
-            {
-                autoLaunchPath = appSettings.AutoLaunchExecutablePath;
-                autoLaunchArguments = appSettings.AutoLaunchArguments;
-                autoLaunchFromSettings = true;
-            }
+            var launches = new List<(string Path, string Arguments, string Origin)>();
 
             if (!string.IsNullOrWhiteSpace(autoLaunchPath))
             {
+                launches.Add((autoLaunchPath, autoLaunchArguments ?? string.Empty, "command line"));
+            }
+            else if (appSettings.AutoLaunchEnabled)
+            {
+                foreach (var entry in appSettings.AutoLaunchEntries ?? Enumerable.Empty<AutoLaunchEntry>())
+                {
+                    if (entry == null || !entry.Enabled || string.IsNullOrWhiteSpace(entry.ExecutablePath))
+                    {
+                        continue;
+                    }
+
+                    launches.Add((entry.ExecutablePath, entry.Arguments ?? string.Empty, "settings"));
+                }
+            }
+
+            if (launches.Count > 0)
+            {
                 mainForm.Shown += (s, e) =>
                 {
-                    var origin = autoLaunchFromSettings ? "settings" : "command line";
-                    try
+                    foreach (var launch in launches)
                     {
-                        string resolvedPath = autoLaunchPath!;
-                        if (!Path.IsPathRooted(resolvedPath))
+                        try
                         {
-                            resolvedPath = Path.GetFullPath(resolvedPath);
+                            string resolvedPath = launch.Path;
+                            if (!Path.IsPathRooted(resolvedPath))
+                            {
+                                resolvedPath = Path.GetFullPath(resolvedPath);
+                            }
+
+                            if (!File.Exists(resolvedPath))
+                            {
+                                eventLogger.LogEvent("AutoLaunch", $"Executable not found ({launch.Origin}): {resolvedPath}", Serilog.Events.LogEventLevel.Error);
+                                continue;
+                            }
+
+                            var psi = new ProcessStartInfo
+                            {
+                                FileName = resolvedPath,
+                                UseShellExecute = true,
+                                Arguments = launch.Arguments ?? string.Empty,
+                            };
+
+                            var workingDirectory = Path.GetDirectoryName(resolvedPath);
+                            if (!string.IsNullOrEmpty(workingDirectory))
+                            {
+                                psi.WorkingDirectory = workingDirectory;
+                            }
+
+                            Process.Start(psi);
+                            eventLogger.LogEvent("AutoLaunch", $"Started executable ({launch.Origin}): {resolvedPath}");
                         }
-
-                        if (!File.Exists(resolvedPath))
+                        catch (Exception ex)
                         {
-                            eventLogger.LogEvent("AutoLaunch", $"Executable not found ({origin}): {resolvedPath}", Serilog.Events.LogEventLevel.Error);
-                            return;
+                            eventLogger.LogEvent("AutoLaunch", $"Failed to start executable ({launch.Origin}): {ex.Message}", Serilog.Events.LogEventLevel.Error);
                         }
-
-                        var psi = new ProcessStartInfo
-                        {
-                            FileName = resolvedPath,
-                            UseShellExecute = true,
-                            Arguments = autoLaunchArguments ?? string.Empty,
-                        };
-
-                        var workingDirectory = Path.GetDirectoryName(resolvedPath);
-                        if (!string.IsNullOrEmpty(workingDirectory))
-                        {
-                            psi.WorkingDirectory = workingDirectory;
-                        }
-
-                        Process.Start(psi);
-                        eventLogger.LogEvent("AutoLaunch", $"Started executable ({origin}): {resolvedPath}");
-                    }
-                    catch (Exception ex)
-                    {
-                        eventLogger.LogEvent("AutoLaunch", $"Failed to start executable ({origin}): {ex.Message}", Serilog.Events.LogEventLevel.Error);
                     }
                 };
             }

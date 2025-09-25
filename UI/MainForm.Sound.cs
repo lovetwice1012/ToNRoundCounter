@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Windows.Media;
 using Serilog.Events;
+using ToNRoundCounter.Domain;
 
 namespace ToNRoundCounter.UI
 {
@@ -42,26 +43,21 @@ namespace ToNRoundCounter.UI
             StopItemMusic();
         }
 
-        private void StartItemMusic()
+        private void StartItemMusic(ItemMusicEntry entry)
         {
-            if (!_settings.ItemMusicEnabled)
+            if (!_settings.ItemMusicEnabled || entry == null || !entry.Enabled)
             {
                 return;
             }
 
-            if (itemMusicPlayer == null || string.IsNullOrEmpty(lastLoadedItemMusicPath) || !File.Exists(lastLoadedItemMusicPath))
-            {
-                UpdateItemMusicPlayer();
-            }
+            EnsureItemMusicPlayer(entry);
 
-            if (itemMusicPlayer == null)
+            if (itemMusicPlayer != null)
             {
-                return;
+                itemMusicLoopRequested = true;
+                itemMusicActive = true;
+                PlayFromStart(itemMusicPlayer);
             }
-
-            itemMusicLoopRequested = true;
-            itemMusicActive = true;
-            PlayFromStart(itemMusicPlayer);
         }
 
         private void StopItemMusic()
@@ -81,7 +77,25 @@ namespace ToNRoundCounter.UI
             }
         }
 
-        private void UpdateItemMusicPlayer()
+        private void EnsureItemMusicPlayer(ItemMusicEntry entry)
+        {
+            if (!_settings.ItemMusicEnabled || entry == null || !entry.Enabled)
+            {
+                return;
+            }
+
+            bool needsReload = itemMusicPlayer == null ||
+                               !ReferenceEquals(activeItemMusicEntry, entry) ||
+                               string.IsNullOrEmpty(lastLoadedItemMusicPath) ||
+                               !File.Exists(lastLoadedItemMusicPath);
+
+            if (needsReload)
+            {
+                UpdateItemMusicPlayer(entry);
+            }
+        }
+
+        private void UpdateItemMusicPlayer(ItemMusicEntry entry = null)
         {
             try
             {
@@ -92,7 +106,14 @@ namespace ToNRoundCounter.UI
                     return;
                 }
 
-                string configuredPath = _settings.ItemMusicSoundPath;
+                activeItemMusicEntry = entry;
+
+                if (entry == null || !entry.Enabled)
+                {
+                    return;
+                }
+
+                string configuredPath = entry.SoundPath ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(configuredPath))
                 {
                     return;
@@ -141,6 +162,7 @@ namespace ToNRoundCounter.UI
             lastLoadedItemMusicPath = string.Empty;
             itemMusicLoopRequested = false;
             itemMusicActive = false;
+            activeItemMusicEntry = null;
         }
 
         private void ItemMusicPlayer_MediaEnded(object sender, EventArgs e)
