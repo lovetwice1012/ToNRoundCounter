@@ -36,8 +36,14 @@ namespace ToNRoundCounter.Application
         string WebSocketIp { get; set; }
         bool AutoLaunchEnabled { get; set; }
         List<AutoLaunchEntry> AutoLaunchEntries { get; set; }
+        string AutoLaunchExecutablePath { get; set; }
+        string AutoLaunchArguments { get; set; }
         bool ItemMusicEnabled { get; set; }
         List<ItemMusicEntry> ItemMusicEntries { get; set; }
+        string ItemMusicItemName { get; set; }
+        string ItemMusicSoundPath { get; set; }
+        double ItemMusicMinSpeed { get; set; }
+        double ItemMusicMaxSpeed { get; set; }
         string DiscordWebhookUrl { get; set; }
         string LastSaveCode { get; set; }
         void Load();
