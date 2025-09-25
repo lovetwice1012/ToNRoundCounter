@@ -96,6 +96,18 @@ namespace ToNRoundCounter.UI
 
         private readonly AutoSuicideService autoSuicideService;
 
+        private MediaPlayer itemMusicPlayer;
+        private bool itemMusicLoopRequested;
+        private bool itemMusicActive;
+        private DateTime itemMusicMatchStart = DateTime.MinValue;
+        private string lastLoadedItemMusicPath = string.Empty;
+        private string currentTerrorBaseText = string.Empty;
+        private bool terrorCountdownActive;
+        private DateTime terrorCountdownStart = DateTime.MinValue;
+        private int terrorCountdownDurationSeconds;
+        private string terrorCountdownTargetName = string.Empty;
+        private int terrorCountdownLastDisplayedSeconds = -1;
+
 
         public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers)
         {
@@ -118,6 +130,7 @@ namespace ToNRoundCounter.UI
             terrorColors = new Dictionary<string, Color>();
             LoadTerrorInfo();
             _settings.Load();
+            UpdateItemMusicPlayer();
             Theme.SetTheme(_settings.Theme);
             LoadAutoSuicideRules();
             InitializeComponents();
@@ -383,15 +396,34 @@ namespace ToNRoundCounter.UI
                         _logger.LogEvent("AutoSuicideRoundListBox_debug", ditem);
                     }
                     _logger.LogEvent("AutoSuicideRoundListBox", _settings.AutoSuicideRoundTypes.Contains(item).ToString());
-                    settingsForm.SettingsPanel.autoSuicideRoundListBox.SetItemChecked(i, _settings.AutoSuicideRoundTypes.Contains(item) != false);
-                }
-                settingsForm.SettingsPanel.oscPortNumericUpDown.Value = _settings.OSCPort;
+                settingsForm.SettingsPanel.autoSuicideRoundListBox.SetItemChecked(i, _settings.AutoSuicideRoundTypes.Contains(item) != false);
+            }
+            settingsForm.SettingsPanel.oscPortNumericUpDown.Value = _settings.OSCPort;
                 settingsForm.SettingsPanel.webSocketIpTextBox.Text = _settings.WebSocketIp;
-
-                if (settingsForm.ShowDialog() == DialogResult.OK)
+                settingsForm.SettingsPanel.AutoLaunchEnabledCheckBox.Checked = _settings.AutoLaunchEnabled;
+                settingsForm.SettingsPanel.AutoLaunchPathTextBox.Text = _settings.AutoLaunchExecutablePath;
+                settingsForm.SettingsPanel.AutoLaunchArgumentsTextBox.Text = _settings.AutoLaunchArguments;
+                settingsForm.SettingsPanel.ItemMusicEnabledCheckBox.Checked = _settings.ItemMusicEnabled;
+                settingsForm.SettingsPanel.ItemMusicItemTextBox.Text = _settings.ItemMusicItemName;
+                settingsForm.SettingsPanel.ItemMusicSoundPathTextBox.Text = _settings.ItemMusicSoundPath;
+                var minSpeedControl = settingsForm.SettingsPanel.ItemMusicMinSpeedNumericUpDown;
+                minSpeedControl.Value =
+                    (decimal)Math.Min(Math.Max(_settings.ItemMusicMinSpeed, (double)minSpeedControl.Minimum),
+                                      (double)minSpeedControl.Maximum);
+                var maxSpeedControl = settingsForm.SettingsPanel.ItemMusicMaxSpeedNumericUpDown;
+                maxSpeedControl.Value =
+                    (decimal)Math.Min(Math.Max(_settings.ItemMusicMaxSpeed, (double)maxSpeedControl.Minimum),
+                                      (double)maxSpeedControl.Maximum);
+                if (maxSpeedControl.Value < minSpeedControl.Value)
                 {
-                    _settings.OSCPort = (int)settingsForm.SettingsPanel.oscPortNumericUpDown.Value;
-                    _settings.WebSocketIp = settingsForm.SettingsPanel.webSocketIpTextBox.Text;
+                    maxSpeedControl.Value = minSpeedControl.Value;
+                }
+                settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text = _settings.DiscordWebhookUrl;
+
+            if (settingsForm.ShowDialog() == DialogResult.OK)
+            {
+                _settings.OSCPort = (int)settingsForm.SettingsPanel.oscPortNumericUpDown.Value;
+                _settings.WebSocketIp = settingsForm.SettingsPanel.webSocketIpTextBox.Text;
                     _settings.ShowStats = settingsForm.SettingsPanel.ShowStatsCheckBox.Checked;
                     _settings.ShowDebug = settingsForm.SettingsPanel.DebugInfoCheckBox.Checked;
                     _settings.ShowRoundLog = settingsForm.SettingsPanel.ToggleRoundLogCheckBox.Checked;
@@ -415,15 +447,26 @@ namespace ToNRoundCounter.UI
                     _settings.AutoSuicideRoundTypes.Clear();
                     foreach (object item in settingsForm.SettingsPanel.autoSuicideRoundListBox.CheckedItems)
                     {
-                        _settings.AutoSuicideRoundTypes.Add(item.ToString());
-                    }
-                    settingsForm.SettingsPanel.CleanAutoSuicideDetailRules();
-                    _settings.AutoSuicideDetailCustom = settingsForm.SettingsPanel.GetCustomAutoSuicideLines();
-                    _settings.AutoSuicideFuzzyMatch = settingsForm.SettingsPanel.autoSuicideFuzzyCheckBox.Checked;
-                    _settings.Theme = settingsForm.SettingsPanel.DarkThemeCheckBox.Checked ? ThemeType.Dark : ThemeType.Light;
-                    LoadAutoSuicideRules();
+                    _settings.AutoSuicideRoundTypes.Add(item.ToString());
+                }
+                settingsForm.SettingsPanel.CleanAutoSuicideDetailRules();
+                _settings.AutoSuicideDetailCustom = settingsForm.SettingsPanel.GetCustomAutoSuicideLines();
+                _settings.AutoSuicideFuzzyMatch = settingsForm.SettingsPanel.autoSuicideFuzzyCheckBox.Checked;
+                _settings.AutoLaunchEnabled = settingsForm.SettingsPanel.AutoLaunchEnabledCheckBox.Checked;
+                _settings.AutoLaunchExecutablePath = settingsForm.SettingsPanel.AutoLaunchPathTextBox.Text.Trim();
+                _settings.AutoLaunchArguments = settingsForm.SettingsPanel.AutoLaunchArgumentsTextBox.Text;
+                _settings.ItemMusicEnabled = settingsForm.SettingsPanel.ItemMusicEnabledCheckBox.Checked;
+                _settings.ItemMusicItemName = settingsForm.SettingsPanel.ItemMusicItemTextBox.Text.Trim();
+                _settings.ItemMusicSoundPath = settingsForm.SettingsPanel.ItemMusicSoundPathTextBox.Text.Trim();
+                _settings.ItemMusicMinSpeed = (double)settingsForm.SettingsPanel.ItemMusicMinSpeedNumericUpDown.Value;
+                _settings.ItemMusicMaxSpeed = (double)settingsForm.SettingsPanel.ItemMusicMaxSpeedNumericUpDown.Value;
+                _settings.DiscordWebhookUrl = settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text.Trim();
+                _settings.Theme = settingsForm.SettingsPanel.DarkThemeCheckBox.Checked ? ThemeType.Dark : ThemeType.Light;
+                LoadAutoSuicideRules();
+                UpdateItemMusicPlayer();
+                ResetItemMusicTracking();
 
-                    _settings.apikey = settingsForm.SettingsPanel.apiKeyTextBox.Text.Trim();
+                _settings.apikey = settingsForm.SettingsPanel.apiKeyTextBox.Text.Trim();
                     if (string.IsNullOrEmpty(_settings.apikey))
                     {
                         _settings.apikey = string.Empty; // 空文字列に設定
@@ -564,10 +607,12 @@ namespace ToNRoundCounter.UI
                 else if (eventType == "ROUND_TYPE" && command == 1)
                 {
                     string roundType = json.Value<string>("DisplayName") ?? "Default";
+                    int displayColorInt = json.Value<int>("DisplayColor");
                     stateService.UpdateCurrentRound(new Round());
                     stateService.CurrentRound.RoundType = roundType;
                     stateService.CurrentRound.IsDeath = false;
                     stateService.CurrentRound.TerrorKey = "";
+                    stateService.CurrentRound.RoundColor = displayColorInt;
                     string mapName = string.Empty;
                     string itemName = string.Empty;
                     _dispatcher.Invoke(() =>
@@ -583,7 +628,7 @@ namespace ToNRoundCounter.UI
                     _dispatcher.Invoke(() =>
                     {
                         UpdateRoundTypeLabel();
-                        InfoPanel.RoundTypeValue.ForeColor = ConvertColorFromInt(json.Value<int>("DisplayColor"));
+                        InfoPanel.RoundTypeValue.ForeColor = ConvertColorFromInt(displayColorInt);
                     });
                     //もしtesterNamesに含まれているかつオルタネイトなら、オルタネイトラウンド開始の音を鳴らす
                     if (testerNames.Contains(stateService.PlayerDisplayName) && roundType == "オルタネイト")
@@ -618,6 +663,7 @@ namespace ToNRoundCounter.UI
                             stateService.CurrentRound.RoundType = "";
                             stateService.CurrentRound.IsDeath = false;
                             stateService.CurrentRound.TerrorKey = "";
+                            stateService.CurrentRound.RoundColor = 0xFFFFFF;
                             string mapName = string.Empty;
                             _dispatcher.Invoke(() => mapName = InfoPanel.MapValue.Text);
                             stateService.CurrentRound.MapName = mapName;
@@ -656,6 +702,11 @@ namespace ToNRoundCounter.UI
                     string displayName = json.Value<string>("DisplayName") ?? "";
                     int displayColorInt = json.Value<int>("DisplayColor");
                     Color color = ConvertColorFromInt(displayColorInt);
+
+                    if (stateService.CurrentRound != null && !stateService.CurrentRound.RoundColor.HasValue)
+                    {
+                        stateService.CurrentRound.RoundColor = displayColorInt;
+                    }
 
                     List<(string name, int count)> terrors = null;
                     var namesArray = json.Value<JArray>("Names");
@@ -1094,10 +1145,56 @@ namespace ToNRoundCounter.UI
                 afkSoundPlayed = false;
             }
 
+            string currentItemText = InfoPanel.ItemValue.Text ?? string.Empty;
+
+            if (_settings.ItemMusicEnabled)
+            {
+                string configuredItem = _settings.ItemMusicItemName ?? string.Empty;
+                bool hasItem = !string.IsNullOrWhiteSpace(configuredItem) &&
+                               currentItemText.IndexOf(configuredItem, StringComparison.OrdinalIgnoreCase) >= 0;
+
+                double minSpeed = _settings.ItemMusicMinSpeed;
+                if (double.IsNaN(minSpeed) || double.IsInfinity(minSpeed) || minSpeed < 0)
+                {
+                    minSpeed = 0;
+                }
+
+                double maxSpeed = _settings.ItemMusicMaxSpeed;
+                if (double.IsNaN(maxSpeed) || double.IsInfinity(maxSpeed) || maxSpeed < minSpeed)
+                {
+                    maxSpeed = minSpeed;
+                }
+
+                bool meetsSpeed = currentVelocity >= minSpeed && currentVelocity <= maxSpeed;
+
+                if (hasItem && meetsSpeed)
+                {
+                    if (itemMusicMatchStart == DateTime.MinValue)
+                    {
+                        itemMusicMatchStart = DateTime.Now;
+                    }
+                    else if ((DateTime.Now - itemMusicMatchStart).TotalSeconds >= 0.5)
+                    {
+                        if (!itemMusicActive)
+                        {
+                            StartItemMusic();
+                        }
+                    }
+                }
+                else
+                {
+                    ResetItemMusicTracking();
+                }
+            }
+            else
+            {
+                ResetItemMusicTracking();
+            }
+
             // パニッシュ・8ページ検出条件の更新
             if (stateService.CurrentRound == null)
             {
-                string itemText = InfoPanel.ItemValue.Text;
+                string itemText = currentItemText;
                 bool hasCoil = itemText.IndexOf("Coil", StringComparison.OrdinalIgnoreCase) >= 0;
                 // 既存条件：6～7の範囲
                 bool condition1 = hasCoil && (currentVelocity > 6.4 && currentVelocity < 6.6);
@@ -1128,6 +1225,11 @@ namespace ToNRoundCounter.UI
                     velocityInRangeStart = DateTime.MinValue;
                     punishSoundPlayed = false;
                 }
+            }
+
+            if (terrorCountdownActive)
+            {
+                UpdateTerrorCountdownDisplay();
             }
         }
 
@@ -1272,7 +1374,9 @@ namespace ToNRoundCounter.UI
         {
             InfoPanel.RoundTypeValue.Text = "";
             InfoPanel.MapValue.Text = "";
-            InfoPanel.TerrorValue.Text = "";
+            currentTerrorBaseText = "";
+            InfoPanel.TerrorValue.Text = currentTerrorBaseText;
+            ResetTerrorCountdown();
             InfoPanel.DamageValue.Text = "";
             InfoPanel.ItemValue.Text = "";
         }
@@ -1357,7 +1461,8 @@ namespace ToNRoundCounter.UI
                         TerrorKey = "",
                         MapName = mapName,
                         Damage = 0,
-                        PageCount = 0
+                        PageCount = 0,
+                        RoundColor = 0xFFFFFF
                     });
                     if (!string.IsNullOrEmpty(itemName))
                         stateService.CurrentRound.ItemNames.Add(itemName);
@@ -1510,6 +1615,87 @@ namespace ToNRoundCounter.UI
             return Color.FromArgb(r, g, b);
         }
 
+        private void ResetTerrorCountdown()
+        {
+            terrorCountdownActive = false;
+            terrorCountdownTargetName = string.Empty;
+            terrorCountdownDurationSeconds = 0;
+            terrorCountdownStart = DateTime.MinValue;
+            terrorCountdownLastDisplayedSeconds = -1;
+        }
+
+        private void UpdateTerrorCountdownState(string primaryDisplayName)
+        {
+            bool isSpaceName = primaryDisplayName == " ";
+            bool isSm64Name = string.Equals(primaryDisplayName, "sm64.z64", StringComparison.OrdinalIgnoreCase);
+
+            if (!isSpaceName && !isSm64Name)
+            {
+                if (terrorCountdownActive)
+                {
+                    ResetTerrorCountdown();
+                    InfoPanel.TerrorValue.Text = currentTerrorBaseText;
+                }
+                return;
+            }
+
+            int baseSeconds = isSpaceName ? 20 : 33;
+            if (string.Equals(stateService.CurrentRound?.RoundType, "ミッドナイト", StringComparison.Ordinal))
+            {
+                baseSeconds += 10;
+            }
+
+            bool restartCountdown = !terrorCountdownActive
+                                     || !string.Equals(terrorCountdownTargetName, primaryDisplayName, StringComparison.Ordinal)
+                                     || terrorCountdownDurationSeconds != baseSeconds;
+
+            terrorCountdownTargetName = primaryDisplayName;
+            terrorCountdownDurationSeconds = baseSeconds;
+
+            if (restartCountdown)
+            {
+                terrorCountdownStart = DateTime.Now;
+                terrorCountdownLastDisplayedSeconds = -1;
+            }
+
+            terrorCountdownActive = true;
+            UpdateTerrorCountdownDisplay();
+        }
+
+        private void UpdateTerrorCountdownDisplay()
+        {
+            if (!terrorCountdownActive)
+            {
+                return;
+            }
+
+            double remaining = terrorCountdownDurationSeconds - (DateTime.Now - terrorCountdownStart).TotalSeconds;
+            if (remaining < 0)
+            {
+                remaining = 0;
+            }
+
+            int seconds = (int)Math.Ceiling(remaining);
+            if (seconds < 0)
+            {
+                seconds = 0;
+            }
+
+            string currentText = InfoPanel.TerrorValue.Text ?? string.Empty;
+
+            if (seconds != terrorCountdownLastDisplayedSeconds || !currentText.Contains("(出現まで"))
+            {
+                string baseText = currentTerrorBaseText ?? string.Empty;
+                string suffix = $"(出現まで {seconds} 秒)";
+                if (!string.IsNullOrEmpty(baseText) && !char.IsWhiteSpace(baseText[baseText.Length - 1]))
+                {
+                    baseText += " ";
+                }
+                InfoPanel.TerrorValue.Text = baseText + suffix;
+                terrorCountdownLastDisplayedSeconds = seconds;
+            }
+        }
+
         private void UpdateTerrorDisplay(string displayName, Color color, List<(string name, int count)> terrors)
         {
             string roundType = stateService.CurrentRound?.RoundType;
@@ -1535,6 +1721,8 @@ namespace ToNRoundCounter.UI
                     if (!string.IsNullOrEmpty(stateService.CurrentRound.TerrorKey))
                         terrorColors[stateService.CurrentRound.TerrorKey] = color;
                     UpdateTerrorInfoPanel(expanded);
+                    currentTerrorBaseText = InfoPanel.TerrorValue.Text;
+                    UpdateTerrorCountdownState(displayName);
                     return;
                 }
             }
@@ -1551,12 +1739,16 @@ namespace ToNRoundCounter.UI
                 if (!string.IsNullOrEmpty(joinedNames))
                     terrorColors[joinedNames] = color;
                 UpdateTerrorInfoPanel(expanded);
+                currentTerrorBaseText = InfoPanel.TerrorValue.Text;
+                UpdateTerrorCountdownState(displayName);
             }
             else
             {
                 InfoPanel.TerrorValue.Text = displayName;
                 InfoPanel.TerrorValue.ForeColor = (_settings.FixedTerrorColor != Color.Empty) ? _settings.FixedTerrorColor : color;
                 UpdateTerrorInfoPanel(null);
+                currentTerrorBaseText = InfoPanel.TerrorValue.Text;
+                UpdateTerrorCountdownState(displayName);
             }
         }
         private void LaunchSuicideInputIfExists()

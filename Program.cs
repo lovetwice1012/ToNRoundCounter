@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
@@ -83,10 +84,86 @@ namespace ToNRoundCounter
             var mainForm = provider.GetRequiredService<MainForm>();
             ((WinFormsDispatcher)provider.GetRequiredService<IUiDispatcher>()).SetMainForm(mainForm);
 
+            var appSettings = provider.GetRequiredService<IAppSettings>();
+
+            string? autoLaunchPath = null;
+            string? autoLaunchArguments = null;
+            bool autoLaunchFromSettings = false;
+
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (args[i] == "--debug")
+                {
+                    continue;
+                }
+
+                if (args[i] == "--launch" && i + 1 < args.Length)
+                {
+                    autoLaunchPath = args[i + 1];
+                    i++;
+                }
+                else if (args[i] == "--launch-args" && i + 1 < args.Length)
+                {
+                    autoLaunchArguments = args[i + 1];
+                    i++;
+                }
+            }
+
             if (args.Contains("--debug") &&
                 args.SkipWhile(a => a != "--test").Skip(1).FirstOrDefault() == "crashreporting")
             {
                 throw new InvalidOperationException("Crash report test triggered");
+            }
+
+            if (string.IsNullOrWhiteSpace(autoLaunchPath) &&
+                appSettings.AutoLaunchEnabled &&
+                !string.IsNullOrWhiteSpace(appSettings.AutoLaunchExecutablePath))
+            {
+                autoLaunchPath = appSettings.AutoLaunchExecutablePath;
+                autoLaunchArguments = appSettings.AutoLaunchArguments;
+                autoLaunchFromSettings = true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(autoLaunchPath))
+            {
+                mainForm.Shown += (s, e) =>
+                {
+                    var origin = autoLaunchFromSettings ? "settings" : "command line";
+                    try
+                    {
+                        string resolvedPath = autoLaunchPath!;
+                        if (!Path.IsPathRooted(resolvedPath))
+                        {
+                            resolvedPath = Path.GetFullPath(resolvedPath);
+                        }
+
+                        if (!File.Exists(resolvedPath))
+                        {
+                            eventLogger.LogEvent("AutoLaunch", $"Executable not found ({origin}): {resolvedPath}", Serilog.Events.LogEventLevel.Error);
+                            return;
+                        }
+
+                        var psi = new ProcessStartInfo
+                        {
+                            FileName = resolvedPath,
+                            UseShellExecute = true,
+                            Arguments = autoLaunchArguments ?? string.Empty,
+                        };
+
+                        var workingDirectory = Path.GetDirectoryName(resolvedPath);
+                        if (!string.IsNullOrEmpty(workingDirectory))
+                        {
+                            psi.WorkingDirectory = workingDirectory;
+                        }
+
+                        Process.Start(psi);
+                        eventLogger.LogEvent("AutoLaunch", $"Started executable ({origin}): {resolvedPath}");
+                    }
+                    catch (Exception ex)
+                    {
+                        eventLogger.LogEvent("AutoLaunch", $"Failed to start executable ({origin}): {ex.Message}", Serilog.Events.LogEventLevel.Error);
+                    }
+                };
             }
 
             WinFormsApp.Run(mainForm);

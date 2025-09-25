@@ -25,6 +25,7 @@ namespace ToNRoundCounter.Domain
         public int Damage { get; set; }
         public int PageCount { get; set; }
         public int InstancePlayersCount { get; internal set; }
+        public int? RoundColor { get; set; }
     }
 }
 

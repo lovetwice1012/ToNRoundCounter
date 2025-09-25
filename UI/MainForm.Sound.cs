@@ -1,5 +1,7 @@
 using System;
+using System.IO;
 using System.Windows.Media;
+using Serilog.Events;
 
 namespace ToNRoundCounter.UI
 {
@@ -37,6 +39,122 @@ namespace ToNRoundCounter.UI
             tester_BATOU_01Player.Stop();
             tester_BATOU_02Player.Stop();
             tester_BATOU_03Player.Stop();
+            StopItemMusic();
+        }
+
+        private void StartItemMusic()
+        {
+            if (!_settings.ItemMusicEnabled)
+            {
+                return;
+            }
+
+            if (itemMusicPlayer == null || string.IsNullOrEmpty(lastLoadedItemMusicPath) || !File.Exists(lastLoadedItemMusicPath))
+            {
+                UpdateItemMusicPlayer();
+            }
+
+            if (itemMusicPlayer == null)
+            {
+                return;
+            }
+
+            itemMusicLoopRequested = true;
+            itemMusicActive = true;
+            PlayFromStart(itemMusicPlayer);
+        }
+
+        private void StopItemMusic()
+        {
+            itemMusicLoopRequested = false;
+            itemMusicActive = false;
+            itemMusicPlayer?.Stop();
+        }
+
+        private void ResetItemMusicTracking()
+        {
+            itemMusicMatchStart = DateTime.MinValue;
+            itemMusicLoopRequested = false;
+            if (itemMusicActive)
+            {
+                StopItemMusic();
+            }
+        }
+
+        private void UpdateItemMusicPlayer()
+        {
+            try
+            {
+                DisposeItemMusicPlayer();
+
+                if (!_settings.ItemMusicEnabled)
+                {
+                    return;
+                }
+
+                string configuredPath = _settings.ItemMusicSoundPath;
+                if (string.IsNullOrWhiteSpace(configuredPath))
+                {
+                    return;
+                }
+
+                string fullPath = Path.GetFullPath(configuredPath);
+                if (!File.Exists(fullPath))
+                {
+                    _logger.LogEvent("ItemMusic", $"Sound file not found: {fullPath}", LogEventLevel.Warning);
+                    return;
+                }
+
+                itemMusicPlayer = new MediaPlayer();
+                itemMusicPlayer.Open(new Uri(fullPath));
+                itemMusicPlayer.MediaEnded += ItemMusicPlayer_MediaEnded;
+                itemMusicPlayer.MediaFailed += ItemMusicPlayer_MediaFailed;
+                lastLoadedItemMusicPath = fullPath;
+                _logger.LogEvent("ItemMusic", $"Loaded sound file: {fullPath}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogEvent("ItemMusic", ex.ToString(), LogEventLevel.Error);
+            }
+        }
+
+        private void DisposeItemMusicPlayer()
+        {
+            if (itemMusicPlayer != null)
+            {
+                try
+                {
+                    itemMusicPlayer.MediaEnded -= ItemMusicPlayer_MediaEnded;
+                    itemMusicPlayer.MediaFailed -= ItemMusicPlayer_MediaFailed;
+                    itemMusicPlayer.Stop();
+                    itemMusicPlayer.Close();
+                }
+                catch
+                {
+                }
+                finally
+                {
+                    itemMusicPlayer = null;
+                }
+            }
+
+            lastLoadedItemMusicPath = string.Empty;
+            itemMusicLoopRequested = false;
+            itemMusicActive = false;
+        }
+
+        private void ItemMusicPlayer_MediaEnded(object sender, EventArgs e)
+        {
+            if (itemMusicLoopRequested && itemMusicPlayer != null)
+            {
+                PlayFromStart(itemMusicPlayer);
+            }
+        }
+
+        private void ItemMusicPlayer_MediaFailed(object sender, ExceptionEventArgs e)
+        {
+            _logger.LogEvent("ItemMusic", $"Failed to play sound: {e.ErrorException?.Message}", LogEventLevel.Error);
+            StopItemMusic();
         }
     }
 }
