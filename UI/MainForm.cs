@@ -92,7 +92,7 @@ namespace ToNRoundCounter.UI
 
         private bool issetAllSelfKillMode = false;
 
-        private string version = "1.10.0";
+        private string version = "1.11.0";
 
         private readonly AutoSuicideService autoSuicideService;
 
