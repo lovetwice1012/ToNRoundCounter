@@ -564,6 +564,7 @@ namespace ToNRoundCounter.UI
 
         protected override async void OnFormClosing(FormClosingEventArgs e)
         {
+            SaveRoundLogsToFile();
             _cancellation.Cancel();
             await webSocketClient.StopAsync();
             oscListener.Stop();
@@ -577,6 +578,42 @@ namespace ToNRoundCounter.UI
                 catch { }
             }
             base.OnFormClosing(e);
+        }
+
+        private void SaveRoundLogsToFile()
+        {
+            try
+            {
+                var history = stateService.GetRoundLogHistory();
+                if (history == null)
+                {
+                    return;
+                }
+
+                string baseDirectory = AppDomain.CurrentDomain.BaseDirectory ?? string.Empty;
+                string roundLogsDirectory = Path.Combine(baseDirectory, "roundLogs");
+                Directory.CreateDirectory(roundLogsDirectory);
+
+                string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss-fff");
+                string filePath = Path.Combine(roundLogsDirectory, $"{timestamp}.log");
+
+                var logLines = history.Select(entry => entry.Item2).ToList();
+
+                if (logLines.Count == 0)
+                {
+                    File.WriteAllText(filePath, "ラウンドログは記録されませんでした。");
+                }
+                else
+                {
+                    File.WriteAllLines(filePath, logLines);
+                }
+
+                _logger?.LogEvent("RoundLog", $"ラウンドログをファイルに保存しました: {filePath}");
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogEvent("RoundLogError", $"ラウンドログの保存に失敗しました: {ex.Message}", LogEventLevel.Error);
+            }
         }
 
         private async Task HandleEventAsync(string message)
