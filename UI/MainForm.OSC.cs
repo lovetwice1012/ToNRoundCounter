@@ -26,6 +26,30 @@ namespace ToNRoundCounter.UI
         {
             if (File.Exists("./OscRepeater.exe"))
             {
+                foreach (var processName in new[] { "OscRepeater", "OSCRepeater" })
+                {
+                    foreach (var existingProcess in Process.GetProcessesByName(processName))
+                    {
+                        try
+                        {
+                            if (!existingProcess.HasExited)
+                            {
+                                _logger?.LogEvent("OSCRepeater", "Existing OSCRepeater instance detected. Terminating before restart.");
+                                existingProcess.Kill();
+                                existingProcess.WaitForExit(5000);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger?.LogEvent("OSCRepeater", $"Failed to terminate existing OSCRepeater process: {ex.Message}");
+                        }
+                        finally
+                        {
+                            existingProcess.Dispose();
+                        }
+                    }
+                }
+
                 if (!_settings.OSCPortChanged)
                 {
                     int port = 30000;
