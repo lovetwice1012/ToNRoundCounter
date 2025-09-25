@@ -190,7 +190,6 @@
     <Compile Include="Infrastructure\ChannelReaderExtensions.cs" />
     <Compile Include="Infrastructure\HttpClientWrapper.cs" />
     <Compile Include="Infrastructure\ModuleLoader.cs" />
-    <Compile Include="Infrastructure\SimpleServiceCollection.cs" />
     <EmbeddedResource Include="Properties\Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>
