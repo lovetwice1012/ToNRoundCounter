@@ -53,6 +53,15 @@ namespace ToNRoundCounter.Infrastructure
         public ThemeType Theme { get; set; } = ThemeType.Light;
         public string LogFilePath { get; set; } = "logs/log-.txt";
         public string WebSocketIp { get; set; } = "127.0.0.1";
+        public bool AutoLaunchEnabled { get; set; }
+        public string AutoLaunchExecutablePath { get; set; } = string.Empty;
+        public string AutoLaunchArguments { get; set; } = string.Empty;
+        public bool ItemMusicEnabled { get; set; }
+        public string ItemMusicItemName { get; set; } = string.Empty;
+        public string ItemMusicSoundPath { get; set; } = string.Empty;
+        public double ItemMusicMinSpeed { get; set; }
+        public double ItemMusicMaxSpeed { get; set; }
+        public string DiscordWebhookUrl { get; set; } = string.Empty;
 
         public void Load()
         {
@@ -76,11 +85,36 @@ namespace ToNRoundCounter.Infrastructure
                 {
                     _logger.LogEvent("AppSettings", "Settings loaded successfully.");
                 }
+
+                AutoLaunchExecutablePath ??= string.Empty;
+                AutoLaunchArguments ??= string.Empty;
+                ItemMusicItemName ??= string.Empty;
+                ItemMusicSoundPath ??= string.Empty;
+                DiscordWebhookUrl ??= string.Empty;
+                NormalizeItemMusicSpeeds();
             }
             catch (Exception ex)
             {
                 _logger.LogEvent("Error", "Failed to bind app settings: " + ex.Message, Serilog.Events.LogEventLevel.Error);
                 _bus.Publish(new SettingsValidationFailed(new[] { ex.Message }));
+            }
+        }
+
+        private void NormalizeItemMusicSpeeds()
+        {
+            if (double.IsNaN(ItemMusicMinSpeed) || double.IsInfinity(ItemMusicMinSpeed) || ItemMusicMinSpeed < 0)
+            {
+                ItemMusicMinSpeed = 0;
+            }
+
+            if (double.IsNaN(ItemMusicMaxSpeed) || double.IsInfinity(ItemMusicMaxSpeed) || ItemMusicMaxSpeed < 0)
+            {
+                ItemMusicMaxSpeed = ItemMusicMinSpeed;
+            }
+
+            if (ItemMusicMaxSpeed < ItemMusicMinSpeed)
+            {
+                ItemMusicMaxSpeed = ItemMusicMinSpeed;
             }
         }
 
@@ -96,6 +130,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public async Task SaveAsync()
         {
+            NormalizeItemMusicSpeeds();
             var settings = new AppSettingsData
             {
                 OSCPort = OSCPort,
@@ -123,7 +158,16 @@ namespace ToNRoundCounter.Infrastructure
                 apikey = apikey,
                 Theme = Theme,
                 LogFilePath = LogFilePath,
-                WebSocketIp = WebSocketIp
+                WebSocketIp = WebSocketIp,
+                AutoLaunchEnabled = AutoLaunchEnabled,
+                AutoLaunchExecutablePath = AutoLaunchExecutablePath,
+                AutoLaunchArguments = AutoLaunchArguments,
+                ItemMusicEnabled = ItemMusicEnabled,
+                ItemMusicItemName = ItemMusicItemName,
+                ItemMusicSoundPath = ItemMusicSoundPath,
+                ItemMusicMinSpeed = ItemMusicMinSpeed,
+                ItemMusicMaxSpeed = ItemMusicMaxSpeed,
+                DiscordWebhookUrl = DiscordWebhookUrl
             };
 
             string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
@@ -170,5 +214,14 @@ namespace ToNRoundCounter.Infrastructure
         public ThemeType Theme { get; set; }
         public string LogFilePath { get; set; }
         public string WebSocketIp { get; set; }
+        public bool AutoLaunchEnabled { get; set; }
+        public string AutoLaunchExecutablePath { get; set; } = string.Empty;
+        public string AutoLaunchArguments { get; set; } = string.Empty;
+        public bool ItemMusicEnabled { get; set; }
+        public string ItemMusicItemName { get; set; } = string.Empty;
+        public string ItemMusicSoundPath { get; set; } = string.Empty;
+        public double ItemMusicMinSpeed { get; set; }
+        public double ItemMusicMaxSpeed { get; set; }
+        public string DiscordWebhookUrl { get; set; } = string.Empty;
     }
 }

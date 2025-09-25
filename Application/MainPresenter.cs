@@ -44,6 +44,12 @@ namespace ToNRoundCounter.Application
 
         public async Task UploadRoundLogAsync(Round round, string status)
         {
+            await TryUploadRoundLogToCloudAsync(round, status).ConfigureAwait(false);
+            await SendDiscordWebhookAsync(round, status).ConfigureAwait(false);
+        }
+
+        private async Task TryUploadRoundLogToCloudAsync(Round round, string status)
+        {
             if (string.IsNullOrEmpty(_settings.apikey))
             {
                 _logger.LogEvent("RoundLogUpload", "APIキーが設定されていません。アップロードをスキップします。");
@@ -63,11 +69,12 @@ namespace ToNRoundCounter.Application
                 isAlive = !round.IsDeath,
                 instanceSize = round.InstancePlayersCount
             };
-            var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+
+            using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
             try
             {
                 var url = "https://toncloud.sprink.cloud/api/roundlogs/create/" + _settings.apikey;
-                var response = await _httpClient.PostAsync(url, content, System.Threading.CancellationToken.None);
+                var response = await _httpClient.PostAsync(url, content, System.Threading.CancellationToken.None).ConfigureAwait(false);
                 if (response.IsSuccessStatusCode)
                 {
                     _logger.LogEvent("RoundLogUpload", "ラウンドログのアップロードに成功しました。");
@@ -83,6 +90,75 @@ namespace ToNRoundCounter.Application
             }
 
             _logger.LogEvent("RoundLogUpload", $"Round: {round.RoundType}, Status: {status}, Map: {round.MapName}");
+        }
+
+        private async Task SendDiscordWebhookAsync(Round round, string status)
+        {
+            if (string.IsNullOrWhiteSpace(_settings.DiscordWebhookUrl))
+            {
+                return;
+            }
+
+            static string FormatInline(string value, string fallback)
+            {
+                var text = string.IsNullOrWhiteSpace(value) ? fallback : value;
+                return text.Replace("`", "\\`");
+            }
+
+            string GetItems()
+            {
+                if (round.ItemNames != null && round.ItemNames.Count > 0)
+                {
+                    return string.Join("、", round.ItemNames);
+                }
+
+                return "アイテム未使用";
+            }
+
+            string statusSymbol = string.IsNullOrWhiteSpace(status)
+                ? (round.IsDeath ? "☠" : "✅")
+                : status;
+
+            var descriptionBuilder = new StringBuilder();
+            descriptionBuilder.AppendLine($"**ラウンドタイプ: **`{FormatInline(round.RoundType, "不明")}`");
+            descriptionBuilder.AppendLine($"**テラー: **`{FormatInline(round.TerrorKey, "なし")}`");
+            descriptionBuilder.AppendLine($"**MAP: **`{FormatInline(round.MapName, "不明")}`");
+            descriptionBuilder.AppendLine($"**アイテム: **`{FormatInline(GetItems(), "アイテム未使用")}`");
+            descriptionBuilder.AppendLine($"**ダメージ: **`{round.Damage}`");
+            descriptionBuilder.AppendLine($"**生死: **`{FormatInline(statusSymbol, statusSymbol)}`");
+
+            var description = descriptionBuilder.ToString().TrimEnd();
+            int color = (round.RoundColor ?? 0xFFFFFF) & 0xFFFFFF;
+            var embed = new
+            {
+                title = string.IsNullOrWhiteSpace(round.RoundType) ? "ラウンド結果" : round.RoundType,
+                description,
+                color,
+                timestamp = DateTime.UtcNow
+            };
+
+            var payload = new
+            {
+                embeds = new[] { embed }
+            };
+
+            using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+            try
+            {
+                var response = await _httpClient.PostAsync(_settings.DiscordWebhookUrl, content, System.Threading.CancellationToken.None).ConfigureAwait(false);
+                if (response.IsSuccessStatusCode)
+                {
+                    _logger.LogEvent("DiscordWebhook", "Discordへのラウンドログ送信に成功しました。");
+                }
+                else
+                {
+                    _logger.LogEvent("DiscordWebhookError", $"Discordへの送信に失敗しました: {response.StatusCode}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogEvent("DiscordWebhookError", $"Discord送信中にエラーが発生しました: {ex.Message}");
+            }
         }
     }
 }

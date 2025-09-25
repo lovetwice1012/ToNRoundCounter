@@ -71,6 +71,17 @@ namespace ToNRoundCounter.UI
         public TextBox apiKeyTextBox { get; private set; }
 
         public CheckBox DarkThemeCheckBox { get; private set; }
+        public CheckBox AutoLaunchEnabledCheckBox { get; private set; }
+        public TextBox AutoLaunchPathTextBox { get; private set; }
+        public Button AutoLaunchBrowseButton { get; private set; }
+        public TextBox AutoLaunchArgumentsTextBox { get; private set; }
+        public CheckBox ItemMusicEnabledCheckBox { get; private set; }
+        public TextBox ItemMusicItemTextBox { get; private set; }
+        public TextBox ItemMusicSoundPathTextBox { get; private set; }
+        public Button ItemMusicSoundBrowseButton { get; private set; }
+        public NumericUpDown ItemMusicMinSpeedNumericUpDown { get; private set; }
+        public NumericUpDown ItemMusicMaxSpeedNumericUpDown { get; private set; }
+        public TextBox DiscordWebhookUrlTextBox { get; private set; }
 
 
         public SettingsPanel(IAppSettings settings)
@@ -81,7 +92,7 @@ namespace ToNRoundCounter.UI
             int margin = 10;
             int columnWidth = 540;
             int totalWidth = columnWidth * 2 + margin * 3;
-            this.Size = new Size(totalWidth, 1000);
+            this.Size = new Size(totalWidth, 1100);
 
             int currentY = margin;
             int innerMargin = 10;
@@ -721,6 +732,251 @@ namespace ToNRoundCounter.UI
 
             currentY += grpFilter.Height + margin;
 
+            GroupBox grpAutoLaunch = new GroupBox();
+            grpAutoLaunch.Text = LanguageManager.Translate("自動起動設定");
+            grpAutoLaunch.Location = new Point(margin, currentY);
+            grpAutoLaunch.Size = new Size(columnWidth, 150);
+            this.Controls.Add(grpAutoLaunch);
+
+            int autoLaunchInnerY = 25;
+            AutoLaunchEnabledCheckBox = new CheckBox();
+            AutoLaunchEnabledCheckBox.Text = LanguageManager.Translate("外部アプリを自動起動する");
+            AutoLaunchEnabledCheckBox.AutoSize = true;
+            AutoLaunchEnabledCheckBox.Location = new Point(innerMargin, autoLaunchInnerY);
+            grpAutoLaunch.Controls.Add(AutoLaunchEnabledCheckBox);
+
+            autoLaunchInnerY = AutoLaunchEnabledCheckBox.Bottom + 10;
+
+            Label autoLaunchPathLabel = new Label();
+            autoLaunchPathLabel.Text = LanguageManager.Translate("実行ファイル:");
+            autoLaunchPathLabel.AutoSize = true;
+            autoLaunchPathLabel.Location = new Point(innerMargin, autoLaunchInnerY);
+            grpAutoLaunch.Controls.Add(autoLaunchPathLabel);
+
+            AutoLaunchPathTextBox = new TextBox();
+            AutoLaunchPathTextBox.Location = new Point(autoLaunchPathLabel.Right + 10, autoLaunchInnerY - 3);
+            AutoLaunchPathTextBox.Width = 280;
+            AutoLaunchPathTextBox.Text = _settings.AutoLaunchExecutablePath;
+            grpAutoLaunch.Controls.Add(AutoLaunchPathTextBox);
+
+            AutoLaunchBrowseButton = new Button();
+            AutoLaunchBrowseButton.Text = LanguageManager.Translate("参照...");
+            AutoLaunchBrowseButton.AutoSize = true;
+            AutoLaunchBrowseButton.Location = new Point(AutoLaunchPathTextBox.Right + 10, autoLaunchInnerY - 5);
+            AutoLaunchBrowseButton.Click += (s, e) =>
+            {
+                using (OpenFileDialog dialog = new OpenFileDialog())
+                {
+                    dialog.Filter = "実行ファイル|*.exe;*.bat;*.cmd;*.com|すべてのファイル|*.*";
+                    dialog.FileName = AutoLaunchPathTextBox.Text;
+                    if (dialog.ShowDialog() == DialogResult.OK)
+                    {
+                        AutoLaunchPathTextBox.Text = dialog.FileName;
+                    }
+                }
+            };
+            grpAutoLaunch.Controls.Add(AutoLaunchBrowseButton);
+
+            autoLaunchInnerY += AutoLaunchPathTextBox.Height + 10;
+
+            Label autoLaunchArgsLabel = new Label();
+            autoLaunchArgsLabel.Text = LanguageManager.Translate("引数:");
+            autoLaunchArgsLabel.AutoSize = true;
+            autoLaunchArgsLabel.Location = new Point(innerMargin, autoLaunchInnerY);
+            grpAutoLaunch.Controls.Add(autoLaunchArgsLabel);
+
+            AutoLaunchArgumentsTextBox = new TextBox();
+            AutoLaunchArgumentsTextBox.Location = new Point(autoLaunchArgsLabel.Right + 10, autoLaunchInnerY - 3);
+            AutoLaunchArgumentsTextBox.Width = 320;
+            AutoLaunchArgumentsTextBox.Text = _settings.AutoLaunchArguments;
+            grpAutoLaunch.Controls.Add(AutoLaunchArgumentsTextBox);
+
+            grpAutoLaunch.Height = AutoLaunchArgumentsTextBox.Bottom + 15;
+
+            Action updateAutoLaunchInputs = () =>
+            {
+                bool enabled = AutoLaunchEnabledCheckBox.Checked;
+                AutoLaunchPathTextBox.Enabled = enabled;
+                AutoLaunchBrowseButton.Enabled = enabled;
+                AutoLaunchArgumentsTextBox.Enabled = enabled;
+            };
+
+            AutoLaunchEnabledCheckBox.CheckedChanged += (s, e) => updateAutoLaunchInputs();
+            AutoLaunchEnabledCheckBox.Checked = _settings.AutoLaunchEnabled;
+            updateAutoLaunchInputs();
+
+            currentY += grpAutoLaunch.Height + margin;
+
+            GroupBox grpItemMusic = new GroupBox();
+            grpItemMusic.Text = LanguageManager.Translate("アイテム音楽ギミック");
+            grpItemMusic.Location = new Point(margin, currentY);
+            grpItemMusic.Size = new Size(columnWidth, 200);
+            this.Controls.Add(grpItemMusic);
+
+            int itemMusicInnerY = 25;
+
+            ItemMusicEnabledCheckBox = new CheckBox();
+            ItemMusicEnabledCheckBox.Text = LanguageManager.Translate("特定アイテムで音楽を再生する");
+            ItemMusicEnabledCheckBox.AutoSize = true;
+            ItemMusicEnabledCheckBox.Location = new Point(innerMargin, itemMusicInnerY);
+            grpItemMusic.Controls.Add(ItemMusicEnabledCheckBox);
+
+            itemMusicInnerY = ItemMusicEnabledCheckBox.Bottom + 10;
+
+            Label itemMusicItemLabel = new Label();
+            itemMusicItemLabel.Text = LanguageManager.Translate("対象アイテム名:");
+            itemMusicItemLabel.AutoSize = true;
+            itemMusicItemLabel.Location = new Point(innerMargin, itemMusicInnerY);
+            grpItemMusic.Controls.Add(itemMusicItemLabel);
+
+            ItemMusicItemTextBox = new TextBox();
+            ItemMusicItemTextBox.Location = new Point(itemMusicItemLabel.Right + 10, itemMusicInnerY - 3);
+            ItemMusicItemTextBox.Width = 260;
+            ItemMusicItemTextBox.Text = _settings.ItemMusicItemName;
+            grpItemMusic.Controls.Add(ItemMusicItemTextBox);
+
+            itemMusicInnerY += ItemMusicItemTextBox.Height + 10;
+
+            Label itemMusicSoundLabel = new Label();
+            itemMusicSoundLabel.Text = LanguageManager.Translate("再生する音声:");
+            itemMusicSoundLabel.AutoSize = true;
+            itemMusicSoundLabel.Location = new Point(innerMargin, itemMusicInnerY);
+            grpItemMusic.Controls.Add(itemMusicSoundLabel);
+
+            ItemMusicSoundPathTextBox = new TextBox();
+            ItemMusicSoundPathTextBox.Location = new Point(itemMusicSoundLabel.Right + 10, itemMusicInnerY - 3);
+            ItemMusicSoundPathTextBox.Width = 260;
+            ItemMusicSoundPathTextBox.Text = _settings.ItemMusicSoundPath;
+            grpItemMusic.Controls.Add(ItemMusicSoundPathTextBox);
+
+            ItemMusicSoundBrowseButton = new Button();
+            ItemMusicSoundBrowseButton.Text = LanguageManager.Translate("参照...");
+            ItemMusicSoundBrowseButton.AutoSize = true;
+            ItemMusicSoundBrowseButton.Location = new Point(ItemMusicSoundPathTextBox.Right + 10, itemMusicInnerY - 5);
+            ItemMusicSoundBrowseButton.Click += (s, e) =>
+            {
+                using (OpenFileDialog dialog = new OpenFileDialog())
+                {
+                    dialog.Filter = "音声ファイル|*.mp3;*.wav;*.ogg;*.wma|すべてのファイル|*.*";
+                    dialog.FileName = ItemMusicSoundPathTextBox.Text;
+                    if (dialog.ShowDialog() == DialogResult.OK)
+                    {
+                        ItemMusicSoundPathTextBox.Text = dialog.FileName;
+                    }
+                }
+            };
+            grpItemMusic.Controls.Add(ItemMusicSoundBrowseButton);
+
+            itemMusicInnerY = ItemMusicSoundPathTextBox.Bottom + 10;
+
+            Label itemMusicMinSpeedLabel = new Label();
+            itemMusicMinSpeedLabel.Text = LanguageManager.Translate("速度下限(>=)");
+            itemMusicMinSpeedLabel.AutoSize = true;
+            itemMusicMinSpeedLabel.Location = new Point(innerMargin, itemMusicInnerY);
+            grpItemMusic.Controls.Add(itemMusicMinSpeedLabel);
+
+            ItemMusicMinSpeedNumericUpDown = new NumericUpDown();
+            ItemMusicMinSpeedNumericUpDown.DecimalPlaces = 2;
+            ItemMusicMinSpeedNumericUpDown.Minimum = 0;
+            ItemMusicMinSpeedNumericUpDown.Maximum = 100;
+            ItemMusicMinSpeedNumericUpDown.Increment = 0.1M;
+            ItemMusicMinSpeedNumericUpDown.Location = new Point(itemMusicMinSpeedLabel.Right + 10, itemMusicInnerY - 3);
+            ItemMusicMinSpeedNumericUpDown.Width = 80;
+            decimal initialSpeed = 0;
+            try
+            {
+                initialSpeed = (decimal)_settings.ItemMusicMinSpeed;
+            }
+            catch
+            {
+                initialSpeed = 0;
+            }
+            if (initialSpeed < ItemMusicMinSpeedNumericUpDown.Minimum)
+            {
+                initialSpeed = ItemMusicMinSpeedNumericUpDown.Minimum;
+            }
+            else if (initialSpeed > ItemMusicMinSpeedNumericUpDown.Maximum)
+            {
+                initialSpeed = ItemMusicMinSpeedNumericUpDown.Maximum;
+            }
+            ItemMusicMinSpeedNumericUpDown.Value = initialSpeed;
+            grpItemMusic.Controls.Add(ItemMusicMinSpeedNumericUpDown);
+
+            itemMusicInnerY = ItemMusicMinSpeedNumericUpDown.Bottom + 10;
+
+            Label itemMusicMaxSpeedLabel = new Label();
+            itemMusicMaxSpeedLabel.Text = LanguageManager.Translate("速度上限(<=)");
+            itemMusicMaxSpeedLabel.AutoSize = true;
+            itemMusicMaxSpeedLabel.Location = new Point(innerMargin, itemMusicInnerY);
+            grpItemMusic.Controls.Add(itemMusicMaxSpeedLabel);
+
+            ItemMusicMaxSpeedNumericUpDown = new NumericUpDown();
+            ItemMusicMaxSpeedNumericUpDown.DecimalPlaces = 2;
+            ItemMusicMaxSpeedNumericUpDown.Minimum = 0;
+            ItemMusicMaxSpeedNumericUpDown.Maximum = 100;
+            ItemMusicMaxSpeedNumericUpDown.Increment = 0.1M;
+            ItemMusicMaxSpeedNumericUpDown.Location = new Point(itemMusicMaxSpeedLabel.Right + 10, itemMusicInnerY - 3);
+            ItemMusicMaxSpeedNumericUpDown.Width = 80;
+            decimal initialMaxSpeed = 0;
+            try
+            {
+                initialMaxSpeed = (decimal)_settings.ItemMusicMaxSpeed;
+            }
+            catch
+            {
+                initialMaxSpeed = 0;
+            }
+            if (initialMaxSpeed < ItemMusicMaxSpeedNumericUpDown.Minimum)
+            {
+                initialMaxSpeed = ItemMusicMaxSpeedNumericUpDown.Minimum;
+            }
+            else if (initialMaxSpeed > ItemMusicMaxSpeedNumericUpDown.Maximum)
+            {
+                initialMaxSpeed = ItemMusicMaxSpeedNumericUpDown.Maximum;
+            }
+
+            if (initialMaxSpeed < ItemMusicMinSpeedNumericUpDown.Value)
+            {
+                initialMaxSpeed = ItemMusicMinSpeedNumericUpDown.Value;
+            }
+
+            ItemMusicMaxSpeedNumericUpDown.Value = initialMaxSpeed;
+            grpItemMusic.Controls.Add(ItemMusicMaxSpeedNumericUpDown);
+
+            ItemMusicMinSpeedNumericUpDown.ValueChanged += (s, e) =>
+            {
+                if (ItemMusicMaxSpeedNumericUpDown.Value < ItemMusicMinSpeedNumericUpDown.Value)
+                {
+                    ItemMusicMaxSpeedNumericUpDown.Value = ItemMusicMinSpeedNumericUpDown.Value;
+                }
+            };
+
+            ItemMusicMaxSpeedNumericUpDown.ValueChanged += (s, e) =>
+            {
+                if (ItemMusicMaxSpeedNumericUpDown.Value < ItemMusicMinSpeedNumericUpDown.Value)
+                {
+                    ItemMusicMaxSpeedNumericUpDown.Value = ItemMusicMinSpeedNumericUpDown.Value;
+                }
+            };
+
+            grpItemMusic.Height = ItemMusicMaxSpeedNumericUpDown.Bottom + 20;
+
+            Action updateItemMusicInputs = () =>
+            {
+                bool enabled = ItemMusicEnabledCheckBox.Checked;
+                ItemMusicItemTextBox.Enabled = enabled;
+                ItemMusicSoundPathTextBox.Enabled = enabled;
+                ItemMusicSoundBrowseButton.Enabled = enabled;
+                ItemMusicMinSpeedNumericUpDown.Enabled = enabled;
+                ItemMusicMaxSpeedNumericUpDown.Enabled = enabled;
+            };
+
+            ItemMusicEnabledCheckBox.CheckedChanged += (s, e) => updateItemMusicInputs();
+            ItemMusicEnabledCheckBox.Checked = _settings.ItemMusicEnabled;
+            updateItemMusicInputs();
+
+            currentY += grpItemMusic.Height + margin;
+
             // 追加設定グループ
             GroupBox grpAdditional = new GroupBox();
             grpAdditional.Text = LanguageManager.Translate("追加設定");
@@ -912,6 +1168,40 @@ namespace ToNRoundCounter.UI
             grpApiKey.Height = apiInnerY + 20; // グループボックスの高さを調整
 
             currentY += grpApiKey.Height + margin;
+
+            GroupBox grpDiscord = new GroupBox();
+            grpDiscord.Text = LanguageManager.Translate("Discord通知設定");
+            grpDiscord.Location = new Point(margin, currentY);
+            grpDiscord.Size = new Size(columnWidth, 130);
+            this.Controls.Add(grpDiscord);
+
+            int discordInnerMargin = 10;
+            int discordInnerY = 25;
+
+            Label discordDescriptionLabel = new Label();
+            discordDescriptionLabel.Text = LanguageManager.Translate("ラウンド結果をDiscordに送信するWebhook URLを設定します。空欄で無効化されます。");
+            discordDescriptionLabel.AutoSize = false;
+            discordDescriptionLabel.Size = new Size(grpDiscord.Width - discordInnerMargin * 2, 30);
+            discordDescriptionLabel.Location = new Point(discordInnerMargin, discordInnerY - 5);
+            grpDiscord.Controls.Add(discordDescriptionLabel);
+
+            discordInnerY = discordDescriptionLabel.Bottom + 10;
+
+            Label discordUrlLabel = new Label();
+            discordUrlLabel.Text = LanguageManager.Translate("Webhook URL:");
+            discordUrlLabel.AutoSize = true;
+            discordUrlLabel.Location = new Point(discordInnerMargin, discordInnerY);
+            grpDiscord.Controls.Add(discordUrlLabel);
+
+            DiscordWebhookUrlTextBox = new TextBox();
+            DiscordWebhookUrlTextBox.Width = grpDiscord.Width - discordUrlLabel.Right - discordInnerMargin * 3;
+            DiscordWebhookUrlTextBox.Location = new Point(discordUrlLabel.Right + 10, discordInnerY - 3);
+            DiscordWebhookUrlTextBox.Text = _settings.DiscordWebhookUrl;
+            grpDiscord.Controls.Add(DiscordWebhookUrlTextBox);
+
+            grpDiscord.Height = DiscordWebhookUrlTextBox.Bottom + 20;
+
+            currentY += grpDiscord.Height + margin;
 
             // 最後に、パネルの高さを調整
             this.Width = totalWidth;
