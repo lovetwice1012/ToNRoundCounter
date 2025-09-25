@@ -94,7 +94,7 @@ namespace ToNRoundCounter.UI
 
         private string _lastSaveCode = string.Empty;
 
-        private string version = "1.11.1";
+        private string version = "1.12.0";
 
         private readonly AutoSuicideService autoSuicideService;
 
@@ -400,9 +400,9 @@ namespace ToNRoundCounter.UI
                         _logger.LogEvent("AutoSuicideRoundListBox_debug", ditem);
                     }
                     _logger.LogEvent("AutoSuicideRoundListBox", _settings.AutoSuicideRoundTypes.Contains(item).ToString());
-                settingsForm.SettingsPanel.autoSuicideRoundListBox.SetItemChecked(i, _settings.AutoSuicideRoundTypes.Contains(item) != false);
-            }
-            settingsForm.SettingsPanel.oscPortNumericUpDown.Value = _settings.OSCPort;
+                    settingsForm.SettingsPanel.autoSuicideRoundListBox.SetItemChecked(i, _settings.AutoSuicideRoundTypes.Contains(item) != false);
+                }
+                settingsForm.SettingsPanel.oscPortNumericUpDown.Value = _settings.OSCPort;
                 settingsForm.SettingsPanel.webSocketIpTextBox.Text = _settings.WebSocketIp;
                 settingsForm.SettingsPanel.AutoLaunchEnabledCheckBox.Checked = _settings.AutoLaunchEnabled;
                 settingsForm.SettingsPanel.LoadAutoLaunchEntries(_settings.AutoLaunchEntries);
@@ -410,10 +410,10 @@ namespace ToNRoundCounter.UI
                 settingsForm.SettingsPanel.LoadItemMusicEntries(_settings.ItemMusicEntries);
                 settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text = _settings.DiscordWebhookUrl;
 
-            if (settingsForm.ShowDialog() == DialogResult.OK)
-            {
-                _settings.OSCPort = (int)settingsForm.SettingsPanel.oscPortNumericUpDown.Value;
-                _settings.WebSocketIp = settingsForm.SettingsPanel.webSocketIpTextBox.Text;
+                if (settingsForm.ShowDialog() == DialogResult.OK)
+                {
+                    _settings.OSCPort = (int)settingsForm.SettingsPanel.oscPortNumericUpDown.Value;
+                    _settings.WebSocketIp = settingsForm.SettingsPanel.webSocketIpTextBox.Text;
                     _settings.ShowStats = settingsForm.SettingsPanel.ShowStatsCheckBox.Checked;
                     _settings.ShowDebug = settingsForm.SettingsPanel.DebugInfoCheckBox.Checked;
                     _settings.ShowRoundLog = settingsForm.SettingsPanel.ToggleRoundLogCheckBox.Checked;
@@ -437,28 +437,28 @@ namespace ToNRoundCounter.UI
                     _settings.AutoSuicideRoundTypes.Clear();
                     foreach (object item in settingsForm.SettingsPanel.autoSuicideRoundListBox.CheckedItems)
                     {
-                    _settings.AutoSuicideRoundTypes.Add(item.ToString());
-                }
-                settingsForm.SettingsPanel.CleanAutoSuicideDetailRules();
-                _settings.AutoSuicideDetailCustom = settingsForm.SettingsPanel.GetCustomAutoSuicideLines();
-                _settings.AutoSuicideFuzzyMatch = settingsForm.SettingsPanel.autoSuicideFuzzyCheckBox.Checked;
-                _settings.AutoLaunchEnabled = settingsForm.SettingsPanel.AutoLaunchEnabledCheckBox.Checked;
-                _settings.AutoLaunchEntries = settingsForm.SettingsPanel.GetAutoLaunchEntries();
-                _settings.ItemMusicEnabled = settingsForm.SettingsPanel.ItemMusicEnabledCheckBox.Checked;
-                _settings.ItemMusicEntries = settingsForm.SettingsPanel.GetItemMusicEntries();
-                _settings.AutoLaunchExecutablePath = string.Empty;
-                _settings.AutoLaunchArguments = string.Empty;
-                _settings.ItemMusicItemName = string.Empty;
-                _settings.ItemMusicSoundPath = string.Empty;
-                _settings.ItemMusicMinSpeed = 0;
-                _settings.ItemMusicMaxSpeed = 0;
-                _settings.DiscordWebhookUrl = settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text.Trim();
-                _settings.Theme = settingsForm.SettingsPanel.DarkThemeCheckBox.Checked ? ThemeType.Dark : ThemeType.Light;
-                LoadAutoSuicideRules();
-                UpdateItemMusicPlayer(null);
-                ResetItemMusicTracking();
+                        _settings.AutoSuicideRoundTypes.Add(item.ToString());
+                    }
+                    settingsForm.SettingsPanel.CleanAutoSuicideDetailRules();
+                    _settings.AutoSuicideDetailCustom = settingsForm.SettingsPanel.GetCustomAutoSuicideLines();
+                    _settings.AutoSuicideFuzzyMatch = settingsForm.SettingsPanel.autoSuicideFuzzyCheckBox.Checked;
+                    _settings.AutoLaunchEnabled = settingsForm.SettingsPanel.AutoLaunchEnabledCheckBox.Checked;
+                    _settings.AutoLaunchEntries = settingsForm.SettingsPanel.GetAutoLaunchEntries();
+                    _settings.ItemMusicEnabled = settingsForm.SettingsPanel.ItemMusicEnabledCheckBox.Checked;
+                    _settings.ItemMusicEntries = settingsForm.SettingsPanel.GetItemMusicEntries();
+                    _settings.AutoLaunchExecutablePath = string.Empty;
+                    _settings.AutoLaunchArguments = string.Empty;
+                    _settings.ItemMusicItemName = string.Empty;
+                    _settings.ItemMusicSoundPath = string.Empty;
+                    _settings.ItemMusicMinSpeed = 0;
+                    _settings.ItemMusicMaxSpeed = 0;
+                    _settings.DiscordWebhookUrl = settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text.Trim();
+                    _settings.Theme = settingsForm.SettingsPanel.DarkThemeCheckBox.Checked ? ThemeType.Dark : ThemeType.Light;
+                    LoadAutoSuicideRules();
+                    UpdateItemMusicPlayer(null);
+                    ResetItemMusicTracking();
 
-                _settings.apikey = settingsForm.SettingsPanel.apiKeyTextBox.Text.Trim();
+                    _settings.apikey = settingsForm.SettingsPanel.apiKeyTextBox.Text.Trim();
                     if (string.IsNullOrEmpty(_settings.apikey))
                     {
                         _settings.apikey = string.Empty; // 空文字列に設定

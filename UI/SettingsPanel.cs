@@ -876,7 +876,7 @@ namespace ToNRoundCounter.UI
             var itemMusicEnabledColumn = new DataGridViewCheckBoxColumn();
             itemMusicEnabledColumn.Name = ItemMusicEnabledColumnName;
             itemMusicEnabledColumn.HeaderText = LanguageManager.Translate("有効");
-            itemMusicEnabledColumn.Width = 60;
+            itemMusicEnabledColumn.Width = 45;
             itemMusicEnabledColumn.FillWeight = 15;
             itemMusicEntriesGrid.Columns.Add(itemMusicEnabledColumn);
 
@@ -897,7 +897,7 @@ namespace ToNRoundCounter.UI
             itemMusicMinSpeedColumn.HeaderText = LanguageManager.Translate("最小速度");
             itemMusicMinSpeedColumn.ValueType = typeof(double);
             itemMusicMinSpeedColumn.DefaultCellStyle.Format = "0.##";
-            itemMusicMinSpeedColumn.FillWeight = 7;
+            itemMusicMinSpeedColumn.FillWeight = 15;
             itemMusicEntriesGrid.Columns.Add(itemMusicMinSpeedColumn);
 
             var itemMusicMaxSpeedColumn = new DataGridViewTextBoxColumn();
@@ -905,7 +905,7 @@ namespace ToNRoundCounter.UI
             itemMusicMaxSpeedColumn.HeaderText = LanguageManager.Translate("最大速度");
             itemMusicMaxSpeedColumn.ValueType = typeof(double);
             itemMusicMaxSpeedColumn.DefaultCellStyle.Format = "0.##";
-            itemMusicMaxSpeedColumn.FillWeight = 8;
+            itemMusicMaxSpeedColumn.FillWeight = 15;
             itemMusicEntriesGrid.Columns.Add(itemMusicMaxSpeedColumn);
 
             grpItemMusic.Controls.Add(itemMusicEntriesGrid);
@@ -963,7 +963,7 @@ namespace ToNRoundCounter.UI
 
             rightColumnY += grpItemMusic.Height + margin;
 
-            
+
 
             // 追加設定グループ
             GroupBox grpAdditional = new GroupBox();
