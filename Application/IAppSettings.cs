@@ -43,6 +43,7 @@ namespace ToNRoundCounter.Application
         double ItemMusicMinSpeed { get; set; }
         double ItemMusicMaxSpeed { get; set; }
         string DiscordWebhookUrl { get; set; }
+        string LastSaveCode { get; set; }
         void Load();
         Task SaveAsync();
     }

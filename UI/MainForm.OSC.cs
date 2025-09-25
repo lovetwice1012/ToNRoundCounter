@@ -142,7 +142,11 @@ namespace ToNRoundCounter.UI
                 }
                 if (getLatestSaveCode)
                 {
-                    if (!string.IsNullOrEmpty(_settings.apikey))
+                    if (string.IsNullOrEmpty(_settings.apikey))
+                    {
+                        CopyCachedSaveCode("API key is not configured");
+                    }
+                    else
                     {
                         _ = Task.Run(async () =>
                         {
@@ -157,11 +161,13 @@ namespace ToNRoundCounter.UI
                                         var jsonResponse = await response.Content.ReadAsStringAsync();
                                         var json = JObject.Parse(jsonResponse);
                                         string saveCode = json.Value<string>("savecode") ?? "";
-                                        Thread thread = new Thread(() => Clipboard.SetText(saveCode));
-                                        thread.SetApartmentState(ApartmentState.STA);
-                                        thread.Start();
-                                        thread.Join();
+                                        await PersistLastSaveCodeAsync(saveCode).ConfigureAwait(false);
+                                        CopySaveCodeToClipboard(saveCode);
                                         _logger.LogEvent("SaveCode", "Latest save code copied to clipboard: " + saveCode);
+                                    }
+                                    else if ((int)response.StatusCode >= 400 && (int)response.StatusCode < 600)
+                                    {
+                                        CopyCachedSaveCode($"Failed to get latest save code: {response.StatusCode}");
                                     }
                                     else
                                     {
@@ -170,7 +176,7 @@ namespace ToNRoundCounter.UI
                                 }
                                 catch (Exception ex)
                                 {
-                                    _logger.LogEvent("SaveCodeError", $"Exception occurred: {ex.Message}");
+                                    CopyCachedSaveCode($"Exception occurred: {ex.Message}");
                                 }
                             }
                         });
@@ -198,6 +204,60 @@ namespace ToNRoundCounter.UI
             {
                 lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2}  Members: {connected}";
             });
+        }
+
+        private void CopySaveCodeToClipboard(string saveCode)
+        {
+            Thread thread = new Thread(() =>
+            {
+                try
+                {
+                    Clipboard.SetText(saveCode ?? string.Empty);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogEvent("SaveCodeError", $"Failed to copy save code to clipboard: {ex.Message}");
+                }
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join();
+        }
+
+        private async Task PersistLastSaveCodeAsync(string saveCode)
+        {
+            var normalized = saveCode ?? string.Empty;
+            if (_lastSaveCode == normalized && string.Equals(_settings.LastSaveCode ?? string.Empty, normalized, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _lastSaveCode = normalized;
+            _settings.LastSaveCode = normalized;
+
+            try
+            {
+                await _settings.SaveAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogEvent("SaveCodeError", $"Failed to persist save code: {ex.Message}");
+            }
+        }
+
+        private void CopyCachedSaveCode(string reason)
+        {
+            _logger.LogEvent("SaveCodeError", reason);
+            var cachedSaveCode = _lastSaveCode ?? string.Empty;
+            CopySaveCodeToClipboard(cachedSaveCode);
+            if (!string.IsNullOrEmpty(cachedSaveCode))
+            {
+                _logger.LogEvent("SaveCode", "Latest save code copied to clipboard from cache: " + cachedSaveCode);
+            }
+            else
+            {
+                _logger.LogEvent("SaveCodeError", "No cached save code available.");
+            }
         }
     }
 }

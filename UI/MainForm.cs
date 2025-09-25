@@ -92,6 +92,8 @@ namespace ToNRoundCounter.UI
 
         private bool issetAllSelfKillMode = false;
 
+        private string _lastSaveCode = string.Empty;
+
         private string version = "1.11.0";
 
         private readonly AutoSuicideService autoSuicideService;
@@ -130,6 +132,7 @@ namespace ToNRoundCounter.UI
             terrorColors = new Dictionary<string, Color>();
             LoadTerrorInfo();
             _settings.Load();
+            _lastSaveCode = _settings.LastSaveCode ?? string.Empty;
             UpdateItemMusicPlayer();
             Theme.SetTheme(_settings.Theme);
             LoadAutoSuicideRules();
@@ -967,6 +970,10 @@ namespace ToNRoundCounter.UI
                 else if (eventType == "SAVED")
                 {
                     string savecode = json.Value<string>("Value") ?? String.Empty;
+                    if (!string.IsNullOrEmpty(savecode))
+                    {
+                        await PersistLastSaveCodeAsync(savecode).ConfigureAwait(false);
+                    }
                     if (savecode != String.Empty && _settings.apikey != String.Empty)
                     {
                         // https://toncloud.sprink.cloud/api/savecode/create/{apikey} にPOSTリクエストを送信(savecodeを送信)

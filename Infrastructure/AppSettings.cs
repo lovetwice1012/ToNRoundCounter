@@ -62,6 +62,7 @@ namespace ToNRoundCounter.Infrastructure
         public double ItemMusicMinSpeed { get; set; }
         public double ItemMusicMaxSpeed { get; set; }
         public string DiscordWebhookUrl { get; set; } = string.Empty;
+        public string LastSaveCode { get; set; } = string.Empty;
 
         public void Load()
         {
@@ -91,6 +92,7 @@ namespace ToNRoundCounter.Infrastructure
                 ItemMusicItemName ??= string.Empty;
                 ItemMusicSoundPath ??= string.Empty;
                 DiscordWebhookUrl ??= string.Empty;
+                LastSaveCode ??= string.Empty;
                 NormalizeItemMusicSpeeds();
             }
             catch (Exception ex)
@@ -167,7 +169,8 @@ namespace ToNRoundCounter.Infrastructure
                 ItemMusicSoundPath = ItemMusicSoundPath,
                 ItemMusicMinSpeed = ItemMusicMinSpeed,
                 ItemMusicMaxSpeed = ItemMusicMaxSpeed,
-                DiscordWebhookUrl = DiscordWebhookUrl
+                DiscordWebhookUrl = DiscordWebhookUrl,
+                LastSaveCode = LastSaveCode
             };
 
             string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
@@ -223,5 +226,6 @@ namespace ToNRoundCounter.Infrastructure
         public double ItemMusicMinSpeed { get; set; }
         public double ItemMusicMaxSpeed { get; set; }
         public string DiscordWebhookUrl { get; set; } = string.Empty;
+        public string LastSaveCode { get; set; } = string.Empty;
     }
 }
