@@ -90,7 +90,7 @@ namespace ToNRoundCounter.UI
 
         private bool isNotifyActivated = false;
 
-        private static readonly string[] testerNames = new string[] { "yussy5373", "Kotetsu Wilde", "tofu_shoyu", "ちよ千夜", "Blackpit", "shari_1928", "MitarashiMochi" };
+        private static readonly string[] testerNames = new string[] { "yussy5373", "Kotetsu Wilde", "tofu_shoyu", "ちよ千夜", "Blackpit", "shari_1928", "MitarashiMochi", "Motimotiusa3" };
 
         private bool isRestarted = false;
 
@@ -98,7 +98,7 @@ namespace ToNRoundCounter.UI
 
         private string _lastSaveCode = string.Empty;
 
-        private string version = "1.12.0";
+        private string version = "1.12.1";
 
         private readonly AutoSuicideService autoSuicideService;
 
