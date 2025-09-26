@@ -47,17 +47,19 @@ namespace ToNRoundCounter
 
             var eventLogger = new EventLogger();
             var eventBus = new EventBus();
+            var moduleHost = new ModuleHost(eventLogger, eventBus);
 
             services.AddSingleton<ICancellationProvider, CancellationProvider>();
             services.AddSingleton<IEventLogger>(eventLogger);
             services.AddSingleton<IEventBus>(eventBus);
+            services.AddSingleton(moduleHost);
             services.AddSingleton<IOSCListener>(sp => new OSCListener(sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ICancellationProvider>(), sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<IWebSocketClient>(sp => new WebSocketClient(wsUrl, sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ICancellationProvider>(), sp.GetRequiredService<IEventLogger>()));
-            services.AddSingleton<AutoSuicideService>();
+            services.AddSingleton(sp => new AutoSuicideService(sp.GetRequiredService<IEventBus>()));
             services.AddSingleton<StateService>();
             services.AddSingleton<IAppSettings>(sp => new AppSettings(sp.GetRequiredService<IEventLogger>(), sp.GetRequiredService<IEventBus>()));
             services.AddSingleton<IInputSender, NativeInputSender>();
-            services.AddSingleton<IErrorReporter>(sp => new ErrorReporter(sp.GetRequiredService<IEventLogger>()));
+            services.AddSingleton<IErrorReporter>(sp => new ErrorReporter(sp.GetRequiredService<IEventLogger>(), sp.GetRequiredService<IEventBus>()));
             services.AddSingleton<IHttpClient, HttpClientWrapper>();
             services.AddSingleton<IUiDispatcher, WinFormsDispatcher>();
             services.AddSingleton<MainPresenter>(sp => new MainPresenter(
@@ -65,7 +67,7 @@ namespace ToNRoundCounter
                 sp.GetRequiredService<IAppSettings>(),
                 sp.GetRequiredService<IEventLogger>(),
                 sp.GetRequiredService<IHttpClient>()));
-            ModuleLoader.LoadModules(services, eventLogger, eventBus);
+            ModuleLoader.LoadModules(services, moduleHost, eventLogger, eventBus);
             services.AddSingleton<MainForm>(sp => new MainForm(
                 sp.GetRequiredService<IWebSocketClient>(),
                 sp.GetRequiredService<IOSCListener>(),
@@ -78,12 +80,20 @@ namespace ToNRoundCounter
                 sp.GetRequiredService<ICancellationProvider>(),
                 sp.GetRequiredService<IInputSender>(),
                 sp.GetRequiredService<IUiDispatcher>(),
-                sp.GetServices<IAfkWarningHandler>()));
+                sp.GetServices<IAfkWarningHandler>(),
+                sp.GetRequiredService<ModuleHost>()));
+
+            moduleHost.NotifyServiceProviderBuilding(new ModuleServiceProviderBuildContext(services, eventLogger, eventBus));
 
             var provider = services.BuildServiceProvider();
+            moduleHost.NotifyServiceProviderBuilt(new ModuleServiceProviderContext(provider, eventLogger, eventBus));
             provider.GetRequiredService<IErrorReporter>().Register();
 
+            moduleHost.NotifyMainWindowCreating(new ModuleMainWindowCreationContext(provider, typeof(MainForm)));
             var mainForm = provider.GetRequiredService<MainForm>();
+            moduleHost.NotifyMainWindowCreated(new ModuleMainWindowContext(mainForm, provider));
+            mainForm.Shown += (s, e) => moduleHost.NotifyMainWindowShown(new ModuleMainWindowLifecycleContext(mainForm, provider));
+            mainForm.FormClosing += (s, e) => moduleHost.NotifyMainWindowClosing(new ModuleMainWindowLifecycleContext(mainForm, provider));
             ((WinFormsDispatcher)provider.GetRequiredService<IUiDispatcher>()).SetMainForm(mainForm);
 
             var appSettings = provider.GetRequiredService<IAppSettings>();
@@ -116,11 +126,11 @@ namespace ToNRoundCounter
                 throw new InvalidOperationException("Crash report test triggered");
             }
 
-            var launches = new List<(string Path, string Arguments, string Origin)>();
+            var launches = new List<AutoLaunchPlan>();
 
             if (!string.IsNullOrWhiteSpace(autoLaunchPath))
             {
-                launches.Add((autoLaunchPath, autoLaunchArguments ?? string.Empty, "command line"));
+                launches.Add(new AutoLaunchPlan(autoLaunchPath, autoLaunchArguments ?? string.Empty, "command line"));
             }
             else if (appSettings.AutoLaunchEnabled)
             {
@@ -131,12 +141,13 @@ namespace ToNRoundCounter
                         continue;
                     }
 
-                    launches.Add((entry.ExecutablePath, entry.Arguments ?? string.Empty, "settings"));
+                    launches.Add(new AutoLaunchPlan(entry.ExecutablePath, entry.Arguments ?? string.Empty, "settings"));
                 }
             }
 
             if (launches.Count > 0)
             {
+                moduleHost.NotifyAutoLaunchEvaluating(new ModuleAutoLaunchEvaluationContext(launches, appSettings, provider));
                 mainForm.Shown += (s, e) =>
                 {
                     foreach (var launch in launches)
@@ -151,6 +162,8 @@ namespace ToNRoundCounter
 
                             if (!File.Exists(resolvedPath))
                             {
+                                var failureContext = new ModuleAutoLaunchFailureContext(launch, new FileNotFoundException("Executable not found", resolvedPath), provider);
+                                moduleHost.NotifyAutoLaunchFailed(failureContext);
                                 eventLogger.LogEvent("AutoLaunch", $"Executable not found ({launch.Origin}): {resolvedPath}", Serilog.Events.LogEventLevel.Error);
                                 continue;
                             }
@@ -168,19 +181,28 @@ namespace ToNRoundCounter
                                 psi.WorkingDirectory = workingDirectory;
                             }
 
+                            var executionContext = new ModuleAutoLaunchExecutionContext(launch, provider);
+                            moduleHost.NotifyAutoLaunchStarting(executionContext);
                             Process.Start(psi);
+                            moduleHost.NotifyAutoLaunchCompleted(executionContext);
                             eventLogger.LogEvent("AutoLaunch", $"Started executable ({launch.Origin}): {resolvedPath}");
                         }
                         catch (Exception ex)
                         {
+                            var failureContext = new ModuleAutoLaunchFailureContext(launch, ex, provider);
+                            moduleHost.NotifyAutoLaunchFailed(failureContext);
                             eventLogger.LogEvent("AutoLaunch", $"Failed to start executable ({launch.Origin}): {ex.Message}", Serilog.Events.LogEventLevel.Error);
                         }
                     }
                 };
             }
 
+            moduleHost.NotifyAppRunStarting(new ModuleAppRunContext(mainForm, provider));
             WinFormsApp.Run(mainForm);
+            moduleHost.NotifyAppRunCompleted(new ModuleAppRunContext(mainForm, provider));
+            moduleHost.NotifyAppShutdownStarting(new ModuleAppShutdownContext(provider));
             (provider as IDisposable)?.Dispose();
+            moduleHost.NotifyAppShutdownCompleted(new ModuleAppShutdownContext(provider));
         }
     }
 }

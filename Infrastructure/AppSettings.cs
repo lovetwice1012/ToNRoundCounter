@@ -7,6 +7,7 @@ using Newtonsoft.Json;
 using ToNRoundCounter.Application;
 using ToNRoundCounter.Domain;
 using ToNRoundCounter.UI;
+using Newtonsoft.Json.Linq;
 
 namespace ToNRoundCounter.Infrastructure
 {
@@ -50,7 +51,7 @@ namespace ToNRoundCounter.Infrastructure
         };
         public bool AutoSuicideEnabled { get; set; }
         public string apikey { get; set; } = string.Empty;
-        public ThemeType Theme { get; set; } = ThemeType.Light;
+        public string ThemeKey { get; set; } = Theme.DefaultThemeKey;
         public string LogFilePath { get; set; } = "logs/log-.txt";
         public string WebSocketIp { get; set; } = "127.0.0.1";
         public bool AutoLaunchEnabled { get; set; }
@@ -69,25 +70,49 @@ namespace ToNRoundCounter.Infrastructure
 
         public void Load()
         {
+            _bus.Publish(new SettingsLoading(this));
+            bool success = false;
+            var validationErrors = new List<string>();
             try
             {
                 if (File.Exists(settingsFile))
                 {
                     var json = File.ReadAllText(settingsFile);
+                    try
+                    {
+                        var token = JObject.Parse(json);
+                        if (token.TryGetValue("ThemeKey", out var themeKeyToken))
+                        {
+                            ThemeKey = NormalizeThemeKey(themeKeyToken?.Value<string>());
+                        }
+                        else if (token.TryGetValue("Theme", out var legacyThemeToken))
+                        {
+                            ThemeKey = NormalizeLegacyTheme(legacyThemeToken);
+                        }
+                    }
+                    catch (JsonException)
+                    {
+                        // Ignore malformed theme information and fall back to defaults.
+                    }
+
                     JsonConvert.PopulateObject(json, this);
                 }
+                ThemeKey = NormalizeThemeKey(ThemeKey);
+                _bus.Publish(new SettingsValidating(this, validationErrors));
                 var errors = Validate();
-                if (errors.Count > 0)
+                validationErrors.AddRange(errors);
+                if (validationErrors.Count > 0)
                 {
-                    foreach (var err in errors)
+                    foreach (var err in validationErrors)
                     {
                         _logger.LogEvent("SettingsValidation", err, Serilog.Events.LogEventLevel.Error);
                     }
-                    _bus.Publish(new SettingsValidationFailed(errors));
+                    _bus.Publish(new SettingsValidationFailed(this, validationErrors));
                 }
                 else
                 {
                     _logger.LogEvent("AppSettings", "Settings loaded successfully.");
+                    _bus.Publish(new SettingsValidated(this));
                 }
 
                 AutoLaunchExecutablePath ??= string.Empty;
@@ -98,11 +123,20 @@ namespace ToNRoundCounter.Infrastructure
                 LastSaveCode ??= string.Empty;
                 NormalizeAutoLaunchEntries();
                 NormalizeItemMusicEntries();
+                success = true;
             }
             catch (Exception ex)
             {
                 _logger.LogEvent("Error", "Failed to bind app settings: " + ex.Message, Serilog.Events.LogEventLevel.Error);
-                _bus.Publish(new SettingsValidationFailed(new[] { ex.Message }));
+                validationErrors.Add(ex.Message);
+                _bus.Publish(new SettingsValidationFailed(this, validationErrors));
+            }
+            finally
+            {
+                if (success)
+                {
+                    _bus.Publish(new SettingsLoaded(this));
+                }
             }
         }
 
@@ -190,6 +224,38 @@ namespace ToNRoundCounter.Infrastructure
             }
         }
 
+        private static string NormalizeThemeKey(string? key)
+        {
+            return Theme.EnsureTheme(string.IsNullOrWhiteSpace(key) ? Theme.DefaultThemeKey : key!).Key;
+        }
+
+        private static string NormalizeLegacyTheme(JToken? token)
+        {
+            if (token == null)
+            {
+                return Theme.DefaultThemeKey;
+            }
+
+            if (token.Type == JTokenType.Integer)
+            {
+                return token.Value<int>() == 1 ? "dark" : Theme.DefaultThemeKey;
+            }
+
+            var value = token.Value<string>() ?? string.Empty;
+
+            if (value.Equals("dark", StringComparison.OrdinalIgnoreCase))
+            {
+                return "dark";
+            }
+
+            if (value.Equals("light", StringComparison.OrdinalIgnoreCase))
+            {
+                return Theme.DefaultThemeKey;
+            }
+
+            return NormalizeThemeKey(value);
+        }
+
         private List<string> Validate()
         {
             var errors = new List<string>();
@@ -202,6 +268,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public async Task SaveAsync()
         {
+            _bus.Publish(new SettingsSaving(this));
             NormalizeAutoLaunchEntries();
             NormalizeItemMusicEntries();
             var settings = new AppSettingsData
@@ -229,7 +296,7 @@ namespace ToNRoundCounter.Infrastructure
                 AutoSuicideFuzzyMatch = AutoSuicideFuzzyMatch,
                 AutoSuicideUseDetail = AutoSuicideUseDetail,
                 apikey = apikey,
-                Theme = Theme,
+                ThemeKey = NormalizeThemeKey(ThemeKey),
                 LogFilePath = LogFilePath,
                 WebSocketIp = WebSocketIp,
                 AutoLaunchEnabled = AutoLaunchEnabled,
@@ -241,17 +308,26 @@ namespace ToNRoundCounter.Infrastructure
             };
 
             string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
+            bool success = false;
             try
             {
                 using (var writer = new StreamWriter(settingsFile, false))
                 {
                     await writer.WriteAsync(json).ConfigureAwait(false);
                 }
+                success = true;
             }
             catch (Exception ex)
             {
                 _logger.LogEvent("Error", "Failed to save app settings: " + ex.Message, Serilog.Events.LogEventLevel.Error);
                 throw;
+            }
+            finally
+            {
+                if (success)
+                {
+                    _bus.Publish(new SettingsSaved(this));
+                }
             }
         }
     }
@@ -281,7 +357,7 @@ namespace ToNRoundCounter.Infrastructure
         public bool AutoSuicideFuzzyMatch { get; set; }
         public bool AutoSuicideUseDetail { get; set; }
         public string apikey { get; set; }
-        public ThemeType Theme { get; set; }
+        public string ThemeKey { get; set; } = Theme.DefaultThemeKey;
         public string LogFilePath { get; set; }
         public string WebSocketIp { get; set; }
         public bool AutoLaunchEnabled { get; set; }

@@ -45,17 +45,20 @@ namespace ToNRoundCounter.Infrastructure
                     _socket = new ClientWebSocket();
                     try
                     {
+                        _bus.Publish(new WebSocketConnecting(_uri));
                         await _socket.ConnectAsync(_uri, token);
-                        _bus.Publish(new WebSocketConnected());
+                        _bus.Publish(new WebSocketConnected(_uri));
                         _processingTask ??= Task.Run(() => ProcessMessagesAsync(token), token);
                         await ReceiveLoopAsync(token);
+                        _bus.Publish(new WebSocketDisconnected(_uri));
                     }
                     catch (Exception ex)
                     {
                         _logger.LogEvent("WebSocket", ex.Message, Serilog.Events.LogEventLevel.Error);
-                        _bus.Publish(new WebSocketDisconnected());
+                        _bus.Publish(new WebSocketDisconnected(_uri, ex));
                         if (!token.IsCancellationRequested)
                         {
+                            _bus.Publish(new WebSocketReconnecting(_uri, ex));
                             await Task.Delay(300, token);
                         }
                     }
@@ -100,10 +103,6 @@ namespace ToNRoundCounter.Infrastructure
             catch (Exception ex)
             {
                 _logger.LogEvent("WebSocketReceive", ex.Message, Serilog.Events.LogEventLevel.Error);
-            }
-            finally
-            {
-                _bus.Publish(new WebSocketDisconnected());
             }
         }
 

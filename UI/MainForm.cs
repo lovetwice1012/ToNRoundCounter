@@ -32,6 +32,8 @@ namespace ToNRoundCounter.UI
         private Label lblOSCStatus;        // OSC通信接続状況
         private Button btnToggleTopMost;   // 画面最前面固定ボタン
         private Button btnSettings;        // 設定変更ボタン
+        private MenuStrip mainMenuStrip;
+        private ToolStripMenuItem windowsMenuItem;
 
         // デバッグ情報用ラベル
         private Label lblDebugInfo;
@@ -60,6 +62,7 @@ namespace ToNRoundCounter.UI
         private readonly IInputSender _inputSender;
         private readonly IUiDispatcher _dispatcher;
         private readonly IReadOnlyList<IAfkWarningHandler> _afkWarningHandlers;
+        private readonly ModuleHost _moduleHost;
 
         private Action<WebSocketConnected> _wsConnectedHandler;
         private Action<WebSocketDisconnected> _wsDisconnectedHandler;
@@ -112,7 +115,7 @@ namespace ToNRoundCounter.UI
         private int terrorCountdownLastDisplayedSeconds = -1;
 
 
-        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers)
+        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, ModuleHost moduleHost)
         {
             InitializeSoundPlayers();
             this.Name = "MainForm";
@@ -128,6 +131,7 @@ namespace ToNRoundCounter.UI
             _inputSender = inputSender;
             _dispatcher = dispatcher;
             _afkWarningHandlers = (afkWarningHandlers ?? Array.Empty<IAfkWarningHandler>()).ToList();
+            _moduleHost = moduleHost;
             _presenter.AttachView(this);
 
             terrorColors = new Dictionary<string, Color>();
@@ -135,10 +139,17 @@ namespace ToNRoundCounter.UI
             _settings.Load();
             _lastSaveCode = _settings.LastSaveCode ?? string.Empty;
             UpdateItemMusicPlayer(null);
-            Theme.SetTheme(_settings.Theme);
+            _moduleHost.NotifyThemeCatalogBuilding(new ModuleThemeCatalogContext(Theme.RegisteredThemes, Theme.RegisterTheme, _moduleHost.CurrentServiceProvider));
+            _moduleHost.NotifyAuxiliaryWindowCatalogBuilding();
+            Theme.SetTheme(_settings.ThemeKey, new ThemeApplicationContext(this, _moduleHost.CurrentServiceProvider));
+            _moduleHost.NotifyMainWindowThemeChanged(new ModuleMainWindowThemeContext(this, _settings.ThemeKey, Theme.CurrentDescriptor, _moduleHost.CurrentServiceProvider));
             LoadAutoSuicideRules();
             InitializeComponents();
+            _moduleHost.NotifyMainWindowMenuBuilding(new ModuleMainWindowMenuContext(this, mainMenuStrip, _moduleHost.CurrentServiceProvider));
+            BuildAuxiliaryWindowsMenu();
+            _moduleHost.NotifyMainWindowUiComposed(new ModuleMainWindowUiContext(this, this.Controls, mainMenuStrip, _moduleHost.CurrentServiceProvider));
             ApplyTheme();
+            _moduleHost.NotifyMainWindowLayoutUpdated(new ModuleMainWindowLayoutContext(this, _moduleHost.CurrentServiceProvider));
             this.Load += MainForm_Load;
             _wsConnectedHandler = _ => _dispatcher.Invoke(() =>
             {
@@ -193,8 +204,27 @@ namespace ToNRoundCounter.UI
             this.BackColor = Theme.Current.Background;
             this.Resize += MainForm_Resize;
 
+            mainMenuStrip = new MenuStrip();
+            mainMenuStrip.Name = "mainMenuStrip";
+            mainMenuStrip.Dock = DockStyle.Top;
+            this.MainMenuStrip = mainMenuStrip;
+            this.Controls.Add(mainMenuStrip);
+
+            var fileMenu = new ToolStripMenuItem(LanguageManager.Translate("ファイル"));
+            var settingsMenuItem = new ToolStripMenuItem(LanguageManager.Translate("設定..."));
+            settingsMenuItem.Click += BtnSettings_Click;
+            var exitMenuItem = new ToolStripMenuItem(LanguageManager.Translate("終了"));
+            exitMenuItem.Click += (s, e) => Close();
+            fileMenu.DropDownItems.Add(settingsMenuItem);
+            fileMenu.DropDownItems.Add(new ToolStripSeparator());
+            fileMenu.DropDownItems.Add(exitMenuItem);
+            mainMenuStrip.Items.Add(fileMenu);
+
+            windowsMenuItem = new ToolStripMenuItem(LanguageManager.Translate("ウィンドウ"));
+            mainMenuStrip.Items.Add(windowsMenuItem);
+
             int margin = 10;
-            int currentY = margin;
+            int currentY = mainMenuStrip.Bottom + margin;
             int contentWidth = this.ClientSize.Width - 2 * margin;
 
             // WebSocket接続状況
@@ -281,7 +311,7 @@ namespace ToNRoundCounter.UI
             rtbStatsDisplay.ReadOnly = true;
             rtbStatsDisplay.BorderStyle = BorderStyle.FixedSingle;
             rtbStatsDisplay.Font = new Font("Arial", 10);
-            rtbStatsDisplay.BackColor = Theme.Current == Theme.Light ? Color.White : Theme.Current.Background;
+            rtbStatsDisplay.BackColor = useCustomPanelColors ? Color.White : Theme.Current.PanelBackground;
             rtbStatsDisplay.ForeColor = Theme.Current.Foreground;
             rtbStatsDisplay.Location = new Point(0, lblStatsTitle.Height);
             rtbStatsDisplay.Size = new Size(splitContainerMain.Panel1.Width, splitContainerMain.Panel1.Height - lblStatsTitle.Height);
@@ -321,15 +351,17 @@ namespace ToNRoundCounter.UI
 
         private void ApplyTheme()
         {
-            this.BackColor = Theme.Current.Background;
+            var themeColors = Theme.Current;
+            this.BackColor = themeColors.Background;
             lblDebugInfo.ForeColor = Color.Blue;
             InfoPanel.ApplyTheme();
-            InfoPanel.BackColor = _settings.Theme == ThemeType.Dark ? Theme.Current.PanelBackground : _settings.BackgroundColor_InfoPanel;
-            rtbStatsDisplay.ForeColor = Theme.Current.Foreground;
-            rtbStatsDisplay.BackColor = _settings.Theme == ThemeType.Dark ? Theme.Current.PanelBackground : Color.White;
+            bool useCustomPanelColors = string.Equals(_settings.ThemeKey, Theme.DefaultThemeKey, StringComparison.OrdinalIgnoreCase);
+            InfoPanel.BackColor = useCustomPanelColors ? _settings.BackgroundColor_InfoPanel : themeColors.PanelBackground;
+            rtbStatsDisplay.ForeColor = themeColors.Foreground;
+            rtbStatsDisplay.BackColor = useCustomPanelColors ? Color.White : themeColors.PanelBackground;
             logPanel.ApplyTheme();
-            logPanel.AggregateStatsTextBox.BackColor = _settings.Theme == ThemeType.Dark ? Theme.Current.PanelBackground : Color.White;
-            logPanel.RoundLogTextBox.BackColor = _settings.Theme == ThemeType.Dark ? Theme.Current.PanelBackground : Color.White;
+            logPanel.AggregateStatsTextBox.BackColor = useCustomPanelColors ? Color.White : themeColors.PanelBackground;
+            logPanel.RoundLogTextBox.BackColor = useCustomPanelColors ? Color.White : themeColors.PanelBackground;
             terrorInfoPanel.ApplyTheme();
         }
 
@@ -337,7 +369,7 @@ namespace ToNRoundCounter.UI
         {
             int margin = 10;
             int contentWidth = this.ClientSize.Width - 2 * margin;
-            int currentY = margin;
+            int currentY = (mainMenuStrip != null ? mainMenuStrip.Bottom : 0) + margin;
             lblStatus.Location = new Point(margin, currentY);
             lblStatus.Width = contentWidth / 2 - 5;
             lblOSCStatus.Location = new Point(lblStatus.Right + 10, currentY);
@@ -369,6 +401,11 @@ namespace ToNRoundCounter.UI
         {
             using (SettingsForm settingsForm = new SettingsForm(_settings))
             {
+                var buildContext = new ModuleSettingsViewBuildContext(settingsForm, settingsForm.SettingsPanel, _settings, _moduleHost.CurrentServiceProvider);
+                _moduleHost.NotifySettingsViewBuilding(buildContext);
+
+                _moduleHost.NotifyThemeCatalogBuilding(new ModuleThemeCatalogContext(Theme.RegisteredThemes, Theme.RegisterTheme, _moduleHost.CurrentServiceProvider));
+                settingsForm.SettingsPanel.LoadThemeOptions(Theme.RegisteredThemes, _settings.ThemeKey);
                 settingsForm.SettingsPanel.ShowStatsCheckBox.Checked = _settings.ShowStats;
                 settingsForm.SettingsPanel.DebugInfoCheckBox.Checked = _settings.ShowDebug;
                 settingsForm.SettingsPanel.ToggleRoundLogCheckBox.Checked = _settings.ShowRoundLog;
@@ -382,7 +419,6 @@ namespace ToNRoundCounter.UI
                 settingsForm.SettingsPanel.StatsBgLabel.BackColor = _settings.BackgroundColor_Stats;
                 settingsForm.SettingsPanel.LogBgLabel.BackColor = _settings.BackgroundColor_Log;
                 settingsForm.SettingsPanel.FixedTerrorColorLabel.BackColor = _settings.FixedTerrorColor;
-                settingsForm.SettingsPanel.DarkThemeCheckBox.Checked = _settings.Theme == ThemeType.Dark;
                 for (int i = 0; i < settingsForm.SettingsPanel.RoundTypeStatsListBox.Items.Count; i++)
                 {
                     string item = settingsForm.SettingsPanel.RoundTypeStatsListBox.Items[i].ToString();
@@ -393,14 +429,7 @@ namespace ToNRoundCounter.UI
                 for (int i = 0; i < settingsForm.SettingsPanel.autoSuicideRoundListBox.Items.Count; i++)
                 {
                     string item = settingsForm.SettingsPanel.autoSuicideRoundListBox.Items[i].ToString();
-                    _logger.LogEvent("AutoSuicideRoundListBox", item);
-                    // 修正箇所: foreach の構文エラーを修正し、AppSettings の名前空間を正しいものに修正
-                    foreach (var ditem in _settings.AutoSuicideRoundTypes)
-                    {
-                        _logger.LogEvent("AutoSuicideRoundListBox_debug", ditem);
-                    }
-                    _logger.LogEvent("AutoSuicideRoundListBox", _settings.AutoSuicideRoundTypes.Contains(item).ToString());
-                    settingsForm.SettingsPanel.autoSuicideRoundListBox.SetItemChecked(i, _settings.AutoSuicideRoundTypes.Contains(item) != false);
+                    settingsForm.SettingsPanel.autoSuicideRoundListBox.SetItemChecked(i, _settings.AutoSuicideRoundTypes.Contains(item));
                 }
                 settingsForm.SettingsPanel.oscPortNumericUpDown.Value = _settings.OSCPort;
                 settingsForm.SettingsPanel.webSocketIpTextBox.Text = _settings.WebSocketIp;
@@ -410,8 +439,19 @@ namespace ToNRoundCounter.UI
                 settingsForm.SettingsPanel.LoadItemMusicEntries(_settings.ItemMusicEntries);
                 settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text = _settings.DiscordWebhookUrl;
 
-                if (settingsForm.ShowDialog() == DialogResult.OK)
+                var openedContext = new ModuleSettingsViewLifecycleContext(settingsForm, settingsForm.SettingsPanel, _settings, ModuleSettingsViewStage.Opened, null, _moduleHost.CurrentServiceProvider);
+                _moduleHost.NotifySettingsViewOpened(openedContext);
+
+                var dialogResult = settingsForm.ShowDialog();
+
+                var closingContext = new ModuleSettingsViewLifecycleContext(settingsForm, settingsForm.SettingsPanel, _settings, ModuleSettingsViewStage.Closing, dialogResult, _moduleHost.CurrentServiceProvider);
+                _moduleHost.NotifySettingsViewClosing(closingContext);
+
+                if (dialogResult == DialogResult.OK)
                 {
+                    var applyingContext = new ModuleSettingsViewLifecycleContext(settingsForm, settingsForm.SettingsPanel, _settings, ModuleSettingsViewStage.Applying, dialogResult, _moduleHost.CurrentServiceProvider);
+                    _moduleHost.NotifySettingsViewApplying(applyingContext);
+
                     _settings.OSCPort = (int)settingsForm.SettingsPanel.oscPortNumericUpDown.Value;
                     _settings.WebSocketIp = settingsForm.SettingsPanel.webSocketIpTextBox.Text;
                     _settings.ShowStats = settingsForm.SettingsPanel.ShowStatsCheckBox.Checked;
@@ -453,7 +493,7 @@ namespace ToNRoundCounter.UI
                     _settings.ItemMusicMinSpeed = 0;
                     _settings.ItemMusicMaxSpeed = 0;
                     _settings.DiscordWebhookUrl = settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text.Trim();
-                    _settings.Theme = settingsForm.SettingsPanel.DarkThemeCheckBox.Checked ? ThemeType.Dark : ThemeType.Light;
+                    _settings.ThemeKey = settingsForm.SettingsPanel.SelectedThemeKey;
                     LoadAutoSuicideRules();
                     UpdateItemMusicPlayer(null);
                     ResetItemMusicTracking();
@@ -461,7 +501,7 @@ namespace ToNRoundCounter.UI
                     _settings.apikey = settingsForm.SettingsPanel.apiKeyTextBox.Text.Trim();
                     if (string.IsNullOrEmpty(_settings.apikey))
                     {
-                        _settings.apikey = string.Empty; // 空文字列に設定
+                        _settings.apikey = string.Empty;
                     }
                     else if (_settings.apikey.Length < 32)
                     {
@@ -469,13 +509,55 @@ namespace ToNRoundCounter.UI
                         return;
                     }
 
-                    Theme.SetTheme(_settings.Theme);
+                    Theme.SetTheme(_settings.ThemeKey, new ThemeApplicationContext(this, _moduleHost.CurrentServiceProvider));
+                    _moduleHost.NotifyMainWindowThemeChanged(new ModuleMainWindowThemeContext(this, _settings.ThemeKey, Theme.CurrentDescriptor, _moduleHost.CurrentServiceProvider));
                     ApplyTheme();
+                    _moduleHost.NotifyMainWindowLayoutUpdated(new ModuleMainWindowLayoutContext(this, _moduleHost.CurrentServiceProvider));
                     InfoPanel.TerrorValue.ForeColor = _settings.FixedTerrorColor;
                     UpdateAggregateStatsDisplay();
                     UpdateDisplayVisibility();
+                    _moduleHost.NotifyAuxiliaryWindowCatalogBuilding();
+                    BuildAuxiliaryWindowsMenu();
                     await _settings.SaveAsync();
                 }
+
+                var closedContext = new ModuleSettingsViewLifecycleContext(settingsForm, settingsForm.SettingsPanel, _settings, ModuleSettingsViewStage.Closed, dialogResult, _moduleHost.CurrentServiceProvider);
+                _moduleHost.NotifySettingsViewClosed(closedContext);
+            }
+        }
+
+        private void BuildAuxiliaryWindowsMenu()
+        {
+            if (windowsMenuItem == null)
+            {
+                return;
+            }
+
+            windowsMenuItem.DropDownItems.Clear();
+
+            if (_moduleHost.AuxiliaryWindows == null || _moduleHost.AuxiliaryWindows.Count == 0)
+            {
+                windowsMenuItem.Visible = false;
+                return;
+            }
+
+            windowsMenuItem.Visible = true;
+
+            foreach (var descriptor in _moduleHost.AuxiliaryWindows.OrderBy(d => d.DisplayName, StringComparer.CurrentCulture))
+            {
+                if (descriptor == null)
+                {
+                    continue;
+                }
+
+                var descriptorId = descriptor.Id;
+                var menuItem = new ToolStripMenuItem(descriptor.DisplayName)
+                {
+                    Tag = descriptorId
+                };
+
+                menuItem.Click += (s, e) => _moduleHost.ShowAuxiliaryWindow(descriptorId, this);
+                windowsMenuItem.DropDownItems.Add(menuItem);
             }
         }
 
@@ -1571,6 +1653,7 @@ namespace ToNRoundCounter.UI
             }
             cleaned.Reverse();
             autoSuicideRules = cleaned;
+            _moduleHost.NotifyAutoSuicideRulesPrepared(new ModuleAutoSuicideRuleContext(autoSuicideRules, _settings, _moduleHost.CurrentServiceProvider));
         }
 
         private int ShouldAutoSuicide(string roundType, string terrorName, out bool hasPendingDelayed)
@@ -1592,13 +1675,21 @@ namespace ToNRoundCounter.UI
                     !r.Matches(roundType, null, comparer));
             }
 
+            int decision = 0;
             for (int i = autoSuicideRules.Count - 1; i >= 0; i--)
             {
                 var r = autoSuicideRules[i];
                 if (r.Matches(roundType, terrorName, comparer))
-                    return r.Value;
+                {
+                    decision = r.Value;
+                    break;
+                }
             }
-            return 0;
+
+            var decisionContext = new ModuleAutoSuicideDecisionContext(roundType, terrorName, decision, hasPendingDelayed, _moduleHost.CurrentServiceProvider);
+            _moduleHost.NotifyAutoSuicideDecisionEvaluated(decisionContext);
+            hasPendingDelayed = decisionContext.HasPendingDelayed;
+            return decisionContext.Decision;
         }
 
         private int ShouldAutoSuicide(string roundType, string terrorName)
