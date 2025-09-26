@@ -103,7 +103,7 @@ namespace ToNRoundCounter.Application
                 return;
             }
 
-            static string FormatInline(string value, string fallback)
+            static string FormatInline(string? value, string fallback)
             {
                 var text = string.IsNullOrWhiteSpace(value) ? fallback : value;
                 return text.Replace("`", "\\`");

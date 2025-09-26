@@ -15,7 +15,11 @@ namespace ToNRoundCounter.Tests
             // Arrange
             Assert.True(AutoSuicideRule.TryParse("クラシック::1", out var rule1));
             Assert.True(AutoSuicideRule.TryParse("クラシック:Don't Touch Me:0", out var rule2));
-            var rules = new List<AutoSuicideRule> { Assert.NotNull(rule1), Assert.NotNull(rule2) };
+            var rules = new List<AutoSuicideRule>
+            {
+                Assert.IsType<AutoSuicideRule>(rule1),
+                Assert.IsType<AutoSuicideRule>(rule2)
+            };
 
             int ShouldAutoSuicide(string roundType, string terrorName)
             {

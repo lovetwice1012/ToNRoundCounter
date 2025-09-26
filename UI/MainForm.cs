@@ -690,8 +690,13 @@ namespace ToNRoundCounter.UI
             }
         }
 
-        private bool IsOlderVersion(string current, string latest)
+        private bool IsOlderVersion(string current, string? latest)
         {
+            if (string.IsNullOrEmpty(latest))
+            {
+                return false;
+            }
+
             try
             {
                 return new Version(current) < new Version(latest);
@@ -806,11 +811,12 @@ namespace ToNRoundCounter.UI
                 {
                     string roundType = json.Value<string>("DisplayName") ?? "Default";
                     int displayColorInt = json.Value<int>("DisplayColor");
-                    stateService.UpdateCurrentRound(new Round());
-                    stateService.CurrentRound.RoundType = roundType;
-                    stateService.CurrentRound.IsDeath = false;
-                    stateService.CurrentRound.TerrorKey = "";
-                    stateService.CurrentRound.RoundColor = displayColorInt;
+                    var currentRound = new Round();
+                    stateService.UpdateCurrentRound(currentRound);
+                    currentRound.RoundType = roundType;
+                    currentRound.IsDeath = false;
+                    currentRound.TerrorKey = string.Empty;
+                    currentRound.RoundColor = displayColorInt;
                     string mapName = string.Empty;
                     string itemName = string.Empty;
                     _dispatcher.Invoke(() =>
@@ -818,11 +824,11 @@ namespace ToNRoundCounter.UI
                         mapName = InfoPanel.MapValue.Text;
                         itemName = InfoPanel.ItemValue.Text;
                     });
-                    stateService.CurrentRound.MapName = mapName;
-                    stateService.CurrentRound.Damage = 0;
-                    stateService.CurrentRound.PageCount = 0;
+                    currentRound.MapName = mapName;
+                    currentRound.Damage = 0;
+                    currentRound.PageCount = 0;
                     if (!string.IsNullOrEmpty(itemName))
-                        stateService.CurrentRound.ItemNames.Add(itemName);
+                        currentRound.ItemNames.Add(itemName);
                     _dispatcher.Invoke(() =>
                     {
                         UpdateRoundTypeLabel();
@@ -857,29 +863,32 @@ namespace ToNRoundCounter.UI
                     {
                         if (lastOptedIn != false)
                         {
-                            stateService.UpdateCurrentRound(new Round());
-                            stateService.CurrentRound.RoundType = "";
-                            stateService.CurrentRound.IsDeath = false;
-                            stateService.CurrentRound.TerrorKey = "";
-                            stateService.CurrentRound.RoundColor = 0xFFFFFF;
+                            var trackerRound = new Round();
+                            stateService.UpdateCurrentRound(trackerRound);
+                            trackerRound.RoundType = string.Empty;
+                            trackerRound.IsDeath = false;
+                            trackerRound.TerrorKey = string.Empty;
+                            trackerRound.RoundColor = 0xFFFFFF;
                             string mapName = string.Empty;
                             _dispatcher.Invoke(() => mapName = InfoPanel.MapValue.Text);
-                            stateService.CurrentRound.MapName = mapName;
-                            stateService.CurrentRound.Damage = 0;
+                            trackerRound.MapName = mapName;
+                            trackerRound.Damage = 0;
                         }
                     }
                     else if (trackerEvent == "round_won")
                     {
-                        if (stateService.CurrentRound != null)
+                        var existingRound = stateService.CurrentRound;
+                        if (existingRound != null)
                         {
-                            FinalizeCurrentRound(stateService.CurrentRound.IsDeath ? "☠" : "✅");
+                            FinalizeCurrentRound(existingRound.IsDeath ? "☠" : "✅");
                         }
                     }
                     else if (trackerEvent == "round_lost")
                     {
-                        if (stateService.CurrentRound != null && !stateService.CurrentRound.IsDeath)
+                        var existingRound = stateService.CurrentRound;
+                        if (existingRound != null && !existingRound.IsDeath)
                         {
-                            stateService.CurrentRound.IsDeath = true;
+                            existingRound.IsDeath = true;
                             FinalizeCurrentRound("☠");
                         }
                     }
@@ -890,9 +899,10 @@ namespace ToNRoundCounter.UI
                     {
                         InfoPanel.MapValue.Text = json.Value<string>("Name") ?? "";
                     });
-                    if (stateService.CurrentRound != null)
+                    var existingRound = stateService.CurrentRound;
+                    if (existingRound != null)
                     {
-                        stateService.CurrentRound.MapName = json.Value<string>("Name") ?? "";
+                        existingRound.MapName = json.Value<string>("Name") ?? string.Empty;
                     }
                 }
                 else if (eventType == "TERRORS" && (command == 0 || command == 1))
@@ -901,9 +911,10 @@ namespace ToNRoundCounter.UI
                     int displayColorInt = json.Value<int>("DisplayColor");
                     Color color = ConvertColorFromInt(displayColorInt);
 
-                    if (stateService.CurrentRound != null && !stateService.CurrentRound.RoundColor.HasValue)
+                    var activeRound = stateService.CurrentRound;
+                    if (activeRound != null && !activeRound.RoundColor.HasValue)
                     {
-                        stateService.CurrentRound.RoundColor = displayColorInt;
+                        activeRound.RoundColor = displayColorInt;
                     }
 
                     List<(string name, int count)>? terrors = null;
@@ -925,22 +936,24 @@ namespace ToNRoundCounter.UI
                     }
 
                     var namesForLogic = terrors?.SelectMany(t => Enumerable.Repeat(t.name, t.count)).ToList();
-                    if (stateService.CurrentRound != null && namesForLogic != null && namesForLogic.Count > 0)
+                    var activeRoundForNames = stateService.CurrentRound;
+                    if (activeRoundForNames != null && namesForLogic != null && namesForLogic.Count > 0)
                     {
                         string joinedNames = string.Join(" & ", namesForLogic);
-                        stateService.CurrentRound.TerrorKey = joinedNames;
+                        activeRoundForNames.TerrorKey = joinedNames;
                     }
 
                     _dispatcher.Invoke(() => { UpdateTerrorDisplay(displayName, color, terrors); });
 
-                    if (stateService.CurrentRound != null)
+                    var activeRoundForAuto = stateService.CurrentRound;
+                    if (activeRoundForAuto != null)
                     {
                         if (roundType == "ブラッドバス" && namesForLogic != null && namesForLogic.Any(n => n.Contains("LVL 3")))
                         {
                             roundType = "EX";
                         }
                         //もしroundTypeが自動自殺ラウンド対象なら自動自殺
-                        int terrorAction = ShouldAutoSuicide(roundType, stateService.CurrentRound.TerrorKey);
+                        int terrorAction = ShouldAutoSuicide(roundType, activeRoundForAuto.TerrorKey);
                         if (terrorAction == 0 && autoSuicideService.HasScheduled)
                         {
                             autoSuicideService.Cancel();
@@ -1458,6 +1471,11 @@ namespace ToNRoundCounter.UI
 
         private void UpdateAggregateStatsDisplay()
         {
+            static string TranslateSafe(string key)
+            {
+                return LanguageManager.Translate(key) ?? key;
+            }
+
             rtbStatsDisplay.Clear();
             var roundAggregates = stateService.GetRoundAggregates();
             int overallTotal = roundAggregates.Values.Sum(r => r.Total);
@@ -1472,17 +1490,17 @@ namespace ToNRoundCounter.UI
                 var parts = new List<string>();
                 parts.Add(roundType);
                 if (_settings.Filter_Appearance)
-                    parts.Add(LanguageManager.Translate("出現回数") + "=" + agg.Total);
+                    parts.Add(TranslateSafe("出現回数") + "=" + agg.Total);
                 if (_settings.Filter_Survival)
-                    parts.Add(LanguageManager.Translate("生存回数") + "=" + agg.Survival);
+                    parts.Add(TranslateSafe("生存回数") + "=" + agg.Survival);
                 if (_settings.Filter_Death)
-                    parts.Add(LanguageManager.Translate("死亡回数") + "=" + agg.Death);
+                    parts.Add(TranslateSafe("死亡回数") + "=" + agg.Death);
                 if (_settings.Filter_SurvivalRate)
-                    parts.Add(string.Format(LanguageManager.Translate("生存率") + "={0:F1}%", agg.SurvivalRate));
+                    parts.Add(string.Format(TranslateSafe("生存率") + "={0:F1}%", agg.SurvivalRate));
                 if (overallTotal > 0 && _settings.Filter_Appearance)
                 {
                     double occurrenceRate = agg.Total * 100.0 / overallTotal;
-                    parts.Add(string.Format(LanguageManager.Translate("出現率") + "={0:F1}%", occurrenceRate));
+                    parts.Add(string.Format(TranslateSafe("出現率") + "={0:F1}%", occurrenceRate));
                 }
                 string roundLine = string.Join(" ", parts);
                 AppendLine(rtbStatsDisplay, roundLine, Theme.Current.Foreground);
@@ -1497,13 +1515,13 @@ namespace ToNRoundCounter.UI
                         var terrorParts = new List<string>();
                         terrorParts.Add(terrorKey);
                         if (_settings.Filter_Appearance)
-                            terrorParts.Add(LanguageManager.Translate("出現回数") + "=" + tAgg.Total);
+                            terrorParts.Add(TranslateSafe("出現回数") + "=" + tAgg.Total);
                         if (_settings.Filter_Survival)
-                            terrorParts.Add(LanguageManager.Translate("生存回数") + "=" + tAgg.Survival);
+                            terrorParts.Add(TranslateSafe("生存回数") + "=" + tAgg.Survival);
                         if (_settings.Filter_Death)
-                            terrorParts.Add(LanguageManager.Translate("死亡回数") + "=" + tAgg.Death);
+                            terrorParts.Add(TranslateSafe("死亡回数") + "=" + tAgg.Death);
                         if (_settings.Filter_SurvivalRate)
-                            terrorParts.Add(string.Format(LanguageManager.Translate("生存率") + "={0:F1}%", tAgg.SurvivalRate));
+                            terrorParts.Add(string.Format(TranslateSafe("生存率") + "={0:F1}%", tAgg.SurvivalRate));
                         string terrorLine = string.Join(" ", terrorParts);
                         Color rawColor = terrorColors.ContainsKey(terrorKey) ? terrorColors[terrorKey] : Color.Black;
                         Color terrorColor = (_settings.FixedTerrorColor != Color.Empty && _settings.FixedTerrorColor != Color.White)
@@ -1628,7 +1646,8 @@ namespace ToNRoundCounter.UI
 
             int margin = 10;
             int width = this.ClientSize.Width - 2 * margin;
-            terrorInfoPanel.UpdateInfo(names, terrorInfoData, width);
+            var nameList = names ?? new List<string>();
+            terrorInfoPanel.UpdateInfo(nameList, terrorInfoData, width);
 
             // Re-layout controls when height changes
             MainForm_Resize(this, EventArgs.Empty);
@@ -1657,18 +1676,19 @@ namespace ToNRoundCounter.UI
                         mapName = InfoPanel.MapValue.Text;
                         itemName = InfoPanel.ItemValue.Text;
                     });
-                    stateService.UpdateCurrentRound(new Round
+                    var activeRound = new Round
                     {
                         RoundType = "Active Round",
                         IsDeath = false,
-                        TerrorKey = "",
+                        TerrorKey = string.Empty,
                         MapName = mapName,
                         Damage = 0,
                         PageCount = 0,
                         RoundColor = 0xFFFFFF
-                    });
+                    };
+                    stateService.UpdateCurrentRound(activeRound);
                     if (!string.IsNullOrEmpty(itemName))
-                        stateService.CurrentRound.ItemNames.Add(itemName);
+                        activeRound.ItemNames.Add(itemName);
                     _dispatcher.Invoke(() =>
                     {
                         UpdateRoundTypeLabel();
@@ -1677,10 +1697,11 @@ namespace ToNRoundCounter.UI
                     });
                 }
 
-                    if (stateService.CurrentRound != null)
-                    {
-                        string checkType = stateService.CurrentRound.RoundType ?? string.Empty;
-                        string? terror = stateService.CurrentRound.TerrorKey;
+                var roundForAutoCheck = stateService.CurrentRound;
+                if (roundForAutoCheck != null)
+                {
+                    string checkType = roundForAutoCheck.RoundType ?? string.Empty;
+                    string? terror = roundForAutoCheck.TerrorKey;
                     if (checkType == "ブラッドバス" && !string.IsNullOrEmpty(terror) && terror.Contains("LVL 3"))
                     {
                         checkType = "EX";
@@ -1913,7 +1934,8 @@ namespace ToNRoundCounter.UI
 
         private void UpdateTerrorDisplay(string displayName, Color color, List<(string name, int count)>? terrors)
         {
-            string roundType = stateService.CurrentRound?.RoundType;
+            var currentRound = stateService.CurrentRound;
+            string? roundType = currentRound?.RoundType;
 
             if (roundType == "アンバウンド")
             {
@@ -1933,8 +1955,11 @@ namespace ToNRoundCounter.UI
                     InfoPanel.TerrorValue.Text = $"{displayName} ({terrorText})";
                     InfoPanel.TerrorValue.ForeColor = (_settings.FixedTerrorColor != Color.Empty) ? _settings.FixedTerrorColor : color;
                     var expanded = terrors.SelectMany(t => Enumerable.Repeat(t.name, t.count)).ToList();
-                    if (!string.IsNullOrEmpty(stateService.CurrentRound.TerrorKey))
-                        terrorColors[stateService.CurrentRound.TerrorKey] = color;
+                    var terrorKeyValue = currentRound?.TerrorKey;
+                    if (!string.IsNullOrEmpty(terrorKeyValue))
+                    {
+                        terrorColors[terrorKeyValue] = color;
+                    }
                     UpdateTerrorInfoPanel(expanded);
                     currentTerrorBaseText = InfoPanel.TerrorValue.Text;
                     UpdateTerrorCountdownState(displayName);
@@ -2077,7 +2102,7 @@ namespace ToNRoundCounter.UI
             }
         }
 
-        private ItemMusicEntry FindMatchingItemMusicEntry(string text, double velocity)
+        private ItemMusicEntry? FindMatchingItemMusicEntry(string text, double velocity)
         {
             if (!_settings.ItemMusicEnabled || _settings.ItemMusicEntries == null)
             {

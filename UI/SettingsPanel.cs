@@ -413,7 +413,8 @@ namespace ToNRoundCounter.UI
                     }
                     else
                     {
-                        errors.Add($"{i + 1}行目: {LanguageManager.Translate(err)}");
+                        var errorKey = err ?? string.Empty;
+                        errors.Add($"{i + 1}行目: {LanguageManager.Translate(errorKey)}");
                     }
                 }
                 if (errors.Any())
@@ -470,6 +471,9 @@ namespace ToNRoundCounter.UI
 
                 foreach (var rw in roundWildcards)
                 {
+                    if (string.IsNullOrEmpty(rw.Round))
+                        continue;
+
                     var roundName = rw.Round;
                     var baseValue = rw.Value;
                     var relatedDetails = detailRules.Where(d => d.Round == roundName).ToList();
@@ -485,7 +489,7 @@ namespace ToNRoundCounter.UI
                         sb.AppendLine($"{roundName}では全てのテラーで{GetActionText(baseValue)}。");
                         foreach (var eg in exceptions.GroupBy(ex => ex.Value))
                         {
-                            var terrors = eg.Select(rule => rule.Terror).ToList();
+                            var terrors = eg.Select(rule => rule.Terror ?? string.Empty).Where(t => !string.IsNullOrEmpty(t)).ToList();
                             bool useBullet = ShouldBullet(terrors);
                             sb.AppendLine($"ただし、以下に記載する条件では{GetActionText(eg.Key)}");
                             if (useBullet)
@@ -528,7 +532,7 @@ namespace ToNRoundCounter.UI
                                                .GroupBy(x => x.Value);
                 foreach (var g in negRoundGroups)
                 {
-                    var rounds = g.SelectMany(x => x.Rounds).Distinct().ToList();
+                    var rounds = g.SelectMany(x => x.Rounds ?? Enumerable.Empty<string>()).Distinct().ToList();
                     bool useBullet = ShouldBullet(rounds);
                     if (useBullet)
                     {
@@ -548,8 +552,21 @@ namespace ToNRoundCounter.UI
                 {
                     foreach (var rule in g)
                     {
-                        var rounds = rule.GetRoundTerms() ?? new List<string> { rule.RoundExpression };
-                        var terrors = rule.GetTerrorTerms() ?? new List<string> { rule.TerrorExpression };
+                        var rounds = rule.GetRoundTerms();
+                        if (rounds == null || rounds.Count == 0)
+                        {
+                            rounds = string.IsNullOrEmpty(rule.RoundExpression)
+                                ? new List<string>()
+                                : new List<string> { rule.RoundExpression };
+                        }
+
+                        var terrors = rule.GetTerrorTerms();
+                        if (terrors == null || terrors.Count == 0)
+                        {
+                            terrors = string.IsNullOrEmpty(rule.TerrorExpression)
+                                ? new List<string>()
+                                : new List<string> { rule.TerrorExpression };
+                        }
                         bool roundBullet = ShouldBullet(rounds);
                         bool terrorBullet = ShouldBullet(terrors);
                         string roundPart = roundBullet
@@ -578,11 +595,15 @@ namespace ToNRoundCounter.UI
                                                 .GroupBy(d => d.Round);
                 foreach (var rg in remainingDetail)
                 {
-                    if (roundsWithHeader.Add(rg.Key))
-                        sb.AppendLine($"{rg.Key}では以下の設定が適用されています");
+                    if (string.IsNullOrEmpty(rg.Key))
+                        continue;
+
+                    var roundKey = rg.Key;
+                    if (roundsWithHeader.Add(roundKey))
+                        sb.AppendLine($"{roundKey}では以下の設定が適用されています");
                     foreach (var ag in rg.GroupBy(r => r.Value))
                     {
-                        var terrors = ag.Select(a => a.Terror).ToList();
+                        var terrors = ag.Select(a => a.Terror ?? string.Empty).Where(t => !string.IsNullOrEmpty(t)).ToList();
                         bool useBullet = ShouldBullet(terrors);
                         if (useBullet)
                         {
@@ -601,8 +622,12 @@ namespace ToNRoundCounter.UI
                                                    .GroupBy(r => r.Round);
                 foreach (var cg in complexRoundRules)
                 {
-                    if (roundsWithHeader.Add(cg.Key))
-                        sb.AppendLine($"{cg.Key}では以下の設定が適用されています");
+                    if (string.IsNullOrEmpty(cg.Key))
+                        continue;
+
+                    var roundKey = cg.Key;
+                    if (roundsWithHeader.Add(roundKey))
+                        sb.AppendLine($"{roundKey}では以下の設定が適用されています");
                     foreach (var rule in cg)
                     {
                         var terrors = rule.GetTerrorTerms();
@@ -610,9 +635,10 @@ namespace ToNRoundCounter.UI
                         string condition;
                         if (terrors != null)
                         {
+                            var terrorList = terrors;
                             condition = rule.TerrorNegate
-                                ? (useBullet ? "以下のテラー以外が出現した時" : $"{string.Join(",", terrors)}以外が出現した時")
-                                : (useBullet ? "以下のテラーが出現した時" : $"{string.Join(",", terrors)}が出現した時");
+                                ? (useBullet ? "以下のテラー以外が出現した時" : $"{string.Join(",", terrorList)}以外が出現した時")
+                                : (useBullet ? "以下のテラーが出現した時" : $"{string.Join(",", terrorList)}が出現した時");
                         }
                         else
                         {
@@ -624,7 +650,7 @@ namespace ToNRoundCounter.UI
                         sb.AppendLine($"・{condition}、{GetActionText(rule.Value)}");
                         if (useBullet)
                         {
-                            foreach (var t in terrors)
+                            foreach (var t in terrors!)
                                 sb.AppendLine($"　・{t}");
                         }
                     }
@@ -636,7 +662,7 @@ namespace ToNRoundCounter.UI
                                              .GroupBy(x => new { x.TerrorNegate, x.Value });
                 foreach (var g in terrorGroups)
                 {
-                    var terrors = g.SelectMany(x => x.Terrors).Distinct().ToList();
+                    var terrors = g.SelectMany(x => x.Terrors ?? Enumerable.Empty<string>()).Distinct().ToList();
                     bool useBullet = ShouldBullet(terrors);
                     if (g.Key.TerrorNegate)
                     {

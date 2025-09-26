@@ -110,7 +110,8 @@ namespace ToNRoundCounter.Application
 
                 if (!string.IsNullOrEmpty(terrorType))
                 {
-                    var terrorAgg = _terrorAggregates.Get(roundType, terrorType);
+                    var safeTerrorType = terrorType!;
+                    var terrorAgg = _terrorAggregates.Get(roundType, safeTerrorType);
                     terrorAgg.Total++;
                     if (survived) terrorAgg.Survival++; else terrorAgg.Death++;
                 }

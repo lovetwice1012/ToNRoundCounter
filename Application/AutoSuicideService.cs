@@ -102,7 +102,7 @@ namespace ToNRoundCounter.Application
 
         public void Cancel()
         {
-            CancellationTokenSource cts;
+            CancellationTokenSource? cts;
             TimeSpan? remainingDelay = null;
             lock (_lock)
             {
