@@ -18,8 +18,9 @@ namespace ToNRoundCounter.Tests
             Assert.Equal(1, roundAgg.Death);
 
             Assert.True(service.TryGetTerrorAggregates("RoundA", out var terrorDict));
-            Assert.True(terrorDict.ContainsKey("Terror1"));
-            var terrorAgg = terrorDict["Terror1"];
+            Assert.NotNull(terrorDict);
+            Assert.True(terrorDict!.ContainsKey("Terror1"));
+            var terrorAgg = terrorDict!["Terror1"];
             Assert.Equal(2, terrorAgg.Total);
             Assert.Equal(1, terrorAgg.Survival);
             Assert.Equal(1, terrorAgg.Death);

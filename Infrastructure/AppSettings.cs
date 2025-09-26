@@ -349,10 +349,10 @@ namespace ToNRoundCounter.Infrastructure
     {
         public int OSCPort { get; set; }
         public bool OSCPortChanged { get; set; }
-        public string BackgroundColor_InfoPanel { get; set; }
-        public string BackgroundColor_Stats { get; set; }
-        public string BackgroundColor_Log { get; set; }
-        public string FixedTerrorColor { get; set; }
+        public string BackgroundColor_InfoPanel { get; set; } = string.Empty;
+        public string BackgroundColor_Stats { get; set; } = string.Empty;
+        public string BackgroundColor_Log { get; set; } = string.Empty;
+        public string FixedTerrorColor { get; set; } = string.Empty;
         public bool ShowStats { get; set; }
         public bool ShowDebug { get; set; }
         public bool ShowRoundLog { get; set; }
@@ -362,17 +362,17 @@ namespace ToNRoundCounter.Infrastructure
         public bool Filter_Survival { get; set; }
         public bool Filter_Death { get; set; }
         public bool Filter_SurvivalRate { get; set; }
-        public List<string> RoundTypeStats { get; set; }
+        public List<string> RoundTypeStats { get; set; } = new List<string>();
         public bool AutoSuicideEnabled { get; set; }
-        public List<string> AutoSuicideRoundTypes { get; set; }
-        public Dictionary<string, AutoSuicidePreset> AutoSuicidePresets { get; set; }
-        public List<string> AutoSuicideDetailCustom { get; set; }
+        public List<string> AutoSuicideRoundTypes { get; set; } = new List<string>();
+        public Dictionary<string, AutoSuicidePreset> AutoSuicidePresets { get; set; } = new Dictionary<string, AutoSuicidePreset>();
+        public List<string> AutoSuicideDetailCustom { get; set; } = new List<string>();
         public bool AutoSuicideFuzzyMatch { get; set; }
         public bool AutoSuicideUseDetail { get; set; }
-        public string apikey { get; set; }
+        public string apikey { get; set; } = string.Empty;
         public string ThemeKey { get; set; } = Theme.DefaultThemeKey;
-        public string LogFilePath { get; set; }
-        public string WebSocketIp { get; set; }
+        public string LogFilePath { get; set; } = string.Empty;
+        public string WebSocketIp { get; set; } = string.Empty;
         public bool AutoLaunchEnabled { get; set; }
         public List<AutoLaunchEntry> AutoLaunchEntries { get; set; } = new List<AutoLaunchEntry>();
         public bool ItemMusicEnabled { get; set; }

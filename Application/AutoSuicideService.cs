@@ -10,7 +10,7 @@ namespace ToNRoundCounter.Application
     public class AutoSuicideService
     {
         private readonly object _lock = new object();
-        private CancellationTokenSource _tokenSource;
+        private CancellationTokenSource? _tokenSource;
         private readonly IEventBus? _bus;
         private readonly IEventLogger? _logger;
         private DateTime? _scheduledAtUtc;
@@ -45,8 +45,8 @@ namespace ToNRoundCounter.Application
 
         public void Schedule(TimeSpan delay, bool resetStartTime, Action action)
         {
-            CancellationTokenSource oldCts;
-            CancellationTokenSource cts;
+            CancellationTokenSource? oldCts;
+            CancellationTokenSource? cts;
             lock (_lock)
             {
                 oldCts = _tokenSource;

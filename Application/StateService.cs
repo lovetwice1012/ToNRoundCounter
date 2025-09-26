@@ -7,16 +7,16 @@ namespace ToNRoundCounter.Application
 {
     public class StateService
     {
-        public event Action StateChanged;
+        public event Action? StateChanged;
 
         private readonly object _sync = new object();
         private readonly IEventLogger? _logger;
 
         public string PlayerDisplayName { get; set; } = string.Empty;
-        public Round CurrentRound { get; private set; }
+        public Round? CurrentRound { get; private set; }
         private readonly Dictionary<string, RoundAggregate> _roundAggregates = new();
         private readonly TerrorAggregateCollection _terrorAggregates = new();
-        private readonly Dictionary<string, string> _roundMapNames = new();
+        private readonly Dictionary<string, string?> _roundMapNames = new();
         private readonly TerrorMapNameCollection _terrorMapNames = new();
         private readonly List<Tuple<Round, string>> _roundLogHistory = new();
         private readonly Dictionary<string, object> _stats = new();
@@ -53,7 +53,7 @@ namespace ToNRoundCounter.Application
             return $"{round.RoundType ?? "<unknown>"} (Terror: {round.TerrorKey ?? "<none>"}, Map: {round.MapName ?? "<none>"})";
         }
 
-        public void UpdateCurrentRound(Round round)
+        public void UpdateCurrentRound(Round? round)
         {
             _logger?.LogEvent("StateService", $"Updating current round to {DescribeRound(round)}.");
             lock (_sync)
@@ -95,7 +95,7 @@ namespace ToNRoundCounter.Application
             NotifyStateChanged(nameof(SetRoundCycle));
         }
 
-        public void RecordRoundResult(string roundType, string terrorType, bool survived)
+        public void RecordRoundResult(string roundType, string? terrorType, bool survived)
         {
             _logger?.LogEvent("StateService", $"Recording round result. Round: {roundType}, Terror: {terrorType ?? "<none>"}, Survived: {survived}");
             lock (_sync)
@@ -158,7 +158,7 @@ namespace ToNRoundCounter.Application
             return snapshot;
         }
 
-        public bool TryGetTerrorAggregates(string round, out Dictionary<string, TerrorAggregate> terrorDict)
+        public bool TryGetTerrorAggregates(string round, out Dictionary<string, TerrorAggregate>? terrorDict)
         {
             _logger?.LogEvent("StateService", $"Retrieving terror aggregates for round '{round}'.", LogEventLevel.Debug);
             lock (_sync)
@@ -175,18 +175,18 @@ namespace ToNRoundCounter.Application
             }
         }
 
-        public IReadOnlyDictionary<string, string> GetRoundMapNames()
+        public IReadOnlyDictionary<string, string?> GetRoundMapNames()
         {
-            Dictionary<string, string> snapshot;
+            Dictionary<string, string?> snapshot;
             lock (_sync)
             {
-                snapshot = new Dictionary<string, string>(_roundMapNames);
+                snapshot = new Dictionary<string, string?>(_roundMapNames);
             }
             _logger?.LogEvent("StateService", $"Providing round map names snapshot with {snapshot.Count} entries.", LogEventLevel.Debug);
             return snapshot;
         }
 
-        public void SetRoundMapName(string roundType, string mapName)
+        public void SetRoundMapName(string roundType, string? mapName)
         {
             _logger?.LogEvent("StateService", $"Associating map '{mapName}' with round '{roundType}'.");
             lock (_sync)
@@ -196,7 +196,7 @@ namespace ToNRoundCounter.Application
             NotifyStateChanged(nameof(SetRoundMapName));
         }
 
-        public void SetTerrorMapName(string round, string terror, string mapName)
+        public void SetTerrorMapName(string round, string terror, string? mapName)
         {
             _logger?.LogEvent("StateService", $"Associating terror map '{mapName}' with round '{round}' / terror '{terror}'.");
             lock (_sync)

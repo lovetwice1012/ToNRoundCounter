@@ -10,9 +10,9 @@ namespace ToNRoundCounter.UI
     public class SettingsForm : Form
     {
         private readonly IAppSettings _settings;
-        private SettingsPanel settingsPanel;
-        private Button btnOK;
-        private Button btnCancel;
+        private SettingsPanel settingsPanel = null!;
+        private Button btnOK = null!;
+        private Button btnCancel = null!;
 
         public SettingsPanel SettingsPanel { get { return settingsPanel; } }
 
