@@ -789,7 +789,7 @@ namespace ToNRoundCounter.UI
                 string eventType = json.Value<string>("Type") ?? json.Value<string>("TYPE") ?? "Unknown";
                 _logger.LogEvent(eventType, message);
                 int command = -1;
-                if (json.TryGetValue("Command", out JToken commandToken))
+                if (json.TryGetValue("Command", out JToken? commandToken))
                 {
                     command = commandToken.Value<int>();
                 }
@@ -1506,7 +1506,7 @@ namespace ToNRoundCounter.UI
                 AppendLine(rtbStatsDisplay, roundLine, Theme.Current.Foreground);
 
                 // テラーのフィルター
-                if (_settings.Filter_Terror && stateService.TryGetTerrorAggregates(roundType, out var terrorDict))
+                if (_settings.Filter_Terror && stateService.TryGetTerrorAggregates(roundType, out var terrorDict) && terrorDict != null)
                 {
                     foreach (var terrorKvp in terrorDict)
                     {
@@ -1702,7 +1702,7 @@ namespace ToNRoundCounter.UI
                 {
                     string checkType = roundForAutoCheck.RoundType ?? string.Empty;
                     string? terror = roundForAutoCheck.TerrorKey;
-                    if (checkType == "ブラッドバス" && !string.IsNullOrEmpty(terror) && terror.Contains("LVL 3"))
+                    if (checkType == "ブラッドバス" && !string.IsNullOrEmpty(terror) && terror!.Contains("LVL 3"))
                     {
                         checkType = "EX";
                     }
@@ -1958,7 +1958,7 @@ namespace ToNRoundCounter.UI
                     var terrorKeyValue = currentRound?.TerrorKey;
                     if (!string.IsNullOrEmpty(terrorKeyValue))
                     {
-                        terrorColors[terrorKeyValue] = color;
+                        terrorColors[terrorKeyValue!] = color;
                     }
                     UpdateTerrorInfoPanel(expanded);
                     currentTerrorBaseText = InfoPanel.TerrorValue.Text;

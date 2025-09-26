@@ -21,7 +21,7 @@ namespace ToNRoundCounter.Tests
                 Assert.IsType<AutoSuicideRule>(rule2)
             };
 
-            int ShouldAutoSuicide(string roundType, string terrorName)
+            int ShouldAutoSuicide(string roundType, string? terrorName)
             {
                 for (int i = rules.Count - 1; i >= 0; i--)
                 {

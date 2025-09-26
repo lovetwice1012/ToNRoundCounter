@@ -474,7 +474,7 @@ namespace ToNRoundCounter.UI
                     if (string.IsNullOrEmpty(rw.Round))
                         continue;
 
-                    var roundName = rw.Round;
+                    var roundName = rw.Round!;
                     var baseValue = rw.Value;
                     var relatedDetails = detailRules.Where(d => d.Round == roundName).ToList();
                     var exceptions = relatedDetails.Where(d => d.Value != baseValue || d.TerrorNegate).ToList();
@@ -557,7 +557,7 @@ namespace ToNRoundCounter.UI
                         {
                             rounds = string.IsNullOrEmpty(rule.RoundExpression)
                                 ? new List<string>()
-                                : new List<string> { rule.RoundExpression };
+                                : new List<string> { rule.RoundExpression! };
                         }
 
                         var terrors = rule.GetTerrorTerms();
@@ -565,7 +565,7 @@ namespace ToNRoundCounter.UI
                         {
                             terrors = string.IsNullOrEmpty(rule.TerrorExpression)
                                 ? new List<string>()
-                                : new List<string> { rule.TerrorExpression };
+                                : new List<string> { rule.TerrorExpression! };
                         }
                         bool roundBullet = ShouldBullet(rounds);
                         bool terrorBullet = ShouldBullet(terrors);
@@ -598,7 +598,7 @@ namespace ToNRoundCounter.UI
                     if (string.IsNullOrEmpty(rg.Key))
                         continue;
 
-                    var roundKey = rg.Key;
+                    var roundKey = rg.Key!;
                     if (roundsWithHeader.Add(roundKey))
                         sb.AppendLine($"{roundKey}では以下の設定が適用されています");
                     foreach (var ag in rg.GroupBy(r => r.Value))
@@ -625,7 +625,7 @@ namespace ToNRoundCounter.UI
                     if (string.IsNullOrEmpty(cg.Key))
                         continue;
 
-                    var roundKey = cg.Key;
+                    var roundKey = cg.Key!;
                     if (roundsWithHeader.Add(roundKey))
                         sb.AppendLine($"{roundKey}では以下の設定が適用されています");
                     foreach (var rule in cg)

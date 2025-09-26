@@ -6,6 +6,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Serilog.Events;
 using ToNRoundCounter.Application;
 
+#nullable enable
+
 namespace ToNRoundCounter.Modules.AfkSoundCancel
 {
     public sealed class AfkSoundCancelModule : IModule

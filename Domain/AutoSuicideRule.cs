@@ -45,15 +45,19 @@ namespace ToNRoundCounter.Domain
             bool roundNeg = false;
             if (!string.IsNullOrEmpty(roundExpr))
             {
-                roundNeg = StripNegation(ref roundExpr);
-                if (!string.IsNullOrEmpty(roundExpr) && !ValidateExpression(roundExpr)) return false;
+                string? normalizedRoundExpr = roundExpr;
+                roundNeg = StripNegation(ref normalizedRoundExpr);
+                roundExpr = normalizedRoundExpr;
+                if (!string.IsNullOrEmpty(roundExpr) && !ValidateExpression(roundExpr!)) return false;
             }
 
             bool terrorNeg = false;
             if (!string.IsNullOrEmpty(terrorExpr))
             {
-                terrorNeg = StripNegation(ref terrorExpr);
-                if (!string.IsNullOrEmpty(terrorExpr) && !ValidateExpression(terrorExpr)) return false;
+                string? normalizedTerrorExpr = terrorExpr;
+                terrorNeg = StripNegation(ref normalizedTerrorExpr);
+                terrorExpr = normalizedTerrorExpr;
+                if (!string.IsNullOrEmpty(terrorExpr) && !ValidateExpression(terrorExpr!)) return false;
             }
 
             rule = new AutoSuicideRule
@@ -109,8 +113,10 @@ namespace ToNRoundCounter.Domain
             bool roundNeg = false;
             if (!string.IsNullOrEmpty(roundExpr))
             {
-                roundNeg = StripNegation(ref roundExpr);
-                if (!string.IsNullOrEmpty(roundExpr) && !ValidateExpression(roundExpr))
+                string? normalizedRoundExpr = roundExpr;
+                roundNeg = StripNegation(ref normalizedRoundExpr);
+                roundExpr = normalizedRoundExpr;
+                if (!string.IsNullOrEmpty(roundExpr) && !ValidateExpression(roundExpr!))
                 {
                     error = "括弧の不整合や演算子の誤用";
                     return false;
@@ -120,8 +126,10 @@ namespace ToNRoundCounter.Domain
             bool terrorNeg = false;
             if (!string.IsNullOrEmpty(terrorExpr))
             {
-                terrorNeg = StripNegation(ref terrorExpr);
-                if (!string.IsNullOrEmpty(terrorExpr) && !ValidateExpression(terrorExpr))
+                string? normalizedTerrorExpr = terrorExpr;
+                terrorNeg = StripNegation(ref normalizedTerrorExpr);
+                terrorExpr = normalizedTerrorExpr;
+                if (!string.IsNullOrEmpty(terrorExpr) && !ValidateExpression(terrorExpr!))
                 {
                     error = "括弧の不整合や演算子の誤用";
                     return false;
@@ -222,7 +230,7 @@ namespace ToNRoundCounter.Domain
         private static List<string>? GetSimpleTerms(string? expr)
         {
             if (string.IsNullOrWhiteSpace(expr)) return null;
-            string working = expr.Trim();
+            string working = expr!.Trim();
             if (working.StartsWith("(") && MatchingParen(working) == working.Length - 1)
                 working = working.Substring(1, working.Length - 2);
             var parts = SplitTopLevel(working, "||").ToList();
@@ -238,7 +246,7 @@ namespace ToNRoundCounter.Domain
             if (string.IsNullOrWhiteSpace(expr))
                 return false;
 
-            expr = expr.Trim();
+            expr = expr!.Trim();
             if (!expr.StartsWith("!")) return false;
             string candidate = expr.Substring(1).Trim();
             if (candidate.StartsWith("(") && MatchingParen(candidate) == candidate.Length - 1)
@@ -360,7 +368,8 @@ namespace ToNRoundCounter.Domain
         private static bool IsSimple(string? expr)
         {
             if (string.IsNullOrEmpty(expr)) return false;
-            return !(expr.Contains("&&") || expr.Contains("||") || expr.Contains("!") || expr.Contains("(") || expr.Contains(")"));
+            string nonNullExpr = expr!;
+            return !(nonNullExpr.Contains("&&") || nonNullExpr.Contains("||") || nonNullExpr.Contains("!") || nonNullExpr.Contains("(") || nonNullExpr.Contains(")"));
         }
 
         private static List<string> SplitEscaped(string line)
