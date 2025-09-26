@@ -1718,10 +1718,13 @@ namespace ToNRoundCounter.UI
         {
             autoSuicideRules = new List<AutoSuicideRule>();
             var lines = new List<string>();
-            foreach (var round in AllRoundTypes)
+            if (!_settings.AutoSuicideUseDetail)
             {
-                bool enabled = _settings.AutoSuicideRoundTypes.Contains(round);
-                lines.Add($"{round}::{(enabled ? 1 : 0)}");
+                foreach (var round in AllRoundTypes)
+                {
+                    bool enabled = _settings.AutoSuicideRoundTypes.Contains(round);
+                    lines.Add($"{round}::{(enabled ? 1 : 0)}");
+                }
             }
             if (_settings.AutoSuicideDetailCustom != null)
                 lines.AddRange(_settings.AutoSuicideDetailCustom);
