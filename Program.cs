@@ -33,15 +33,21 @@ namespace ToNRoundCounter
             }
             catch { }
 
-            var logPath = string.IsNullOrWhiteSpace(bootstrap.LogFilePath) ? "logs/log-.txt" : bootstrap.LogFilePath;
+            var useDefaultLogPath = string.IsNullOrWhiteSpace(bootstrap.LogFilePath);
+            var defaultLogPath = Path.Combine("logs", $"log-{DateTime.Now:yyyyMMdd_HHmmss}.txt");
+            var logPath = useDefaultLogPath ? defaultLogPath : bootstrap.LogFilePath!;
             var wsIp = string.IsNullOrWhiteSpace(bootstrap.WebSocketIp) ? "127.0.0.1" : bootstrap.WebSocketIp;
             var wsUrl = $"ws://{wsIp}:11398";
 
-            Log.Logger = new LoggerConfiguration()
+            var loggerConfiguration = new LoggerConfiguration()
                 .MinimumLevel.Debug()
-                .WriteTo.Console()
-                .WriteTo.File(logPath, rollingInterval: RollingInterval.Day)
-                .CreateLogger();
+                .WriteTo.Console();
+
+            loggerConfiguration = useDefaultLogPath
+                ? loggerConfiguration.WriteTo.File(logPath)
+                : loggerConfiguration.WriteTo.File(logPath, rollingInterval: RollingInterval.Day);
+
+            Log.Logger = loggerConfiguration.CreateLogger();
 
             var services = new ServiceCollection();
 
