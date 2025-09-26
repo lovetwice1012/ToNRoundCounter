@@ -18,7 +18,7 @@ namespace ToNRoundCounter.Application
         private readonly IAppSettings _settings;
         private readonly IEventLogger _logger;
         private readonly IHttpClient _httpClient;
-        private IMainView _view;
+        private IMainView? _view;
 
         public MainPresenter(StateService stateService, IAppSettings settings, IEventLogger logger, IHttpClient httpClient)
         {

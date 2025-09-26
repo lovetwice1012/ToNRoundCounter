@@ -46,7 +46,7 @@ namespace ToNRoundCounter.Application
     public record AutoSuicideTriggered();
     public record AutoLaunchEvaluating(IReadOnlyList<AutoLaunchPlan> Plans, IAppSettings Settings);
     public record AutoLaunchStarting(AutoLaunchPlan Plan);
-    public record AutoLaunchFailed(AutoLaunchPlan Plan, Exception Exception);
+    public record AutoLaunchFailed(AutoLaunchPlan Plan, Exception? Exception);
     public record AutoLaunchCompleted(AutoLaunchPlan Plan);
     public record MainWindowThemeChanged(string ThemeKey, ThemeDescriptor Theme, Form Form);
     public record MainWindowLayoutUpdated(Form Form);

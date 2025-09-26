@@ -44,7 +44,7 @@ namespace ToNRoundCounter.UI
             StopItemMusic();
         }
 
-        private void StartItemMusic(ItemMusicEntry entry)
+        private void StartItemMusic(ItemMusicEntry? entry)
         {
             if (!_settings.ItemMusicEnabled || entry == null || !entry.Enabled)
             {
@@ -83,7 +83,7 @@ namespace ToNRoundCounter.UI
             }
         }
 
-        private void EnsureItemMusicPlayer(ItemMusicEntry entry)
+        private void EnsureItemMusicPlayer(ItemMusicEntry? entry)
         {
             if (!_settings.ItemMusicEnabled || entry == null || !entry.Enabled)
             {
@@ -103,7 +103,7 @@ namespace ToNRoundCounter.UI
             }
         }
 
-        private void UpdateItemMusicPlayer(ItemMusicEntry entry = null)
+        private void UpdateItemMusicPlayer(ItemMusicEntry? entry = null)
         {
             try
             {

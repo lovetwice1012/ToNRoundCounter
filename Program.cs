@@ -140,7 +140,7 @@ namespace ToNRoundCounter
 
             if (!string.IsNullOrWhiteSpace(autoLaunchPath))
             {
-                launches.Add(new AutoLaunchPlan(autoLaunchPath, autoLaunchArguments ?? string.Empty, "command line"));
+                launches.Add(new AutoLaunchPlan(autoLaunchPath!, autoLaunchArguments ?? string.Empty, "command line"));
             }
             else if (appSettings.AutoLaunchEnabled)
             {
@@ -151,7 +151,7 @@ namespace ToNRoundCounter
                         continue;
                     }
 
-                    launches.Add(new AutoLaunchPlan(entry.ExecutablePath, entry.Arguments ?? string.Empty, "settings"));
+                    launches.Add(new AutoLaunchPlan(entry.ExecutablePath!, entry.Arguments ?? string.Empty, "settings"));
                 }
             }
 

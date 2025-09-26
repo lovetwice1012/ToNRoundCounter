@@ -16,13 +16,13 @@ namespace ToNRoundCounter.Infrastructure
     public class WebSocketClient : IWebSocketClient, IDisposable
     {
         private readonly Uri _uri;
-        private ClientWebSocket _socket;
-        private CancellationTokenSource _cts;
+        private ClientWebSocket? _socket;
+        private CancellationTokenSource? _cts;
         private readonly IEventBus _bus;
         private readonly ICancellationProvider _cancellation;
         private readonly IEventLogger _logger;
         private readonly Channel<string> _channel = Channel.CreateUnbounded<string>();
-        private Task _processingTask;
+        private Task? _processingTask;
         private int _connectionAttempts;
         private long _receivedMessages;
 
@@ -89,24 +89,29 @@ namespace ToNRoundCounter.Infrastructure
 
         private async Task ReceiveLoopAsync(CancellationToken token)
         {
+            var socket = _socket;
+            if (socket == null)
+            {
+                return;
+            }
             var buffer = new byte[8192];
             try
             {
-                while (_socket.State == WebSocketState.Open && !token.IsCancellationRequested)
+                while (socket.State == WebSocketState.Open && !token.IsCancellationRequested)
                 {
                     var segment = new ArraySegment<byte>(buffer);
-                    var result = await _socket.ReceiveAsync(segment, token);
+                    var result = await socket.ReceiveAsync(segment, token);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
                         _logger.LogEvent("WebSocket", $"Close message received: {result.CloseStatus} {result.CloseStatusDescription}");
-                        await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", token);
+                        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", token);
                         break;
                     }
                     var messageBytes = new List<byte>();
                     messageBytes.AddRange(buffer.Take(result.Count));
                     while (!result.EndOfMessage)
                     {
-                        result = await _socket.ReceiveAsync(segment, token);
+                        result = await socket.ReceiveAsync(segment, token);
                         messageBytes.AddRange(buffer.Take(result.Count));
                     }
                     var message = Encoding.UTF8.GetString(messageBytes.ToArray());

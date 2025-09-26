@@ -20,70 +20,70 @@ namespace ToNRoundCounter.UI
         private readonly IAppSettings _settings;
 
 
-        public NumericUpDown oscPortNumericUpDown { get; private set; }
-        public TextBox webSocketIpTextBox { get; private set; }
+        public NumericUpDown oscPortNumericUpDown { get; private set; } = null!;
+        public TextBox webSocketIpTextBox { get; private set; } = null!;
         // 統計情報表示・デバッグ情報チェック
-        public CheckBox ShowStatsCheckBox { get; private set; }
-        public CheckBox DebugInfoCheckBox { get; private set; }
+        public CheckBox ShowStatsCheckBox { get; private set; } = null!;
+        public CheckBox DebugInfoCheckBox { get; private set; } = null!;
 
         // フィルター項目（MAPは削除）
-        public CheckBox RoundTypeCheckBox { get; private set; }
-        public CheckBox TerrorCheckBox { get; private set; }
-        public CheckBox AppearanceCountCheckBox { get; private set; }
-        public CheckBox SurvivalCountCheckBox { get; private set; }
-        public CheckBox DeathCountCheckBox { get; private set; }
-        public CheckBox SurvivalRateCheckBox { get; private set; }
+        public CheckBox RoundTypeCheckBox { get; private set; } = null!;
+        public CheckBox TerrorCheckBox { get; private set; } = null!;
+        public CheckBox AppearanceCountCheckBox { get; private set; } = null!;
+        public CheckBox SurvivalCountCheckBox { get; private set; } = null!;
+        public CheckBox DeathCountCheckBox { get; private set; } = null!;
+        public CheckBox SurvivalRateCheckBox { get; private set; } = null!;
 
         // ラウンドログ表示切替チェックボックス
-        public CheckBox ToggleRoundLogCheckBox { get; private set; }
+        public CheckBox ToggleRoundLogCheckBox { get; private set; } = null!;
 
         // 追加設定項目
-        public Label FixedTerrorColorLabel { get; private set; }
-        public Button FixedTerrorColorButton { get; private set; }
-        public Label BackgroundColorLabel { get; private set; }
-        public Button BackgroundColorButton { get; private set; }
-        public Label RoundTypeStatsLabel { get; private set; }
-        public CheckedListBox RoundTypeStatsListBox { get; private set; }
+        public Label FixedTerrorColorLabel { get; private set; } = null!;
+        public Button FixedTerrorColorButton { get; private set; } = null!;
+        public Label BackgroundColorLabel { get; private set; } = null!;
+        public Button BackgroundColorButton { get; private set; } = null!;
+        public Label RoundTypeStatsLabel { get; private set; } = null!;
+        public CheckedListBox RoundTypeStatsListBox { get; private set; } = null!;
 
         // 個別背景色設定
-        public Label InfoPanelBgLabel { get; private set; }
-        public Button InfoPanelBgButton { get; private set; }
-        public Label StatsBgLabel { get; private set; }
-        public Button StatsBgButton { get; private set; }
-        public Label LogBgLabel { get; private set; }
-        public Button LogBgButton { get; private set; }
-        public CheckedListBox autoSuicideRoundListBox { get; internal set; }
-        public CheckBox autoSuicideCheckBox { get; internal set; }
-        public Label autoSuicideRoundLabel { get; private set; }
-        public CheckBox autoSuicideUseDetailCheckBox { get; private set; }
-        public Label autoSuicidePresetLabel { get; private set; }
-        public ComboBox autoSuicidePresetComboBox { get; private set; }
-        public Button autoSuicidePresetSaveButton { get; private set; }
-        public Button autoSuicidePresetLoadButton { get; private set; }
-        public Button autoSuicidePresetExportButton { get; private set; }
-        public Button autoSuicidePresetImportButton { get; private set; }
-        public TextBox autoSuicideDetailTextBox { get; private set; }
-        public CheckBox autoSuicideFuzzyCheckBox { get; private set; }
-        public Button autoSuicideSettingsConfirmButton { get; private set; }
-        public LinkLabel autoSuicideDetailDocLink { get; private set; }
+        public Label InfoPanelBgLabel { get; private set; } = null!;
+        public Button InfoPanelBgButton { get; private set; } = null!;
+        public Label StatsBgLabel { get; private set; } = null!;
+        public Button StatsBgButton { get; private set; } = null!;
+        public Label LogBgLabel { get; private set; } = null!;
+        public Button LogBgButton { get; private set; } = null!;
+        public CheckedListBox autoSuicideRoundListBox { get; internal set; } = null!;
+        public CheckBox autoSuicideCheckBox { get; internal set; } = null!;
+        public Label autoSuicideRoundLabel { get; private set; } = null!;
+        public CheckBox autoSuicideUseDetailCheckBox { get; private set; } = null!;
+        public Label autoSuicidePresetLabel { get; private set; } = null!;
+        public ComboBox autoSuicidePresetComboBox { get; private set; } = null!;
+        public Button autoSuicidePresetSaveButton { get; private set; } = null!;
+        public Button autoSuicidePresetLoadButton { get; private set; } = null!;
+        public Button autoSuicidePresetExportButton { get; private set; } = null!;
+        public Button autoSuicidePresetImportButton { get; private set; } = null!;
+        public TextBox autoSuicideDetailTextBox { get; private set; } = null!;
+        public CheckBox autoSuicideFuzzyCheckBox { get; private set; } = null!;
+        public Button autoSuicideSettingsConfirmButton { get; private set; } = null!;
+        public LinkLabel autoSuicideDetailDocLink { get; private set; } = null!;
         private int autoSuicideAutoRuleCount = 0;
 
-        public Label apiKeyLabel { get; private set; }
-        public TextBox apiKeyTextBox { get; private set; }
+        public Label apiKeyLabel { get; private set; } = null!;
+        public TextBox apiKeyTextBox { get; private set; } = null!;
 
-        public ComboBox ThemeComboBox { get; private set; }
-        public FlowLayoutPanel ModuleExtensionsPanel { get; private set; }
-        public CheckBox AutoLaunchEnabledCheckBox { get; private set; }
-        private DataGridView autoLaunchEntriesGrid;
-        private Button autoLaunchAddButton;
-        private Button autoLaunchRemoveButton;
-        private Button autoLaunchBrowseButton;
-        public CheckBox ItemMusicEnabledCheckBox { get; private set; }
-        private DataGridView itemMusicEntriesGrid;
-        private Button itemMusicAddButton;
-        private Button itemMusicRemoveButton;
-        private Button itemMusicBrowseButton;
-        public TextBox DiscordWebhookUrlTextBox { get; private set; }
+        public ComboBox ThemeComboBox { get; private set; } = null!;
+        public FlowLayoutPanel ModuleExtensionsPanel { get; private set; } = null!;
+        public CheckBox AutoLaunchEnabledCheckBox { get; private set; } = null!;
+        private DataGridView autoLaunchEntriesGrid = null!;
+        private Button autoLaunchAddButton = null!;
+        private Button autoLaunchRemoveButton = null!;
+        private Button autoLaunchBrowseButton = null!;
+        public CheckBox ItemMusicEnabledCheckBox { get; private set; } = null!;
+        private DataGridView itemMusicEntriesGrid = null!;
+        private Button itemMusicAddButton = null!;
+        private Button itemMusicRemoveButton = null!;
+        private Button itemMusicBrowseButton = null!;
+        public TextBox DiscordWebhookUrlTextBox { get; private set; } = null!;
 
         private const string AutoLaunchEnabledColumnName = "AutoLaunchEnabled";
         private const string AutoLaunchPathColumnName = "AutoLaunchPath";
@@ -1637,7 +1637,7 @@ namespace ToNRoundCounter.UI
             var unparsedLines = new List<string>();
             foreach (var line in lines)
             {
-                if (AutoSuicideRule.TryParse(line, out var r))
+                if (AutoSuicideRule.TryParse(line, out var r) && r != null)
                 {
                     rules.Add(r);
                 }
@@ -1724,7 +1724,7 @@ namespace ToNRoundCounter.UI
             }
         }
 
-        private void AutoSuicideUseDetailCheckBox_CheckedChanged(object sender, EventArgs e)
+        private void AutoSuicideUseDetailCheckBox_CheckedChanged(object? sender, EventArgs e)
         {
             // Use the sender if available, otherwise fall back to the field. This
             // avoids a potential NullReferenceException when the handler is
@@ -1765,7 +1765,7 @@ namespace ToNRoundCounter.UI
             }
         }
 
-        private void AutoSuicideCheckBox_CheckedChanged(object sender, EventArgs e)
+        private void AutoSuicideCheckBox_CheckedChanged(object? sender, EventArgs e)
         {
             bool enabled = autoSuicideCheckBox.Checked;
             autoSuicideUseDetailCheckBox.Visible = enabled;

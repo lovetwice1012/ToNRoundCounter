@@ -843,7 +843,7 @@ namespace ToNRoundCounter.Infrastructure
         private void HandleWebSocketMessageReceived(WebSocketMessageReceived message)
         {
             LogHostEvent(nameof(HandleWebSocketMessageReceived), $"Message received ({message.Message?.Length ?? 0} chars).");
-            var context = new ModuleWebSocketMessageContext(message.Message, _serviceProvider);
+            var context = new ModuleWebSocketMessageContext(message.Message!, _serviceProvider);
             WebSocketMessageReceived?.Invoke(this, context);
             foreach (var module in _modules)
             {

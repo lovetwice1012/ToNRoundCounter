@@ -14,7 +14,7 @@ namespace ToNRoundCounter.UI
 {
     public partial class MainForm
     {
-        private ClientWebSocket instanceWsConnection = null;
+        private ClientWebSocket? instanceWsConnection;
         private static readonly SemaphoreSlim sendAlertSemaphore = new SemaphoreSlim(1, 1);
         private int connected = 0;
         private bool followAutoSelfKill = false;

@@ -10,9 +10,10 @@ namespace ToNRoundCounter.Tests
         {
             var ok = AutoSuicideRule.TryParse("A:B:1", out var rule);
             Assert.True(ok);
-            Assert.Equal("A", rule.Round);
-            Assert.Equal("B", rule.Terror);
-            Assert.Equal(1, rule.Value);
+            var parsedRule = Assert.NotNull(rule);
+            Assert.Equal("A", parsedRule.Round);
+            Assert.Equal("B", parsedRule.Terror);
+            Assert.Equal(1, parsedRule.Value);
         }
 
         [Fact]
@@ -20,9 +21,10 @@ namespace ToNRoundCounter.Tests
         {
             var ok = AutoSuicideRule.TryParse("1", out var rule);
             Assert.True(ok);
-            Assert.Null(rule.RoundExpression);
-            Assert.Null(rule.TerrorExpression);
-            Assert.Equal(1, rule.Value);
+            var parsedRule = Assert.NotNull(rule);
+            Assert.Null(parsedRule.RoundExpression);
+            Assert.Null(parsedRule.TerrorExpression);
+            Assert.Equal(1, parsedRule.Value);
         }
 
         [Fact]
@@ -44,9 +46,10 @@ namespace ToNRoundCounter.Tests
         {
             var ok = AutoSuicideRule.TryParse("!(A||B)::1", out var rule);
             Assert.True(ok);
-            Assert.True(rule.Matches("C", null, (a, b) => a == b));
-            Assert.False(rule.Matches("A", null, (a, b) => a == b));
-            Assert.False(rule.Matches("B", null, (a, b) => a == b));
+            var parsedRule = Assert.NotNull(rule);
+            Assert.True(parsedRule.Matches("C", null, (a, b) => a == b));
+            Assert.False(parsedRule.Matches("A", null, (a, b) => a == b));
+            Assert.False(parsedRule.Matches("B", null, (a, b) => a == b));
         }
 
         [Fact]
@@ -54,8 +57,9 @@ namespace ToNRoundCounter.Tests
         {
             var ok = AutoSuicideRule.TryParse("!(A||B)&&C::1", out var rule);
             Assert.True(ok);
-            Assert.True(rule.Matches("C", null, (a, b) => a == b));
-            Assert.False(rule.Matches("A", null, (a, b) => a == b));
+            var parsedRule = Assert.NotNull(rule);
+            Assert.True(parsedRule.Matches("C", null, (a, b) => a == b));
+            Assert.False(parsedRule.Matches("A", null, (a, b) => a == b));
         }
 
         [Fact]
@@ -63,7 +67,8 @@ namespace ToNRoundCounter.Tests
         {
             var ok = AutoSuicideRule.TryParse("!(A||B)::1", out var rule);
             Assert.True(ok);
-            var rounds = rule.GetRoundTerms();
+            var parsedRule = Assert.NotNull(rule);
+            var rounds = parsedRule.GetRoundTerms();
             Assert.NotNull(rounds);
             Assert.Equal(new[] { "A", "B" }, rounds);
         }
@@ -73,7 +78,8 @@ namespace ToNRoundCounter.Tests
         {
             var ok = AutoSuicideRule.TryParse(":!(X||Y):2", out var rule);
             Assert.True(ok);
-            var terrors = rule.GetTerrorTerms();
+            var parsedRule = Assert.NotNull(rule);
+            var terrors = parsedRule.GetTerrorTerms();
             Assert.NotNull(terrors);
             Assert.Equal(new[] { "X", "Y" }, terrors);
         }
@@ -83,9 +89,10 @@ namespace ToNRoundCounter.Tests
         {
             var ok = AutoSuicideRule.TryParse("!((A&&B)||(!C&&D))::1", out var rule);
             Assert.True(ok);
-            Assert.True(rule.RoundNegate);
-            Assert.Equal("((A&&B)||(!C&&D))", rule.RoundExpression);
-            Assert.False(rule.Matches("D", null, (a, b) => a == b));
+            var parsedRule = Assert.NotNull(rule);
+            Assert.True(parsedRule.RoundNegate);
+            Assert.Equal("((A&&B)||(!C&&D))", parsedRule.RoundExpression);
+            Assert.False(parsedRule.Matches("D", null, (a, b) => a == b));
         }
 
         [Fact]
@@ -93,7 +100,8 @@ namespace ToNRoundCounter.Tests
         {
             var ok = AutoSuicideRule.TryParse("!(!(A||B)&&C)::1", out var rule);
             Assert.True(ok);
-            Assert.False(rule.Matches("C", null, (a, b) => a == b));
+            var parsedRule = Assert.NotNull(rule);
+            Assert.False(parsedRule.Matches("C", null, (a, b) => a == b));
         }
 
         [Fact]
@@ -101,16 +109,18 @@ namespace ToNRoundCounter.Tests
         {
             var ok = AutoSuicideRule.TryParse(@"A\:B:C\:D:1", out var rule);
             Assert.True(ok);
-            Assert.Equal("A:B", rule.Round);
-            Assert.Equal("C:D", rule.Terror);
-            Assert.Equal(1, rule.Value);
+            var parsedRule = Assert.NotNull(rule);
+            Assert.Equal("A:B", parsedRule.Round);
+            Assert.Equal("C:D", parsedRule.Terror);
+            Assert.Equal(1, parsedRule.Value);
         }
 
         [Fact]
         public void ToString_PreservesEscapes()
         {
             AutoSuicideRule.TryParse(@"A\:B:C\\D:1", out var rule);
-            Assert.Equal(@"A\:B:C\\D:1", rule.ToString());
+            var parsedRule = Assert.NotNull(rule);
+            Assert.Equal(@"A\:B:C\\D:1", parsedRule.ToString());
         }
 
         [Fact]
@@ -143,8 +153,11 @@ namespace ToNRoundCounter.Tests
             AutoSuicideRule.TryParse("A::1", out var broad);
             AutoSuicideRule.TryParse("A:B:0", out var specific);
 
-            Assert.True(broad.Covers(specific));
-            Assert.False(specific.Covers(broad));
+            var broadRule = Assert.NotNull(broad);
+            var specificRule = Assert.NotNull(specific);
+
+            Assert.True(broadRule.Covers(specificRule));
+            Assert.False(specificRule.Covers(broadRule));
         }
     }
 }

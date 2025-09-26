@@ -28,27 +28,27 @@ namespace ToNRoundCounter.UI
     public partial class MainForm : Form, IMainView
     {
         // 上部固定UI
-        private Label lblStatus;           // WebSocket接続状況
-        private Label lblOSCStatus;        // OSC通信接続状況
-        private Button btnToggleTopMost;   // 画面最前面固定ボタン
-        private Button btnSettings;        // 設定変更ボタン
-        private MenuStrip mainMenuStrip;
-        private ToolStripMenuItem windowsMenuItem;
+        private Label lblStatus = null!;           // WebSocket接続状況
+        private Label lblOSCStatus = null!;        // OSC通信接続状況
+        private Button btnToggleTopMost = null!;   // 画面最前面固定ボタン
+        private Button btnSettings = null!;        // 設定変更ボタン
+        private MenuStrip mainMenuStrip = null!;
+        private ToolStripMenuItem windowsMenuItem = null!;
 
         // デバッグ情報用ラベル
-        private Label lblDebugInfo;
+        private Label lblDebugInfo = null!;
 
         // 情報表示パネル
-        public InfoPanel InfoPanel { get; private set; }
-        private TerrorInfoPanel terrorInfoPanel;
-        private JObject terrorInfoData;
+        public InfoPanel InfoPanel { get; private set; } = null!;
+        private TerrorInfoPanel terrorInfoPanel = null!;
+        private JObject? terrorInfoData;
 
         // 統計情報表示およびラウンドログ表示は SplitContainer で実装（縦に並べる）
-        private SplitContainer splitContainerMain;
-        private Label lblStatsTitle;
-        private Label lblRoundLogTitle;
-        private RichTextBox rtbStatsDisplay;  // 統計情報表示欄
-        public LogPanel logPanel;             // ラウンドログパネル
+        private SplitContainer splitContainerMain = null!;
+        private Label lblStatsTitle = null!;
+        private Label lblRoundLogTitle = null!;
+        private RichTextBox rtbStatsDisplay = null!;  // 統計情報表示欄
+        public LogPanel logPanel = null!;             // ラウンドログパネル
 
         // その他のフィールド
         private readonly ICancellationProvider _cancellation;
@@ -65,15 +65,15 @@ namespace ToNRoundCounter.UI
         private readonly IReadOnlyList<IOscRepeaterPolicy> _oscRepeaterPolicies;
         private readonly ModuleHost _moduleHost;
 
-        private Action<WebSocketConnected> _wsConnectedHandler;
-        private Action<WebSocketDisconnected> _wsDisconnectedHandler;
-        private Action<OscConnected> _oscConnectedHandler;
-        private Action<OscDisconnected> _oscDisconnectedHandler;
-        private Action<WebSocketMessageReceived> _wsMessageHandler;
-        private Action<OscMessageReceived> _oscMessageHandler;
-        private Action<SettingsValidationFailed> _settingsValidationFailedHandler;
+        private Action<WebSocketConnected>? _wsConnectedHandler;
+        private Action<WebSocketDisconnected>? _wsDisconnectedHandler;
+        private Action<OscConnected>? _oscConnectedHandler;
+        private Action<OscDisconnected>? _oscDisconnectedHandler;
+        private Action<WebSocketMessageReceived>? _wsMessageHandler;
+        private Action<OscMessageReceived>? _oscMessageHandler;
+        private Action<SettingsValidationFailed>? _settingsValidationFailedHandler;
 
-        private Dictionary<string, Color> terrorColors;
+        private Dictionary<string, Color> terrorColors = new();
         private bool lastOptedIn = true;
 
         // 次ラウンド予測用：stateService.RoundCycle==0 → 通常ラウンド, ==1 → 「通常ラウンド or 特殊ラウンド」, >=2 → 特殊ラウンド
@@ -86,7 +86,7 @@ namespace ToNRoundCounter.UI
             "クラシック", "走れ！", "オルタネイト", "パニッシュ", "狂気", "サボタージュ", "霧", "ブラッドバス", "ダブルトラブル", "EX", "ミッドナイト", "ゴースト", "8ページ", "アンバウンド", "寒い夜", "ミスティックムーン", "ブラッドムーン", "トワイライト", "ソルスティス"
         };
 
-        private Process oscRepeaterProcess = null;
+        private Process? oscRepeaterProcess;
 
         private bool isNotifyActivated = false;
 
@@ -102,12 +102,12 @@ namespace ToNRoundCounter.UI
 
         private readonly AutoSuicideService autoSuicideService;
 
-        private MediaPlayer itemMusicPlayer;
+        private MediaPlayer? itemMusicPlayer;
         private bool itemMusicLoopRequested;
         private bool itemMusicActive;
         private DateTime itemMusicMatchStart = DateTime.MinValue;
         private string lastLoadedItemMusicPath = string.Empty;
-        private ItemMusicEntry activeItemMusicEntry;
+        private ItemMusicEntry? activeItemMusicEntry;
         private string currentTerrorBaseText = string.Empty;
         private bool terrorCountdownActive;
         private DateTime terrorCountdownStart = DateTime.MinValue;
@@ -157,6 +157,12 @@ namespace ToNRoundCounter.UI
             _moduleHost.NotifyMainWindowThemeChanged(new ModuleMainWindowThemeContext(this, _settings.ThemeKey, Theme.CurrentDescriptor, _moduleHost.CurrentServiceProvider));
             LoadAutoSuicideRules();
             InitializeComponents();
+            if (lblStatus == null || lblOSCStatus == null || btnToggleTopMost == null || btnSettings == null ||
+                mainMenuStrip == null || windowsMenuItem == null || InfoPanel == null || terrorInfoPanel == null ||
+                splitContainerMain == null || rtbStatsDisplay == null || logPanel == null)
+            {
+                throw new InvalidOperationException("Main form controls failed to initialize.");
+            }
             _moduleHost.NotifyMainWindowMenuBuilding(new ModuleMainWindowMenuContext(this, mainMenuStrip, _moduleHost.CurrentServiceProvider));
             BuildAuxiliaryWindowsMenu();
             _moduleHost.NotifyMainWindowUiComposed(new ModuleMainWindowUiContext(this, this.Controls, mainMenuStrip, _moduleHost.CurrentServiceProvider));
@@ -382,7 +388,7 @@ namespace ToNRoundCounter.UI
             LogUi("Theme applied to main form components.", LogEventLevel.Debug);
         }
 
-        private void MainForm_Resize(object sender, EventArgs e)
+        private void MainForm_Resize(object? sender, EventArgs? e)
         {
             LogUi($"Main form resized to {this.ClientSize.Width}x{this.ClientSize.Height}.", LogEventLevel.Debug);
             int margin = 10;
@@ -900,7 +906,7 @@ namespace ToNRoundCounter.UI
                         stateService.CurrentRound.RoundColor = displayColorInt;
                     }
 
-                    List<(string name, int count)> terrors = null;
+                    List<(string name, int count)>? terrors = null;
                     var namesArray = json.Value<JArray>("Names");
                     if (namesArray != null && namesArray.Count > 0)
                     {
@@ -1195,11 +1201,11 @@ namespace ToNRoundCounter.UI
         {
             if (stateService.CurrentRound != null)
             {
-                string roundType = stateService.CurrentRound.RoundType;
+                string roundType = stateService.CurrentRound.RoundType ?? string.Empty;
                 stateService.SetRoundMapName(roundType, stateService.CurrentRound.MapName ?? "");
                 if (!string.IsNullOrEmpty(stateService.CurrentRound.TerrorKey))
                 {
-                    string terrorKey = stateService.CurrentRound.TerrorKey;
+                    string terrorKey = stateService.CurrentRound.TerrorKey!;
                     bool survived = lastOptedIn && !stateService.CurrentRound.IsDeath;
                     stateService.RecordRoundResult(roundType, terrorKey, survived);
                     stateService.SetTerrorMapName(roundType, terrorKey, stateService.CurrentRound.MapName ?? "");
@@ -1209,12 +1215,12 @@ namespace ToNRoundCounter.UI
                     stateService.RecordRoundResult(roundType, null, !stateService.CurrentRound.IsDeath);
                 }
                 if (!string.IsNullOrEmpty(stateService.CurrentRound.MapName))
-                    stateService.SetRoundMapName(stateService.CurrentRound.RoundType, stateService.CurrentRound.MapName);
+                    stateService.SetRoundMapName(stateService.CurrentRound.RoundType ?? string.Empty, stateService.CurrentRound.MapName);
 
                 // 次ラウンド予測ロジック
                 var normalTypes = new[] { "クラシック", "Classic", "RUN", "走れ！" };
                 var overrideTypes = new HashSet<string> { "アンバウンド", "8ページ", "ゴースト", "オルタネイト" };
-                string current = stateService.CurrentRound.RoundType;
+                string current = stateService.CurrentRound.RoundType ?? string.Empty;
 
                 if (normalTypes.Any(type => current.Contains(type)))
                 {
@@ -1615,7 +1621,7 @@ namespace ToNRoundCounter.UI
             }
         }
 
-        private void UpdateTerrorInfoPanel(List<string> names)
+        private void UpdateTerrorInfoPanel(List<string>? names)
         {
             if (terrorInfoPanel == null)
                 return;
@@ -1671,10 +1677,10 @@ namespace ToNRoundCounter.UI
                     });
                 }
 
-                if (stateService.CurrentRound != null)
-                {
-                    string checkType = stateService.CurrentRound.RoundType;
-                    string terror = stateService.CurrentRound.TerrorKey;
+                    if (stateService.CurrentRound != null)
+                    {
+                        string checkType = stateService.CurrentRound.RoundType ?? string.Empty;
+                        string? terror = stateService.CurrentRound.TerrorKey;
                     if (checkType == "ブラッドバス" && !string.IsNullOrEmpty(terror) && terror.Contains("LVL 3"))
                     {
                         checkType = "EX";
@@ -1732,7 +1738,7 @@ namespace ToNRoundCounter.UI
             var temp = new List<AutoSuicideRule>();
             foreach (var line in lines)
             {
-                if (AutoSuicideRule.TryParse(line, out var r))
+                if (AutoSuicideRule.TryParse(line, out var r) && r != null)
                     temp.Add(r);
             }
             var cleaned = new List<AutoSuicideRule>();
@@ -1748,7 +1754,7 @@ namespace ToNRoundCounter.UI
             _moduleHost.NotifyAutoSuicideRulesPrepared(new ModuleAutoSuicideRuleContext(autoSuicideRules, _settings, _moduleHost.CurrentServiceProvider));
         }
 
-        private int ShouldAutoSuicide(string roundType, string terrorName, out bool hasPendingDelayed)
+        private int ShouldAutoSuicide(string roundType, string? terrorName, out bool hasPendingDelayed)
         {
             hasPendingDelayed = false;
             if (!_settings.AutoSuicideEnabled) return 0;
@@ -1784,7 +1790,7 @@ namespace ToNRoundCounter.UI
             return decisionContext.Decision;
         }
 
-        private int ShouldAutoSuicide(string roundType, string terrorName)
+        private int ShouldAutoSuicide(string roundType, string? terrorName)
         {
             return ShouldAutoSuicide(roundType, terrorName, out _);
         }
@@ -1905,7 +1911,7 @@ namespace ToNRoundCounter.UI
             }
         }
 
-        private void UpdateTerrorDisplay(string displayName, Color color, List<(string name, int count)> terrors)
+        private void UpdateTerrorDisplay(string displayName, Color color, List<(string name, int count)>? terrors)
         {
             string roundType = stateService.CurrentRound?.RoundType;
 
