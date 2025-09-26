@@ -36,9 +36,24 @@ namespace ToNRoundCounter.Application
 
         public void AppendRoundLog(Round round, string status)
         {
+            string? mapName = round.MapName;
+            if (string.IsNullOrWhiteSpace(mapName) && !string.IsNullOrWhiteSpace(round.RoundType))
+            {
+                var mapNames = _stateService.GetRoundMapNames();
+                if (mapNames.TryGetValue(round.RoundType!, out var storedMap) && !string.IsNullOrWhiteSpace(storedMap))
+                {
+                    mapName = storedMap;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(mapName) && mapName != round.MapName)
+            {
+                round.MapName = mapName;
+            }
+
             string items = round.ItemNames.Count > 0 ? string.Join("、", round.ItemNames) : "アイテム未使用";
             string logEntry = string.Format("ラウンドタイプ: {0}, テラー: {1}, MAP: {2}, アイテム: {3}, ダメージ: {4}, 生死: {5}",
-                round.RoundType, round.TerrorKey, round.MapName, items, round.Damage, status);
+                round.RoundType, round.TerrorKey, mapName, items, round.Damage, status);
             _stateService.AddRoundLog(round, logEntry);
             _view?.UpdateRoundLog(_stateService.GetRoundLogHistory().Select(e => e.Item2));
             _logger.LogEvent("MainPresenter", $"Round log appended: {round.RoundType} ({status}).");
