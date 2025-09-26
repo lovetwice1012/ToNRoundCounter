@@ -12,6 +12,7 @@ namespace ToNRoundCounter.Application
         private readonly object _lock = new object();
         private CancellationTokenSource _tokenSource;
         private readonly IEventBus? _bus;
+        private readonly IEventLogger? _logger;
         private DateTime? _scheduledAtUtc;
         private TimeSpan _scheduledDelay;
         public DateTime RoundStartTime { get; private set; }
@@ -21,8 +22,14 @@ namespace ToNRoundCounter.Application
         }
 
         public AutoSuicideService(IEventBus bus)
+            : this(bus, null)
+        {
+        }
+
+        public AutoSuicideService(IEventBus bus, IEventLogger? logger)
         {
             _bus = bus;
+            _logger = logger;
         }
 
         public bool HasScheduled
@@ -52,6 +59,7 @@ namespace ToNRoundCounter.Application
                 _scheduledAtUtc = DateTime.UtcNow;
                 _scheduledDelay = delay;
             }
+            _logger?.LogEvent("AutoSuicideService", $"Scheduled action in {delay} (resetStartTime: {resetStartTime}).");
             oldCts?.Cancel();
             oldCts?.Dispose();
 
@@ -62,12 +70,15 @@ namespace ToNRoundCounter.Application
                     await Task.Delay(delay, cts.Token);
                     if (!cts.IsCancellationRequested)
                     {
+                        _logger?.LogEvent("AutoSuicideService", "Delay elapsed. Triggering auto suicide action.");
                         _bus?.Publish(new AutoSuicideTriggered());
                         action();
+                        _logger?.LogEvent("AutoSuicideService", "Auto suicide action executed.");
                     }
                 }
                 catch (TaskCanceledException)
                 {
+                    _logger?.LogEvent("AutoSuicideService", "Scheduled auto suicide cancelled before execution.");
                 }
                 finally
                 {
@@ -80,11 +91,13 @@ namespace ToNRoundCounter.Application
                             _scheduledDelay = TimeSpan.Zero;
                         }
                     }
+                    _logger?.LogEvent("AutoSuicideService", "Schedule cleanup complete.");
                     cts.Dispose();
                 }
             });
 
             _bus?.Publish(new AutoSuicideScheduled(delay, resetStartTime));
+            _logger?.LogEvent("AutoSuicideService", "Auto suicide scheduled event published.");
         }
 
         public void Cancel()
@@ -110,6 +123,7 @@ namespace ToNRoundCounter.Application
             cts?.Cancel();
             cts?.Dispose();
             _bus?.Publish(new AutoSuicideCancelled(remainingDelay));
+            _logger?.LogEvent("AutoSuicideService", $"Auto suicide cancelled. Remaining delay: {remainingDelay?.ToString() ?? "<none>"}.");
         }
     }
 }

@@ -48,6 +48,11 @@ namespace ToNRoundCounter.Infrastructure
             bus.Subscribe<UnhandledExceptionOccurred>(HandleUnhandledException);
         }
 
+        private void LogHostEvent(string action, string detail)
+        {
+            _logger.LogEvent("ModuleHost", $"{action}: {detail}");
+        }
+
         /// <summary>
         /// Occurs when module discovery begins.
         /// </summary>
@@ -282,6 +287,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyDiscoveryStarted(string directory)
         {
+            LogHostEvent(nameof(NotifyDiscoveryStarted), $"Scanning directory '{directory}' for modules.");
             DiscoveryStarted?.Invoke(this, directory);
             _bus.Publish(new ModuleDiscoveryStarted(directory));
         }
@@ -290,6 +296,7 @@ namespace ToNRoundCounter.Infrastructure
         {
             var snapshot = _modules.ConvertAll(m => m.Discovery);
             var readOnly = snapshot.AsReadOnly();
+            LogHostEvent(nameof(NotifyDiscoveryCompleted), $"Discovered {snapshot.Count} module(s).");
             DiscoveryCompleted?.Invoke(this, readOnly);
             _bus.Publish(new ModuleDiscoveryCompleted(readOnly));
         }
@@ -298,6 +305,7 @@ namespace ToNRoundCounter.Infrastructure
         {
             var loaded = new LoadedModule(module, discovery);
             _modules.Add(loaded);
+            LogHostEvent(nameof(RegisterModule), $"Registering module '{discovery.ModuleName}'.");
 
             ModuleDiscovered?.Invoke(this, discovery);
             _bus.Publish(new ModuleDiscovered(discovery));
@@ -339,10 +347,12 @@ namespace ToNRoundCounter.Infrastructure
 
             AfterServiceRegistration?.Invoke(this, registrationContext);
             _bus.Publish(new ModuleServicesRegistered(registrationContext));
+            LogHostEvent(nameof(RegisterModule), $"Service registration completed for '{discovery.ModuleName}'.");
         }
 
         public void NotifyServiceProviderBuilding(ModuleServiceProviderBuildContext context)
         {
+            LogHostEvent(nameof(NotifyServiceProviderBuilding), "Dispatching service provider building notifications.");
             ServiceProviderBuilding?.Invoke(this, context);
             _bus.Publish(new ServiceProviderBuilding(context));
             foreach (var module in _modules)
@@ -357,6 +367,7 @@ namespace ToNRoundCounter.Infrastructure
         public void NotifyServiceProviderBuilt(ModuleServiceProviderContext context)
         {
             _serviceProvider = context.ServiceProvider;
+            LogHostEvent(nameof(NotifyServiceProviderBuilt), "Service provider available to modules.");
             ServiceProviderBuilt?.Invoke(this, context);
             _bus.Publish(new ServiceProviderBuilt(context));
             foreach (var module in _modules)
@@ -370,6 +381,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyMainWindowCreating(ModuleMainWindowCreationContext context)
         {
+            LogHostEvent(nameof(NotifyMainWindowCreating), $"Creating main window '{context.MainWindowType.FullName}'.");
             MainWindowCreating?.Invoke(this, context);
             _bus.Publish(new MainWindowCreating(context));
             foreach (var module in _modules)
@@ -383,6 +395,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyMainWindowCreated(ModuleMainWindowContext context)
         {
+            LogHostEvent(nameof(NotifyMainWindowCreated), $"Main window '{context.MainWindow.GetType().FullName}' created.");
             MainWindowCreated?.Invoke(this, context);
             _bus.Publish(new MainWindowCreated(context));
             foreach (var module in _modules)
@@ -396,6 +409,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyMainWindowShown(ModuleMainWindowLifecycleContext context)
         {
+            LogHostEvent(nameof(NotifyMainWindowShown), "Main window shown for the first time.");
             MainWindowShown?.Invoke(this, context);
             _bus.Publish(new MainWindowShown(context));
             foreach (var module in _modules)
@@ -409,6 +423,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyMainWindowClosing(ModuleMainWindowLifecycleContext context)
         {
+            LogHostEvent(nameof(NotifyMainWindowClosing), "Main window closing sequence started.");
             MainWindowClosing?.Invoke(this, context);
             _bus.Publish(new MainWindowClosing(context));
             foreach (var module in _modules)
@@ -422,6 +437,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyAppRunStarting(ModuleAppRunContext context)
         {
+            LogHostEvent(nameof(NotifyAppRunStarting), "Application run starting.");
             AppRunStarting?.Invoke(this, context);
             _bus.Publish(new AppRunStarting(context));
             foreach (var module in _modules)
@@ -435,6 +451,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyAppRunCompleted(ModuleAppRunContext context)
         {
+            LogHostEvent(nameof(NotifyAppRunCompleted), "Application run completed.");
             AppRunCompleted?.Invoke(this, context);
             _bus.Publish(new AppRunCompleted(context));
             foreach (var module in _modules)
@@ -448,6 +465,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyAppShutdownStarting(ModuleAppShutdownContext context)
         {
+            LogHostEvent(nameof(NotifyAppShutdownStarting), "Shutdown sequence beginning.");
             AppShutdownStarting?.Invoke(this, context);
             _bus.Publish(new AppShutdownStarting(context));
             foreach (var module in _modules)
@@ -461,6 +479,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyAppShutdownCompleted(ModuleAppShutdownContext context)
         {
+            LogHostEvent(nameof(NotifyAppShutdownCompleted), "Shutdown sequence completed.");
             AppShutdownCompleted?.Invoke(this, context);
             _bus.Publish(new AppShutdownCompleted(context));
             foreach (var module in _modules)
@@ -476,6 +495,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyAutoSuicideRulesPrepared(ModuleAutoSuicideRuleContext context)
         {
+            LogHostEvent(nameof(NotifyAutoSuicideRulesPrepared), $"Coordinating {context.Rules.Count} auto-suicide rule(s).");
             AutoSuicideRulesPrepared?.Invoke(this, context);
             foreach (var module in _modules)
             {
@@ -487,6 +507,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyAutoSuicideDecisionEvaluated(ModuleAutoSuicideDecisionContext context)
         {
+            LogHostEvent(nameof(NotifyAutoSuicideDecisionEvaluated), $"Decision evaluated for round '{context.RoundType}' (pending delayed: {context.HasPendingDelayed}).");
             AutoSuicideDecisionEvaluated?.Invoke(this, context);
             foreach (var module in _modules)
             {
@@ -498,6 +519,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyAutoLaunchEvaluating(ModuleAutoLaunchEvaluationContext context)
         {
+            LogHostEvent(nameof(NotifyAutoLaunchEvaluating), $"Evaluating {context.Plans.Count} auto-launch plan(s).");
             AutoLaunchEvaluating?.Invoke(this, context);
             foreach (var module in _modules)
             {
@@ -509,6 +531,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyAutoLaunchStarting(ModuleAutoLaunchExecutionContext context)
         {
+            LogHostEvent(nameof(NotifyAutoLaunchStarting), $"Launching '{context.Plan.Path}' with arguments '{context.Plan.Arguments}'.");
             AutoLaunchStarting?.Invoke(this, context);
             foreach (var module in _modules)
             {
@@ -520,6 +543,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyAutoLaunchFailed(ModuleAutoLaunchFailureContext context)
         {
+            LogHostEvent(nameof(NotifyAutoLaunchFailed), $"Launch failed for '{context.Plan.Path}': {context.Exception?.Message ?? "<none>"}.");
             AutoLaunchFailed?.Invoke(this, context);
             foreach (var module in _modules)
             {
@@ -531,6 +555,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyAutoLaunchCompleted(ModuleAutoLaunchExecutionContext context)
         {
+            LogHostEvent(nameof(NotifyAutoLaunchCompleted), $"Launch completed for '{context.Plan.Path}'.");
             AutoLaunchCompleted?.Invoke(this, context);
             foreach (var module in _modules)
             {
@@ -542,6 +567,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyThemeCatalogBuilding(ModuleThemeCatalogContext context)
         {
+            LogHostEvent(nameof(NotifyThemeCatalogBuilding), "Building theme catalog.");
             ThemeCatalogBuilding?.Invoke(this, context);
             foreach (var module in _modules)
             {
@@ -551,6 +577,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyMainWindowMenuBuilding(ModuleMainWindowMenuContext context)
         {
+            LogHostEvent(nameof(NotifyMainWindowMenuBuilding), "Building main window menu.");
             MainWindowMenuBuilding?.Invoke(this, context);
             foreach (var module in _modules)
             {
@@ -560,6 +587,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyMainWindowUiComposed(ModuleMainWindowUiContext context)
         {
+            LogHostEvent(nameof(NotifyMainWindowUiComposed), "Main window UI composed.");
             MainWindowUiComposed?.Invoke(this, context);
             foreach (var module in _modules)
             {
@@ -569,6 +597,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyMainWindowThemeChanged(ModuleMainWindowThemeContext context)
         {
+            LogHostEvent(nameof(NotifyMainWindowThemeChanged), $"Theme changed to '{context.ThemeKey}'.");
             MainWindowThemeChanged?.Invoke(this, context);
             foreach (var module in _modules)
             {
@@ -580,6 +609,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyMainWindowLayoutUpdated(ModuleMainWindowLayoutContext context)
         {
+            LogHostEvent(nameof(NotifyMainWindowLayoutUpdated), "Layout updated.");
             MainWindowLayoutUpdated?.Invoke(this, context);
             foreach (var module in _modules)
             {
@@ -591,6 +621,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifySettingsViewBuilding(ModuleSettingsViewBuildContext context)
         {
+            LogHostEvent(nameof(NotifySettingsViewBuilding), "Building settings view.");
             SettingsViewBuilding?.Invoke(this, context);
             foreach (var module in _modules)
             {
@@ -600,6 +631,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifySettingsViewOpened(ModuleSettingsViewLifecycleContext context)
         {
+            LogHostEvent(nameof(NotifySettingsViewOpened), "Settings view opened.");
             SettingsViewOpened?.Invoke(this, context);
             foreach (var module in _modules)
             {
@@ -609,6 +641,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifySettingsViewApplying(ModuleSettingsViewLifecycleContext context)
         {
+            LogHostEvent(nameof(NotifySettingsViewApplying), "Applying settings from view.");
             SettingsViewApplying?.Invoke(this, context);
             foreach (var module in _modules)
             {
@@ -618,6 +651,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifySettingsViewClosing(ModuleSettingsViewLifecycleContext context)
         {
+            LogHostEvent(nameof(NotifySettingsViewClosing), "Settings view closing.");
             SettingsViewClosing?.Invoke(this, context);
             foreach (var module in _modules)
             {
@@ -627,6 +661,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifySettingsViewClosed(ModuleSettingsViewLifecycleContext context)
         {
+            LogHostEvent(nameof(NotifySettingsViewClosed), "Settings view closed.");
             SettingsViewClosed?.Invoke(this, context);
             foreach (var module in _modules)
             {
@@ -638,6 +673,7 @@ namespace ToNRoundCounter.Infrastructure
         {
             var snapshot = new List<AuxiliaryWindowDescriptor>(_auxiliaryWindows.Values).AsReadOnly();
             var context = new ModuleAuxiliaryWindowCatalogContext(snapshot, RegisterAuxiliaryWindow, _serviceProvider);
+            LogHostEvent(nameof(NotifyAuxiliaryWindowCatalogBuilding), $"Catalog contains {snapshot.Count} auxiliary window(s).");
             AuxiliaryWindowCatalogBuilding?.Invoke(this, context);
             foreach (var module in _modules)
             {
@@ -651,11 +687,13 @@ namespace ToNRoundCounter.Infrastructure
         {
             if (string.IsNullOrWhiteSpace(id))
             {
+                LogHostEvent(nameof(ShowAuxiliaryWindow), "Requested window id was null or whitespace.");
                 return null;
             }
 
             if (!_auxiliaryWindows.TryGetValue(id, out var descriptor))
             {
+                LogHostEvent(nameof(ShowAuxiliaryWindow), $"Requested auxiliary window '{id}' is not registered.");
                 return null;
             }
 
@@ -671,6 +709,7 @@ namespace ToNRoundCounter.Infrastructure
 
                     existing.BringToFront();
                     existing.Activate();
+                    LogHostEvent(nameof(ShowAuxiliaryWindow), $"Activated existing instance of '{descriptor.Id}'.");
                     return existing;
                 }
             }
@@ -678,6 +717,7 @@ namespace ToNRoundCounter.Infrastructure
             Form window;
             try
             {
+                LogHostEvent(nameof(ShowAuxiliaryWindow), $"Creating auxiliary window '{descriptor.Id}'.");
                 window = descriptor.Factory(_serviceProvider);
             }
             catch (Exception ex)
@@ -688,6 +728,7 @@ namespace ToNRoundCounter.Infrastructure
 
             if (window == null)
             {
+                LogHostEvent(nameof(ShowAuxiliaryWindow), $"Factory for auxiliary window '{descriptor.Id}' returned null.");
                 return null;
             }
 
@@ -698,6 +739,7 @@ namespace ToNRoundCounter.Infrastructure
             }
 
             instances.Add(window);
+            LogHostEvent(nameof(ShowAuxiliaryWindow), $"Tracking new instance of '{descriptor.Id}'. Active count: {instances.Count}.");
 
             var openingContext = new ModuleAuxiliaryWindowLifecycleContext(descriptor, window, ModuleAuxiliaryWindowStage.Opening, _serviceProvider);
             NotifyAuxiliaryWindowLifecycle(openingContext, AuxiliaryWindowOpening, static (m, ctx) => m.OnAuxiliaryWindowOpening(ctx), nameof(IModule.OnAuxiliaryWindowOpening));
@@ -721,6 +763,9 @@ namespace ToNRoundCounter.Infrastructure
                     active.Remove(window);
                 }
 
+                var remaining = _activeAuxiliaryWindows.TryGetValue(descriptor.Id, out var activeList) ? activeList.Count : 0;
+                LogHostEvent(nameof(ShowAuxiliaryWindow), $"Window '{descriptor.Id}' closed. Remaining active instances: {remaining}.");
+
                 var closedContext = new ModuleAuxiliaryWindowLifecycleContext(descriptor, window, ModuleAuxiliaryWindowStage.Closed, _serviceProvider);
                 NotifyAuxiliaryWindowLifecycle(closedContext, AuxiliaryWindowClosed, static (m, ctx) => m.OnAuxiliaryWindowClosed(ctx), nameof(IModule.OnAuxiliaryWindowClosed));
             };
@@ -734,15 +779,18 @@ namespace ToNRoundCounter.Infrastructure
             {
                 window.StartPosition = FormStartPosition.CenterParent;
                 window.ShowDialog(owner);
+                LogHostEvent(nameof(ShowAuxiliaryWindow), $"Displayed modal window '{descriptor.Id}' with owner '{owner?.Name}'.");
             }
             else if (descriptor.ShowModal)
             {
                 window.StartPosition = FormStartPosition.CenterScreen;
                 window.ShowDialog();
+                LogHostEvent(nameof(ShowAuxiliaryWindow), $"Displayed modal window '{descriptor.Id}' without owner.");
             }
             else
             {
                 window.Show(owner);
+                LogHostEvent(nameof(ShowAuxiliaryWindow), $"Displayed modeless window '{descriptor.Id}'.");
             }
 
             return window;
@@ -750,6 +798,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleWebSocketConnecting(WebSocketConnecting message)
         {
+            LogHostEvent(nameof(HandleWebSocketConnecting), $"Connecting to {message.Endpoint}.");
             var context = new ModuleWebSocketConnectionContext(message.Endpoint, ModuleWebSocketConnectionPhase.Connecting, _serviceProvider);
             WebSocketConnecting?.Invoke(this, context);
             foreach (var module in _modules)
@@ -760,6 +809,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleWebSocketConnected(WebSocketConnected message)
         {
+            LogHostEvent(nameof(HandleWebSocketConnected), $"Connected to {message.Endpoint}.");
             var context = new ModuleWebSocketConnectionContext(message.Endpoint, ModuleWebSocketConnectionPhase.Connected, _serviceProvider);
             WebSocketConnected?.Invoke(this, context);
             foreach (var module in _modules)
@@ -770,6 +820,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleWebSocketDisconnected(WebSocketDisconnected message)
         {
+            LogHostEvent(nameof(HandleWebSocketDisconnected), $"Disconnected from {message.Endpoint}. Exception: {message.Exception?.Message ?? "<none>"}.");
             var context = new ModuleWebSocketConnectionContext(message.Endpoint, ModuleWebSocketConnectionPhase.Disconnected, _serviceProvider, message.Exception);
             WebSocketDisconnected?.Invoke(this, context);
             foreach (var module in _modules)
@@ -780,6 +831,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleWebSocketReconnecting(WebSocketReconnecting message)
         {
+            LogHostEvent(nameof(HandleWebSocketReconnecting), $"Reconnecting to {message.Endpoint}. Exception: {message.Exception?.Message ?? "<none>"}.");
             var context = new ModuleWebSocketConnectionContext(message.Endpoint, ModuleWebSocketConnectionPhase.Reconnecting, _serviceProvider, message.Exception);
             WebSocketReconnecting?.Invoke(this, context);
             foreach (var module in _modules)
@@ -790,6 +842,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleWebSocketMessageReceived(WebSocketMessageReceived message)
         {
+            LogHostEvent(nameof(HandleWebSocketMessageReceived), $"Message received ({message.Message?.Length ?? 0} chars).");
             var context = new ModuleWebSocketMessageContext(message.Message, _serviceProvider);
             WebSocketMessageReceived?.Invoke(this, context);
             foreach (var module in _modules)
@@ -800,6 +853,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleOscConnecting(OscConnecting message)
         {
+            LogHostEvent(nameof(HandleOscConnecting), $"Connecting OSC on port {message.Port}.");
             var context = new ModuleOscConnectionContext(message.Port, ModuleOscConnectionPhase.Connecting, _serviceProvider);
             OscConnecting?.Invoke(this, context);
             foreach (var module in _modules)
@@ -810,6 +864,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleOscConnected(OscConnected message)
         {
+            LogHostEvent(nameof(HandleOscConnected), $"OSC connected on port {message.Port}.");
             var context = new ModuleOscConnectionContext(message.Port, ModuleOscConnectionPhase.Connected, _serviceProvider);
             OscConnected?.Invoke(this, context);
             foreach (var module in _modules)
@@ -820,6 +875,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleOscDisconnected(OscDisconnected message)
         {
+            LogHostEvent(nameof(HandleOscDisconnected), $"OSC disconnected on port {message.Port}. Exception: {message.Exception?.Message ?? "<none>"}.");
             var context = new ModuleOscConnectionContext(message.Port, ModuleOscConnectionPhase.Disconnected, _serviceProvider, message.Exception);
             OscDisconnected?.Invoke(this, context);
             foreach (var module in _modules)
@@ -830,6 +886,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleOscMessageReceived(OscMessageReceived message)
         {
+            LogHostEvent(nameof(HandleOscMessageReceived), $"OSC message received: {message.Message.Address}.");
             var context = new ModuleOscMessageContext(message.Message, _serviceProvider);
             OscMessageReceived?.Invoke(this, context);
             foreach (var module in _modules)
@@ -840,6 +897,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleSettingsValidating(SettingsValidating message)
         {
+            LogHostEvent(nameof(HandleSettingsValidating), "Settings validating notification received.");
             var context = new ModuleSettingsValidationContext(message.Settings, message.Errors, ModuleSettingsValidationStage.Validating, _serviceProvider);
             SettingsValidating?.Invoke(this, context);
             foreach (var module in _modules)
@@ -850,6 +908,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleSettingsValidated(SettingsValidated message)
         {
+            LogHostEvent(nameof(HandleSettingsValidated), "Settings validated successfully.");
             var context = new ModuleSettingsValidationContext(message.Settings, new List<string>(), ModuleSettingsValidationStage.Validated, _serviceProvider);
             SettingsValidated?.Invoke(this, context);
             foreach (var module in _modules)
@@ -860,6 +919,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleSettingsValidationFailed(SettingsValidationFailed message)
         {
+            LogHostEvent(nameof(HandleSettingsValidationFailed), $"Settings validation failed with {message.Errors.Count} error(s).");
             var context = new ModuleSettingsValidationContext(message.Settings, new List<string>(message.Errors), ModuleSettingsValidationStage.Failed, _serviceProvider);
             SettingsValidationFailed?.Invoke(this, context);
             foreach (var module in _modules)
@@ -870,6 +930,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleSettingsLoading(SettingsLoading message)
         {
+            LogHostEvent(nameof(HandleSettingsLoading), "Settings loading initiated.");
             if (_serviceProvider == null)
             {
                 return;
@@ -888,6 +949,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleSettingsLoaded(SettingsLoaded message)
         {
+            LogHostEvent(nameof(HandleSettingsLoaded), "Settings loaded notification received.");
             if (_serviceProvider == null)
             {
                 return;
@@ -906,6 +968,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleSettingsSaving(SettingsSaving message)
         {
+            LogHostEvent(nameof(HandleSettingsSaving), "Settings saving initiated.");
             if (_serviceProvider == null)
             {
                 return;
@@ -924,6 +987,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleSettingsSaved(SettingsSaved message)
         {
+            LogHostEvent(nameof(HandleSettingsSaved), "Settings saved notification received.");
             if (_serviceProvider == null)
             {
                 return;
@@ -942,6 +1006,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleAutoSuicideScheduled(AutoSuicideScheduled message)
         {
+            LogHostEvent(nameof(HandleAutoSuicideScheduled), $"Auto suicide scheduled. Delay: {message.Delay}.");
             var context = new ModuleAutoSuicideScheduleContext(message.Delay, message.ResetStartTime, _serviceProvider);
             AutoSuicideScheduled?.Invoke(this, context);
             foreach (var module in _modules)
@@ -952,6 +1017,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleAutoSuicideCancelled(AutoSuicideCancelled message)
         {
+            LogHostEvent(nameof(HandleAutoSuicideCancelled), $"Auto suicide cancelled. Remaining delay: {message.RemainingDelay?.ToString() ?? "<none>"}.");
             var context = new ModuleAutoSuicideScheduleContext(message.RemainingDelay ?? TimeSpan.Zero, resetStartTime: false, _serviceProvider);
             AutoSuicideCancelled?.Invoke(this, context);
             foreach (var module in _modules)
@@ -962,6 +1028,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleAutoSuicideTriggered(AutoSuicideTriggered message)
         {
+            LogHostEvent(nameof(HandleAutoSuicideTriggered), "Auto suicide triggered.");
             var context = new ModuleAutoSuicideTriggerContext(_serviceProvider);
             AutoSuicideTriggered?.Invoke(this, context);
             foreach (var module in _modules)
@@ -972,6 +1039,7 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleUnhandledException(UnhandledExceptionOccurred message)
         {
+            LogHostEvent(nameof(HandleUnhandledException), $"Unhandled exception observed. Terminating: {message.IsTerminating}.");
             var context = new ModuleExceptionContext(message.Exception, message.IsTerminating, _serviceProvider);
             UnhandledExceptionObserved?.Invoke(this, context);
             foreach (var module in _modules)
@@ -1038,10 +1106,12 @@ namespace ToNRoundCounter.Infrastructure
             }
 
             _auxiliaryWindows[descriptor.Id] = descriptor;
+            LogHostEvent(nameof(RegisterAuxiliaryWindow), $"Registered auxiliary window '{descriptor.Id}'.");
         }
 
         private void NotifyAuxiliaryWindowLifecycle(ModuleAuxiliaryWindowLifecycleContext context, EventHandler<ModuleAuxiliaryWindowLifecycleContext>? handler, Action<IModule, ModuleAuxiliaryWindowLifecycleContext> action, string stage)
         {
+            LogHostEvent(nameof(NotifyAuxiliaryWindowLifecycle), $"{context.Descriptor.Id} - {context.Stage}.");
             handler?.Invoke(this, context);
             foreach (var module in _modules)
             {

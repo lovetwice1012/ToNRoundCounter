@@ -70,6 +70,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void Load()
         {
+            _logger.LogEvent("AppSettings", $"Loading settings from {Path.GetFullPath(settingsFile)}.");
             _bus.Publish(new SettingsLoading(this));
             bool success = false;
             var validationErrors = new List<string>();
@@ -77,6 +78,7 @@ namespace ToNRoundCounter.Infrastructure
             {
                 if (File.Exists(settingsFile))
                 {
+                    _logger.LogEvent("AppSettings", "Settings file found. Reading contents.");
                     var json = File.ReadAllText(settingsFile);
                     try
                     {
@@ -97,7 +99,12 @@ namespace ToNRoundCounter.Infrastructure
 
                     JsonConvert.PopulateObject(json, this);
                 }
+                else
+                {
+                    _logger.LogEvent("AppSettings", "Settings file not found. Using defaults.", Serilog.Events.LogEventLevel.Warning);
+                }
                 ThemeKey = NormalizeThemeKey(ThemeKey);
+                _logger.LogEvent("AppSettings", $"Theme normalized to '{ThemeKey}'.");
                 _bus.Publish(new SettingsValidating(this, validationErrors));
                 var errors = Validate();
                 validationErrors.AddRange(errors);
@@ -123,6 +130,7 @@ namespace ToNRoundCounter.Infrastructure
                 LastSaveCode ??= string.Empty;
                 NormalizeAutoLaunchEntries();
                 NormalizeItemMusicEntries();
+                _logger.LogEvent("AppSettings", "Normalization of complex settings completed.");
                 success = true;
             }
             catch (Exception ex)
@@ -268,6 +276,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public async Task SaveAsync()
         {
+            _logger.LogEvent("AppSettings", $"Saving settings to {Path.GetFullPath(settingsFile)}.");
             _bus.Publish(new SettingsSaving(this));
             NormalizeAutoLaunchEntries();
             NormalizeItemMusicEntries();
@@ -311,6 +320,7 @@ namespace ToNRoundCounter.Infrastructure
             bool success = false;
             try
             {
+                _logger.LogEvent("AppSettings", "Writing serialized settings to disk.");
                 using (var writer = new StreamWriter(settingsFile, false))
                 {
                     await writer.WriteAsync(json).ConfigureAwait(false);
@@ -326,6 +336,7 @@ namespace ToNRoundCounter.Infrastructure
             {
                 if (success)
                 {
+                    _logger.LogEvent("AppSettings", "Settings saved successfully.");
                     _bus.Publish(new SettingsSaved(this));
                 }
             }

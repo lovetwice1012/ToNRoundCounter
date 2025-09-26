@@ -46,7 +46,11 @@ namespace ToNRoundCounter
             var services = new ServiceCollection();
 
             var eventLogger = new EventLogger();
-            var eventBus = new EventBus();
+            eventLogger.LogEvent("Bootstrap", $"Application starting. Args: {(args.Length == 0 ? "<none>" : string.Join(" ", args))}");
+            eventLogger.LogEvent("Bootstrap", $"Resolved log path: {Path.GetFullPath(logPath)}");
+            eventLogger.LogEvent("Bootstrap", $"Resolved WebSocket endpoint: {wsUrl}");
+
+            var eventBus = new EventBus(eventLogger);
             var moduleHost = new ModuleHost(eventLogger, eventBus);
 
             services.AddSingleton<ICancellationProvider, CancellationProvider>();
@@ -55,7 +59,7 @@ namespace ToNRoundCounter
             services.AddSingleton(moduleHost);
             services.AddSingleton<IOSCListener>(sp => new OSCListener(sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ICancellationProvider>(), sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<IWebSocketClient>(sp => new WebSocketClient(wsUrl, sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ICancellationProvider>(), sp.GetRequiredService<IEventLogger>()));
-            services.AddSingleton(sp => new AutoSuicideService(sp.GetRequiredService<IEventBus>()));
+            services.AddSingleton(sp => new AutoSuicideService(sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<StateService>();
             services.AddSingleton<IAppSettings>(sp => new AppSettings(sp.GetRequiredService<IEventLogger>(), sp.GetRequiredService<IEventBus>()));
             services.AddSingleton<IInputSender, NativeInputSender>();
@@ -68,6 +72,7 @@ namespace ToNRoundCounter
                 sp.GetRequiredService<IEventLogger>(),
                 sp.GetRequiredService<IHttpClient>()));
             ModuleLoader.LoadModules(services, moduleHost, eventLogger, eventBus);
+            eventLogger.LogEvent("Bootstrap", $"Module discovery complete. Discovered modules: {moduleHost.Modules.Count}");
             services.AddSingleton<MainForm>(sp => new MainForm(
                 sp.GetRequiredService<IWebSocketClient>(),
                 sp.GetRequiredService<IOSCListener>(),
@@ -83,11 +88,14 @@ namespace ToNRoundCounter
                 sp.GetServices<IAfkWarningHandler>(),
                 sp.GetRequiredService<ModuleHost>()));
 
+            eventLogger.LogEvent("Bootstrap", "Building service provider (pre-build notifications).");
             moduleHost.NotifyServiceProviderBuilding(new ModuleServiceProviderBuildContext(services, eventLogger, eventBus));
 
             var provider = services.BuildServiceProvider();
+            eventLogger.LogEvent("Bootstrap", "Service provider built successfully.");
             moduleHost.NotifyServiceProviderBuilt(new ModuleServiceProviderContext(provider, eventLogger, eventBus));
             provider.GetRequiredService<IErrorReporter>().Register();
+            eventLogger.LogEvent("Bootstrap", "Core services registered and error reporter attached.");
 
             moduleHost.NotifyMainWindowCreating(new ModuleMainWindowCreationContext(provider, typeof(MainForm)));
             var mainForm = provider.GetRequiredService<MainForm>();
@@ -95,6 +103,7 @@ namespace ToNRoundCounter
             mainForm.Shown += (s, e) => moduleHost.NotifyMainWindowShown(new ModuleMainWindowLifecycleContext(mainForm, provider));
             mainForm.FormClosing += (s, e) => moduleHost.NotifyMainWindowClosing(new ModuleMainWindowLifecycleContext(mainForm, provider));
             ((WinFormsDispatcher)provider.GetRequiredService<IUiDispatcher>()).SetMainForm(mainForm);
+            eventLogger.LogEvent("Bootstrap", "Main window constructed and lifecycle hooks registered.");
 
             var appSettings = provider.GetRequiredService<IAppSettings>();
 
@@ -198,11 +207,15 @@ namespace ToNRoundCounter
             }
 
             moduleHost.NotifyAppRunStarting(new ModuleAppRunContext(mainForm, provider));
+            eventLogger.LogEvent("Bootstrap", "Starting WinForms message loop.");
             WinFormsApp.Run(mainForm);
+            eventLogger.LogEvent("Bootstrap", "WinForms message loop exited.");
             moduleHost.NotifyAppRunCompleted(new ModuleAppRunContext(mainForm, provider));
             moduleHost.NotifyAppShutdownStarting(new ModuleAppShutdownContext(provider));
+            eventLogger.LogEvent("Bootstrap", "Disposing service provider and shutting down.");
             (provider as IDisposable)?.Dispose();
             moduleHost.NotifyAppShutdownCompleted(new ModuleAppShutdownContext(provider));
+            eventLogger.LogEvent("Bootstrap", "Application shutdown complete.");
         }
     }
 }

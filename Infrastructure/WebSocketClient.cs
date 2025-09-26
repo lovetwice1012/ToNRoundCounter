@@ -23,6 +23,8 @@ namespace ToNRoundCounter.Infrastructure
         private readonly IEventLogger _logger;
         private readonly Channel<string> _channel = Channel.CreateUnbounded<string>();
         private Task _processingTask;
+        private int _connectionAttempts;
+        private long _receivedMessages;
 
         public WebSocketClient(string url, IEventBus bus, ICancellationProvider cancellation, IEventLogger logger)
         {
@@ -34,6 +36,9 @@ namespace ToNRoundCounter.Infrastructure
 
         public async Task StartAsync()
         {
+            _logger.LogEvent("WebSocket", $"Starting client for {_uri}.");
+            _connectionAttempts = 0;
+            _receivedMessages = 0;
             _cts?.Dispose();
             var cts = CancellationTokenSource.CreateLinkedTokenSource(_cancellation.Token);
             _cts = cts;
@@ -45,11 +50,15 @@ namespace ToNRoundCounter.Infrastructure
                     _socket = new ClientWebSocket();
                     try
                     {
+                        _connectionAttempts++;
+                        _logger.LogEvent("WebSocket", $"Attempt {_connectionAttempts}: connecting to {_uri}.");
                         _bus.Publish(new WebSocketConnecting(_uri));
                         await _socket.ConnectAsync(_uri, token);
+                        _logger.LogEvent("WebSocket", "Connection established.");
                         _bus.Publish(new WebSocketConnected(_uri));
                         _processingTask ??= Task.Run(() => ProcessMessagesAsync(token), token);
                         await ReceiveLoopAsync(token);
+                        _logger.LogEvent("WebSocket", "Receive loop completed.");
                         _bus.Publish(new WebSocketDisconnected(_uri));
                     }
                     catch (Exception ex)
@@ -59,17 +68,20 @@ namespace ToNRoundCounter.Infrastructure
                         if (!token.IsCancellationRequested)
                         {
                             _bus.Publish(new WebSocketReconnecting(_uri, ex));
+                            _logger.LogEvent("WebSocket", "Scheduling reconnect in 300ms.");
                             await Task.Delay(300, token);
                         }
                     }
                     finally
                     {
+                        _logger.LogEvent("WebSocket", "Disposing socket instance.");
                         _socket?.Dispose();
                     }
                 }
             }
             finally
             {
+                _logger.LogEvent("WebSocket", "StartAsync exiting and disposing cancellation token source.");
                 cts.Dispose();
                 _cts = null;
             }
@@ -86,6 +98,7 @@ namespace ToNRoundCounter.Infrastructure
                     var result = await _socket.ReceiveAsync(segment, token);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
+                        _logger.LogEvent("WebSocket", $"Close message received: {result.CloseStatus} {result.CloseStatusDescription}");
                         await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", token);
                         break;
                     }
@@ -98,6 +111,8 @@ namespace ToNRoundCounter.Infrastructure
                     }
                     var message = Encoding.UTF8.GetString(messageBytes.ToArray());
                     await _channel.Writer.WriteAsync(message, token);
+                    _receivedMessages++;
+                    _logger.LogEvent("WebSocket", $"Received message #{_receivedMessages}: {Truncate(message, 200)}");
                 }
             }
             catch (Exception ex)
@@ -110,18 +125,26 @@ namespace ToNRoundCounter.Infrastructure
         {
             try
             {
+                long dispatched = 0;
                 await foreach (var msg in _channel.Reader.ReadAllAsync(token))
                 {
                     _bus.Publish(new WebSocketMessageReceived(msg));
+                    dispatched++;
+                    _logger.LogEvent("WebSocket", $"Dispatched message #{dispatched} to event bus.");
                 }
             }
             catch (OperationCanceledException) { }
+            finally
+            {
+                _logger.LogEvent("WebSocket", "ProcessMessagesAsync completed.");
+            }
         }
 
         public async Task StopAsync()
         {
             try
             {
+                _logger.LogEvent("WebSocket", "StopAsync invoked.");
                 _cts?.Cancel();
                 if (_processingTask != null)
                 {
@@ -134,6 +157,7 @@ namespace ToNRoundCounter.Infrastructure
             }
             finally
             {
+                _logger.LogEvent("WebSocket", "StopAsync cleaning up resources.");
                 _cts?.Dispose();
                 _cts = null;
                 _socket?.Dispose();
@@ -142,7 +166,18 @@ namespace ToNRoundCounter.Infrastructure
 
         public void Dispose()
         {
+            _logger.LogEvent("WebSocket", "Dispose called.");
             _ = StopAsync();
+        }
+
+        private static string Truncate(string value, int maxLength)
+        {
+            if (string.IsNullOrEmpty(value) || value.Length <= maxLength)
+            {
+                return value;
+            }
+
+            return value.Substring(0, maxLength) + "…";
         }
     }
 }
