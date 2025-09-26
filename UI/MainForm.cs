@@ -241,6 +241,7 @@ namespace ToNRoundCounter.UI
             int margin = 10;
             int currentY = mainMenuStrip.Bottom + margin;
             int contentWidth = this.ClientSize.Width - 2 * margin;
+            bool useCustomPanelColors = string.Equals(_settings.ThemeKey, Theme.DefaultThemeKey, StringComparison.OrdinalIgnoreCase);
 
             // WebSocket接続状況
             lblStatus = new Label();
@@ -291,7 +292,7 @@ namespace ToNRoundCounter.UI
 
             // 情報表示パネル
             InfoPanel = new InfoPanel();
-            InfoPanel.BackColor = _settings.BackgroundColor_InfoPanel;
+            InfoPanel.BackColor = useCustomPanelColors ? _settings.BackgroundColor_InfoPanel : Theme.Current.PanelBackground;
             InfoPanel.Location = new Point(margin, currentY);
             InfoPanel.Width = contentWidth;
             this.Controls.Add(InfoPanel);

@@ -59,7 +59,8 @@ namespace ToNRoundCounter.UI
                 itemMusicLoopRequested = true;
                 itemMusicActive = true;
                 PlayFromStart(itemMusicPlayer);
-                LogUi($"Item music started for '{entry.DisplayName}'.");
+                var displayName = string.IsNullOrWhiteSpace(entry.ItemName) ? "Unknown Item" : entry.ItemName;
+                LogUi($"Item music started for '{displayName}'.");
             }
         }
 
