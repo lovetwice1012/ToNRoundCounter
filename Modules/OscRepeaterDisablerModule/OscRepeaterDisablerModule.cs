@@ -1,5 +1,7 @@
+using System;
 using System.Windows.Forms;
 using Microsoft.Extensions.DependencyInjection;
+using Serilog.Events;
 using ToNRoundCounter.Application;
 
 namespace ToNRoundCounter.Modules.OscRepeaterDisabler
@@ -338,8 +340,44 @@ namespace ToNRoundCounter.Modules.OscRepeaterDisabler
                 settings.OSCPort = 9001;
             }
 
-            _logger.LogEvent("OscRepeaterDisabler", "Preventing OSC repeater startup.");
+            _logger.TryLogEvent("OscRepeaterDisabler", "Preventing OSC repeater startup.");
             return false;
+        }
+    }
+
+    internal static class EventLoggerCompatibilityExtensions
+    {
+        private static readonly Type[] SignatureWithLevel =
+        {
+            typeof(string),
+            typeof(string),
+            typeof(LogEventLevel)
+        };
+
+        private static readonly Type[] SignatureWithoutLevel =
+        {
+            typeof(string),
+            typeof(string)
+        };
+
+        public static void TryLogEvent(this IEventLogger? logger, string eventType, string message, LogEventLevel level = LogEventLevel.Information)
+        {
+            if (logger == null)
+            {
+                return;
+            }
+
+            var loggerType = logger.GetType();
+
+            var withLevel = loggerType.GetMethod(nameof(IEventLogger.LogEvent), SignatureWithLevel);
+            if (withLevel != null)
+            {
+                withLevel.Invoke(logger, new object[] { eventType, message, level });
+                return;
+            }
+
+            var withoutLevel = loggerType.GetMethod(nameof(IEventLogger.LogEvent), SignatureWithoutLevel);
+            withoutLevel?.Invoke(logger, new object[] { eventType, message });
         }
     }
 }
