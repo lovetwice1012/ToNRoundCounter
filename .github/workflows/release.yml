@@ -28,6 +28,26 @@ jobs:
         run: |
           Expand-Archive -Path share_assets.zip -DestinationPath share_assets
           Copy-Item -Path share_assets/share_assets/* -Destination .\bin\x64\Release\ -Recurse -Force
+      - name: Collect modules
+        run: |
+          $modulePackagePath = Join-Path $PWD "ModulesPackage"
+          if (Test-Path $modulePackagePath) {
+            Remove-Item -Path $modulePackagePath -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $modulePackagePath | Out-Null
+          Get-ChildItem -Path .\Modules -Filter *.csproj -Recurse | ForEach-Object {
+            $projectDirectory = $_.DirectoryName
+            $moduleName = $_.BaseName
+            $moduleOutput = Get-ChildItem -Path (Join-Path $projectDirectory 'bin') -Recurse -Filter "$moduleName.dll" |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1
+            if ($moduleOutput) {
+              $outputDirectory = $moduleOutput.Directory.FullName
+              $destination = Join-Path $modulePackagePath $moduleName
+              New-Item -ItemType Directory -Path $destination | Out-Null
+              Copy-Item -Path (Join-Path $outputDirectory '*') -Destination $destination -Recurse -Force
+            }
+          }
       - name: Package
         run: Compress-Archive -Path .\bin\x64\Release\* -DestinationPath ToNRoundCounter_latest.zip
       - name: Extract version
@@ -44,6 +64,8 @@ jobs:
         with:
           tag_name: ${{ steps.get_version.outputs.version }}
           name: ${{ steps.get_version.outputs.version }}
-          files: ToNRoundCounter_latest.zip
+          files: |
+            ToNRoundCounter_latest.zip
+            ModulesPackage/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
