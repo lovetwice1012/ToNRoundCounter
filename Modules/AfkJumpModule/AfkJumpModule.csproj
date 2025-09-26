@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\ToNRoundCounter.csproj" />
+    <Reference Include="System.Windows.Forms" />
     <Reference Include="Rug.Osc">
       <HintPath>..\..\packages\Rug.Osc.1.2.5\lib\Rug.Osc.dll</HintPath>
       <Private>true</Private>

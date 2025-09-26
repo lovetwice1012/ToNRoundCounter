@@ -46,14 +46,14 @@ namespace ToNRoundCounter.Domain
             if (!string.IsNullOrEmpty(roundExpr))
             {
                 roundNeg = StripNegation(ref roundExpr);
-                if (!ValidateExpression(roundExpr)) return false;
+                if (!string.IsNullOrEmpty(roundExpr) && !ValidateExpression(roundExpr)) return false;
             }
 
             bool terrorNeg = false;
             if (!string.IsNullOrEmpty(terrorExpr))
             {
                 terrorNeg = StripNegation(ref terrorExpr);
-                if (!ValidateExpression(terrorExpr)) return false;
+                if (!string.IsNullOrEmpty(terrorExpr) && !ValidateExpression(terrorExpr)) return false;
             }
 
             rule = new AutoSuicideRule
@@ -110,7 +110,7 @@ namespace ToNRoundCounter.Domain
             if (!string.IsNullOrEmpty(roundExpr))
             {
                 roundNeg = StripNegation(ref roundExpr);
-                if (!ValidateExpression(roundExpr))
+                if (!string.IsNullOrEmpty(roundExpr) && !ValidateExpression(roundExpr))
                 {
                     error = "括弧の不整合や演算子の誤用";
                     return false;
@@ -121,7 +121,7 @@ namespace ToNRoundCounter.Domain
             if (!string.IsNullOrEmpty(terrorExpr))
             {
                 terrorNeg = StripNegation(ref terrorExpr);
-                if (!ValidateExpression(terrorExpr))
+                if (!string.IsNullOrEmpty(terrorExpr) && !ValidateExpression(terrorExpr))
                 {
                     error = "括弧の不整合や演算子の誤用";
                     return false;
@@ -166,20 +166,18 @@ namespace ToNRoundCounter.Domain
             Func<string, string, bool> comparer = (a, b) => a == b;
 
             var roundTerms = other.GetRoundTerms();
-            if (roundTerms == null || roundTerms.Count == 0)
-                roundTerms = new List<string> { null };
-            else if (other.RoundNegate)
-                roundTerms.Add(null);
+            var roundCandidates = roundTerms?.Select(r => (string?)r).ToList() ?? new List<string?> { null };
+            if (other.RoundNegate && !roundCandidates.Contains(null))
+                roundCandidates.Add(null);
 
             var terrorTerms = other.GetTerrorTerms();
-            if (terrorTerms == null || terrorTerms.Count == 0)
-                terrorTerms = new List<string> { null };
-            else if (other.TerrorNegate)
-                terrorTerms.Add(null);
+            var terrorCandidates = terrorTerms?.Select(t => (string?)t).ToList() ?? new List<string?> { null };
+            if (other.TerrorNegate && !terrorCandidates.Contains(null))
+                terrorCandidates.Add(null);
 
-            foreach (var round in roundTerms)
+            foreach (var round in roundCandidates)
             {
-                foreach (var terror in terrorTerms)
+                foreach (var terror in terrorCandidates)
                 {
                     bool thisMatches = Matches(round, terror, comparer);
                     bool otherMatches = other.Matches(round, terror, comparer);
