@@ -27,6 +27,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void Register()
         {
+            _logger.LogEvent("ErrorReporter", "Registering global exception handlers.");
             WinFormsApp.ThreadException += (s, e) => Handle(e.Exception, false);
             AppDomain.CurrentDomain.UnhandledException += (s, e) =>
             {
@@ -35,11 +36,13 @@ namespace ToNRoundCounter.Infrastructure
                     Handle(exception, e.IsTerminating);
                 }
             };
+            _logger.LogEvent("ErrorReporter", "Global exception handlers registered.");
         }
 
         public void Handle(Exception ex, bool isTerminating = false)
         {
             if (ex == null) return;
+            _logger.LogEvent("ErrorReporter", $"Handling exception (terminating: {isTerminating}).");
             _logger.LogEvent("Unhandled", ex.ToString(), Serilog.Events.LogEventLevel.Error);
             _bus.Publish(new UnhandledExceptionOccurred(ex, isTerminating));
             try
@@ -183,6 +186,7 @@ namespace ToNRoundCounter.Infrastructure
             {
                 // ignore UI errors
             }
+            _logger.LogEvent("ErrorReporter", "Exception handling completed.");
         }
 
         private static string FormatBytes(ulong bytes)
