@@ -46,7 +46,7 @@ namespace ToNRoundCounter.UI
             }
         }
 
-        public void UpdateInfo(List<string> names, JObject data, int width)
+        public void UpdateInfo(List<string> names, JObject? data, int width)
         {
             flow.Controls.Clear();
             this.Width = width;
@@ -94,7 +94,7 @@ namespace ToNRoundCounter.UI
 
         }
 
-        private Control CreateCell(string name, JArray infoArray)
+        private Control CreateCell(string name, JArray? infoArray)
         {
             var cell = new TableLayoutPanel();
             cell.AutoSize = true;

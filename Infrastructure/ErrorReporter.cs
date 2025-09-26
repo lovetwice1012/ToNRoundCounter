@@ -17,22 +17,34 @@ namespace ToNRoundCounter.Infrastructure
     public class ErrorReporter : IErrorReporter
     {
         private readonly IEventLogger _logger;
+        private readonly IEventBus _bus;
 
-        public ErrorReporter(IEventLogger logger)
+        public ErrorReporter(IEventLogger logger, IEventBus bus)
         {
             _logger = logger;
+            _bus = bus;
         }
 
         public void Register()
         {
-            WinFormsApp.ThreadException += (s, e) => Handle(e.Exception);
-            AppDomain.CurrentDomain.UnhandledException += (s, e) => Handle(e.ExceptionObject as Exception);
+            _logger.LogEvent("ErrorReporter", "Registering global exception handlers.");
+            WinFormsApp.ThreadException += (s, e) => Handle(e.Exception, false);
+            AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+            {
+                if (e.ExceptionObject is Exception exception)
+                {
+                    Handle(exception, e.IsTerminating);
+                }
+            };
+            _logger.LogEvent("ErrorReporter", "Global exception handlers registered.");
         }
 
-        public void Handle(Exception ex)
+        public void Handle(Exception ex, bool isTerminating = false)
         {
             if (ex == null) return;
+            _logger.LogEvent("ErrorReporter", $"Handling exception (terminating: {isTerminating}).");
             _logger.LogEvent("Unhandled", ex.ToString(), Serilog.Events.LogEventLevel.Error);
+            _bus.Publish(new UnhandledExceptionOccurred(ex, isTerminating));
             try
             {
                 var dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash-reports");
@@ -174,6 +186,7 @@ namespace ToNRoundCounter.Infrastructure
             {
                 // ignore UI errors
             }
+            _logger.LogEvent("ErrorReporter", "Exception handling completed.");
         }
 
         private static string FormatBytes(ulong bytes)

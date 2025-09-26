@@ -13,11 +13,15 @@ namespace ToNRoundCounter.Tests
         public async Task TerrorRuleCancelsScheduledSuicide()
         {
             // Arrange
-            AutoSuicideRule.TryParse("クラシック::1", out var rule1);
-            AutoSuicideRule.TryParse("クラシック:Don't Touch Me:0", out var rule2);
-            var rules = new List<AutoSuicideRule> { rule1, rule2 };
+            Assert.True(AutoSuicideRule.TryParse("クラシック::1", out var rule1));
+            Assert.True(AutoSuicideRule.TryParse("クラシック:Don't Touch Me:0", out var rule2));
+            var rules = new List<AutoSuicideRule>
+            {
+                Assert.IsType<AutoSuicideRule>(rule1),
+                Assert.IsType<AutoSuicideRule>(rule2)
+            };
 
-            int ShouldAutoSuicide(string roundType, string terrorName)
+            int ShouldAutoSuicide(string roundType, string? terrorName)
             {
                 for (int i = rules.Count - 1; i >= 0; i--)
                 {

@@ -12,15 +12,15 @@ namespace ToNRoundCounter.Domain
     /// </summary>
     public class AutoSuicideRule
     {
-        public string Round { get; private set; }
+        public string? Round { get; private set; }
         public bool RoundNegate { get; private set; }
-        public string Terror { get; private set; }
+        public string? Terror { get; private set; }
         public bool TerrorNegate { get; private set; }
-        public string RoundExpression { get; private set; }
-        public string TerrorExpression { get; private set; }
+        public string? RoundExpression { get; private set; }
+        public string? TerrorExpression { get; private set; }
         public int Value { get; private set; }
 
-        public static bool TryParse(string line, out AutoSuicideRule rule)
+        public static bool TryParse(string line, out AutoSuicideRule? rule)
         {
             rule = null;
             if (string.IsNullOrWhiteSpace(line)) return false;
@@ -39,21 +39,25 @@ namespace ToNRoundCounter.Domain
             if (!(int.TryParse(parts[2], out var value) && (value == 0 || value == 1 || value == 2)))
                 return false;
 
-            string roundExpr = string.IsNullOrWhiteSpace(parts[0]) ? null : parts[0].Trim();
-            string terrorExpr = string.IsNullOrWhiteSpace(parts[1]) ? null : parts[1].Trim();
+            string? roundExpr = string.IsNullOrWhiteSpace(parts[0]) ? null : parts[0].Trim();
+            string? terrorExpr = string.IsNullOrWhiteSpace(parts[1]) ? null : parts[1].Trim();
 
             bool roundNeg = false;
             if (!string.IsNullOrEmpty(roundExpr))
             {
-                roundNeg = StripNegation(ref roundExpr);
-                if (!ValidateExpression(roundExpr)) return false;
+                string? normalizedRoundExpr = roundExpr;
+                roundNeg = StripNegation(ref normalizedRoundExpr);
+                roundExpr = normalizedRoundExpr;
+                if (!string.IsNullOrEmpty(roundExpr) && !ValidateExpression(roundExpr!)) return false;
             }
 
             bool terrorNeg = false;
             if (!string.IsNullOrEmpty(terrorExpr))
             {
-                terrorNeg = StripNegation(ref terrorExpr);
-                if (!ValidateExpression(terrorExpr)) return false;
+                string? normalizedTerrorExpr = terrorExpr;
+                terrorNeg = StripNegation(ref normalizedTerrorExpr);
+                terrorExpr = normalizedTerrorExpr;
+                if (!string.IsNullOrEmpty(terrorExpr) && !ValidateExpression(terrorExpr!)) return false;
             }
 
             rule = new AutoSuicideRule
@@ -69,7 +73,7 @@ namespace ToNRoundCounter.Domain
             return true;
         }
 
-        public static bool TryParseDetailed(string line, out AutoSuicideRule rule, out string error)
+        public static bool TryParseDetailed(string line, out AutoSuicideRule? rule, out string? error)
         {
             rule = null;
             error = null;
@@ -103,14 +107,16 @@ namespace ToNRoundCounter.Domain
                 return false;
             }
 
-            string roundExpr = string.IsNullOrWhiteSpace(parts[0]) ? null : parts[0].Trim();
-            string terrorExpr = string.IsNullOrWhiteSpace(parts[1]) ? null : parts[1].Trim();
+            string? roundExpr = string.IsNullOrWhiteSpace(parts[0]) ? null : parts[0].Trim();
+            string? terrorExpr = string.IsNullOrWhiteSpace(parts[1]) ? null : parts[1].Trim();
 
             bool roundNeg = false;
             if (!string.IsNullOrEmpty(roundExpr))
             {
-                roundNeg = StripNegation(ref roundExpr);
-                if (!ValidateExpression(roundExpr))
+                string? normalizedRoundExpr = roundExpr;
+                roundNeg = StripNegation(ref normalizedRoundExpr);
+                roundExpr = normalizedRoundExpr;
+                if (!string.IsNullOrEmpty(roundExpr) && !ValidateExpression(roundExpr!))
                 {
                     error = "括弧の不整合や演算子の誤用";
                     return false;
@@ -120,8 +126,10 @@ namespace ToNRoundCounter.Domain
             bool terrorNeg = false;
             if (!string.IsNullOrEmpty(terrorExpr))
             {
-                terrorNeg = StripNegation(ref terrorExpr);
-                if (!ValidateExpression(terrorExpr))
+                string? normalizedTerrorExpr = terrorExpr;
+                terrorNeg = StripNegation(ref normalizedTerrorExpr);
+                terrorExpr = normalizedTerrorExpr;
+                if (!string.IsNullOrEmpty(terrorExpr) && !ValidateExpression(terrorExpr!))
                 {
                     error = "括弧の不整合や演算子の誤用";
                     return false;
@@ -141,14 +149,14 @@ namespace ToNRoundCounter.Domain
             return true;
         }
 
-        public bool Matches(string round, string terror, Func<string, string, bool> comparer)
+        public bool Matches(string? round, string? terror, Func<string, string, bool> comparer)
         {
             bool roundMatch = RoundExpression == null ? true : (RoundNegate ? !Evaluate(RoundExpression, round, comparer) : Evaluate(RoundExpression, round, comparer));
             bool terrorMatch = TerrorExpression == null ? true : (TerrorNegate ? !Evaluate(TerrorExpression, terror, comparer) : Evaluate(TerrorExpression, terror, comparer));
             return roundMatch && terrorMatch;
         }
 
-        public bool MatchesRound(string round, Func<string, string, bool> comparer)
+        public bool MatchesRound(string? round, Func<string, string, bool> comparer)
         {
             if (RoundExpression == null)
                 return true;
@@ -166,20 +174,18 @@ namespace ToNRoundCounter.Domain
             Func<string, string, bool> comparer = (a, b) => a == b;
 
             var roundTerms = other.GetRoundTerms();
-            if (roundTerms == null || roundTerms.Count == 0)
-                roundTerms = new List<string> { null };
-            else if (other.RoundNegate)
-                roundTerms.Add(null);
+            var roundCandidates = roundTerms?.Select(r => (string?)r).ToList() ?? new List<string?> { null };
+            if (other.RoundNegate && !roundCandidates.Contains(null))
+                roundCandidates.Add(null);
 
             var terrorTerms = other.GetTerrorTerms();
-            if (terrorTerms == null || terrorTerms.Count == 0)
-                terrorTerms = new List<string> { null };
-            else if (other.TerrorNegate)
-                terrorTerms.Add(null);
+            var terrorCandidates = terrorTerms?.Select(t => (string?)t).ToList() ?? new List<string?> { null };
+            if (other.TerrorNegate && !terrorCandidates.Contains(null))
+                terrorCandidates.Add(null);
 
-            foreach (var round in roundTerms)
+            foreach (var round in roundCandidates)
             {
-                foreach (var terror in terrorTerms)
+                foreach (var terror in terrorCandidates)
                 {
                     bool thisMatches = Matches(round, terror, comparer);
                     bool otherMatches = other.Matches(round, terror, comparer);
@@ -205,7 +211,7 @@ namespace ToNRoundCounter.Domain
         /// ignored.  If the expression cannot be represented as such a list,
         /// null is returned.
         /// </summary>
-        public List<string> GetRoundTerms()
+        public List<string>? GetRoundTerms()
         {
             return GetSimpleTerms(RoundExpression);
         }
@@ -216,15 +222,15 @@ namespace ToNRoundCounter.Domain
         /// ignored.  If the expression cannot be represented as such a list,
         /// null is returned.
         /// </summary>
-        public List<string> GetTerrorTerms()
+        public List<string>? GetTerrorTerms()
         {
             return GetSimpleTerms(TerrorExpression);
         }
 
-        private static List<string> GetSimpleTerms(string expr)
+        private static List<string>? GetSimpleTerms(string? expr)
         {
             if (string.IsNullOrWhiteSpace(expr)) return null;
-            string working = expr.Trim();
+            string working = expr!.Trim();
             if (working.StartsWith("(") && MatchingParen(working) == working.Length - 1)
                 working = working.Substring(1, working.Length - 2);
             var parts = SplitTopLevel(working, "||").ToList();
@@ -235,9 +241,12 @@ namespace ToNRoundCounter.Domain
             return null;
         }
 
-        private static bool StripNegation(ref string expr)
+        private static bool StripNegation(ref string? expr)
         {
-            expr = expr.Trim();
+            if (string.IsNullOrWhiteSpace(expr))
+                return false;
+
+            expr = expr!.Trim();
             if (!expr.StartsWith("!")) return false;
             string candidate = expr.Substring(1).Trim();
             if (candidate.StartsWith("(") && MatchingParen(candidate) == candidate.Length - 1)
@@ -305,7 +314,7 @@ namespace ToNRoundCounter.Domain
             return depth == 0 && !expectTerm;
         }
 
-        private static bool Evaluate(string expr, string input, Func<string, string, bool> comparer)
+        private static bool Evaluate(string expr, string? input, Func<string, string, bool> comparer)
         {
             if (string.IsNullOrWhiteSpace(expr)) return true;
             expr = expr.Trim();
@@ -356,10 +365,11 @@ namespace ToNRoundCounter.Domain
             return -1;
         }
 
-        private static bool IsSimple(string expr)
+        private static bool IsSimple(string? expr)
         {
             if (string.IsNullOrEmpty(expr)) return false;
-            return !(expr.Contains("&&") || expr.Contains("||") || expr.Contains("!") || expr.Contains("(") || expr.Contains(")"));
+            string nonNullExpr = expr!;
+            return !(nonNullExpr.Contains("&&") || nonNullExpr.Contains("||") || nonNullExpr.Contains("!") || nonNullExpr.Contains("(") || nonNullExpr.Contains(")"));
         }
 
         private static List<string> SplitEscaped(string line)
@@ -393,7 +403,7 @@ namespace ToNRoundCounter.Domain
             return result;
         }
 
-        private static string EscapeSegment(string s)
+        private static string? EscapeSegment(string? s)
         {
             if (s == null) return null;
             var sb = new StringBuilder();

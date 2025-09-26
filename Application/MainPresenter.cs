@@ -18,7 +18,7 @@ namespace ToNRoundCounter.Application
         private readonly IAppSettings _settings;
         private readonly IEventLogger _logger;
         private readonly IHttpClient _httpClient;
-        private IMainView _view;
+        private IMainView? _view;
 
         public MainPresenter(StateService stateService, IAppSettings settings, IEventLogger logger, IHttpClient httpClient)
         {
@@ -31,6 +31,7 @@ namespace ToNRoundCounter.Application
         public void AttachView(IMainView view)
         {
             _view = view;
+            _logger.LogEvent("MainPresenter", $"View attached: {view.GetType().FullName}");
         }
 
         public void AppendRoundLog(Round round, string status)
@@ -40,12 +41,15 @@ namespace ToNRoundCounter.Application
                 round.RoundType, round.TerrorKey, round.MapName, items, round.Damage, status);
             _stateService.AddRoundLog(round, logEntry);
             _view?.UpdateRoundLog(_stateService.GetRoundLogHistory().Select(e => e.Item2));
+            _logger.LogEvent("MainPresenter", $"Round log appended: {round.RoundType} ({status}).");
         }
 
         public async Task UploadRoundLogAsync(Round round, string status)
         {
+            _logger.LogEvent("MainPresenter", $"Initiating round log upload for {round.RoundType} ({status}).");
             await TryUploadRoundLogToCloudAsync(round, status).ConfigureAwait(false);
             await SendDiscordWebhookAsync(round, status).ConfigureAwait(false);
+            _logger.LogEvent("MainPresenter", "Round log upload operations completed.");
         }
 
         private async Task TryUploadRoundLogToCloudAsync(Round round, string status)
@@ -99,9 +103,9 @@ namespace ToNRoundCounter.Application
                 return;
             }
 
-            static string FormatInline(string value, string fallback)
+            static string FormatInline(string? value, string fallback)
             {
-                var text = string.IsNullOrWhiteSpace(value) ? fallback : value;
+                var text = string.IsNullOrWhiteSpace(value) ? fallback : value!;
                 return text.Replace("`", "\\`");
             }
 

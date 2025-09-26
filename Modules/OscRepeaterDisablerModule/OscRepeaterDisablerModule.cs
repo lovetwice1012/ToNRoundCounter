@@ -1,16 +1,12 @@
 using System;
-using System.Net;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
-using Rug.Osc;
-using Serilog.Events;
 using System.Windows.Forms;
+using Microsoft.Extensions.DependencyInjection;
+using Serilog.Events;
 using ToNRoundCounter.Application;
 
-namespace ToNRoundCounter.Modules.AfkJump
+namespace ToNRoundCounter.Modules.OscRepeaterDisabler
 {
-    public sealed class AfkJumpModule : IModule
+    public sealed class OscRepeaterDisablerModule : IModule
     {
         public void OnModuleLoaded(ModuleDiscoveryContext context)
         {
@@ -22,7 +18,7 @@ namespace ToNRoundCounter.Modules.AfkJump
 
         public void RegisterServices(IServiceCollection services)
         {
-            services.AddSingleton<IAfkWarningHandler>(sp => new AfkJumpHandler(sp.GetRequiredService<IEventLogger>()));
+            services.AddSingleton<IOscRepeaterPolicy, OscRepeaterDisablePolicy>();
         }
 
         public void OnAfterServiceRegistration(ModuleServiceRegistrationContext context)
@@ -76,11 +72,11 @@ namespace ToNRoundCounter.Modules.AfkJump
                 return;
             }
 
-            var group = context.AddSettingsGroup("AFK Jump");
+            var group = context.AddSettingsGroup("OSCRepeater無効化");
             var description = new Label
             {
                 AutoSize = true,
-                Text = "AFKジャンプモジュールには設定項目はありません。"
+                Text = "OSCRepeater.exe を起動しません。OSCポートは未変更なら 9001 を使用します。"
             };
 
             group.Controls.Add(description);
@@ -323,51 +319,65 @@ namespace ToNRoundCounter.Modules.AfkJump
         }
     }
 
-    internal sealed class AfkJumpHandler : IAfkWarningHandler
+    internal sealed class OscRepeaterDisablePolicy : IOscRepeaterPolicy
     {
-        private static readonly TimeSpan FirstDelay = TimeSpan.FromSeconds(0.2);
-        private static readonly TimeSpan SecondDelay = TimeSpan.FromSeconds(0.8);
         private readonly IEventLogger _logger;
 
-        public AfkJumpHandler(IEventLogger logger)
+        public OscRepeaterDisablePolicy(IEventLogger logger)
         {
             _logger = logger;
         }
 
-        public async Task<bool> HandleAsync(AfkWarningContext context, CancellationToken cancellationToken)
+        public bool ShouldStartOscRepeater(IAppSettings settings)
         {
-            try
+            if (settings == null)
             {
-                _logger.LogEvent("AfkJumpModule", "Suppressing AFK sound and sending jump input sequence.");
-                using (var sender = new OscSender(IPAddress.Loopback, 0, 9000))
-                {
-                    sender.Connect();
-                    SendJumpValue(sender, 0);
-                    await Task.Delay(FirstDelay, cancellationToken);
-                    SendJumpValue(sender, 1);
-                    await Task.Delay(SecondDelay, cancellationToken);
-                    SendJumpValue(sender, 0);
-                    sender.Close();
-                }
-
-                return true;
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogEvent("AfkJumpModule", "Jump input sequence cancelled.", LogEventLevel.Warning);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogEvent("AfkJumpModule", $"Failed to send jump input sequence: {ex}", LogEventLevel.Error);
                 return false;
             }
-        }
 
-        private static void SendJumpValue(OscSender sender, int value)
+            if (!settings.OSCPortChanged)
+            {
+                settings.OSCPort = 9001;
+            }
+
+            _logger.TryLogEvent("OscRepeaterDisabler", "Preventing OSC repeater startup.");
+            return false;
+        }
+    }
+
+    internal static class EventLoggerCompatibilityExtensions
+    {
+        private static readonly Type[] SignatureWithLevel =
         {
-            var message = new OscMessage("/input/Jump", value);
-            sender.Send(message);
+            typeof(string),
+            typeof(string),
+            typeof(LogEventLevel)
+        };
+
+        private static readonly Type[] SignatureWithoutLevel =
+        {
+            typeof(string),
+            typeof(string)
+        };
+
+        public static void TryLogEvent(this IEventLogger? logger, string eventType, string message, LogEventLevel level = LogEventLevel.Information)
+        {
+            if (logger == null)
+            {
+                return;
+            }
+
+            var loggerType = logger.GetType();
+
+            var withLevel = loggerType.GetMethod(nameof(IEventLogger.LogEvent), SignatureWithLevel);
+            if (withLevel != null)
+            {
+                withLevel.Invoke(logger, new object[] { eventType, message, level });
+                return;
+            }
+
+            var withoutLevel = loggerType.GetMethod(nameof(IEventLogger.LogEvent), SignatureWithoutLevel);
+            withoutLevel?.Invoke(logger, new object[] { eventType, message });
         }
     }
 }

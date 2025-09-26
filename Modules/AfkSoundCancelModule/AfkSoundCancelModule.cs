@@ -1,17 +1,19 @@
 using System;
-using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
-using Rug.Osc;
-using Serilog.Events;
 using System.Windows.Forms;
+using Microsoft.Extensions.DependencyInjection;
+using Serilog.Events;
 using ToNRoundCounter.Application;
 
-namespace ToNRoundCounter.Modules.AfkJump
+#nullable enable
+
+namespace ToNRoundCounter.Modules.AfkSoundCancel
 {
-    public sealed class AfkJumpModule : IModule
+    public sealed class AfkSoundCancelModule : IModule
     {
+        private CheckBox? _enableCheckBox;
+
         public void OnModuleLoaded(ModuleDiscoveryContext context)
         {
         }
@@ -22,7 +24,7 @@ namespace ToNRoundCounter.Modules.AfkJump
 
         public void RegisterServices(IServiceCollection services)
         {
-            services.AddSingleton<IAfkWarningHandler>(sp => new AfkJumpHandler(sp.GetRequiredService<IEventLogger>()));
+            services.AddSingleton<IAfkWarningHandler, AfkSoundCancelHandler>();
         }
 
         public void OnAfterServiceRegistration(ModuleServiceRegistrationContext context)
@@ -76,22 +78,39 @@ namespace ToNRoundCounter.Modules.AfkJump
                 return;
             }
 
-            var group = context.AddSettingsGroup("AFK Jump");
-            var description = new Label
+            var group = context.AddSettingsGroup("AFK音キャンセル");
+            var checkbox = new CheckBox
             {
                 AutoSize = true,
-                Text = "AFKジャンプモジュールには設定項目はありません。"
+                Text = "AFK警告音を再生しない",
+                Checked = context.Settings.AfkSoundCancelEnabled
             };
 
-            group.Controls.Add(description);
+            group.Controls.Add(checkbox);
+            _enableCheckBox = checkbox;
         }
 
         public void OnSettingsViewOpened(ModuleSettingsViewLifecycleContext context)
         {
+            if (context?.Settings == null || _enableCheckBox == null)
+            {
+                return;
+            }
+
+            _enableCheckBox.Checked = context.Settings.AfkSoundCancelEnabled;
         }
 
         public void OnSettingsViewApplying(ModuleSettingsViewLifecycleContext context)
         {
+            if (context == null || context.Stage != ModuleSettingsViewStage.Applying)
+            {
+                return;
+            }
+
+            if (_enableCheckBox != null)
+            {
+                context.Settings.AfkSoundCancelEnabled = _enableCheckBox.Checked;
+            }
         }
 
         public void OnSettingsViewClosing(ModuleSettingsViewLifecycleContext context)
@@ -100,6 +119,7 @@ namespace ToNRoundCounter.Modules.AfkJump
 
         public void OnSettingsViewClosed(ModuleSettingsViewLifecycleContext context)
         {
+            _enableCheckBox = null;
         }
 
         public void OnAppRunStarting(ModuleAppRunContext context)
@@ -323,51 +343,27 @@ namespace ToNRoundCounter.Modules.AfkJump
         }
     }
 
-    internal sealed class AfkJumpHandler : IAfkWarningHandler
+    internal sealed class AfkSoundCancelHandler : IAfkWarningHandler
     {
-        private static readonly TimeSpan FirstDelay = TimeSpan.FromSeconds(0.2);
-        private static readonly TimeSpan SecondDelay = TimeSpan.FromSeconds(0.8);
+        private readonly IAppSettings _settings;
         private readonly IEventLogger _logger;
 
-        public AfkJumpHandler(IEventLogger logger)
+        public AfkSoundCancelHandler(IAppSettings settings, IEventLogger logger)
         {
+            _settings = settings;
             _logger = logger;
         }
 
-        public async Task<bool> HandleAsync(AfkWarningContext context, CancellationToken cancellationToken)
+        public Task<bool> HandleAsync(AfkWarningContext context, CancellationToken cancellationToken)
         {
-            try
+            if (!_settings.AfkSoundCancelEnabled)
             {
-                _logger.LogEvent("AfkJumpModule", "Suppressing AFK sound and sending jump input sequence.");
-                using (var sender = new OscSender(IPAddress.Loopback, 0, 9000))
-                {
-                    sender.Connect();
-                    SendJumpValue(sender, 0);
-                    await Task.Delay(FirstDelay, cancellationToken);
-                    SendJumpValue(sender, 1);
-                    await Task.Delay(SecondDelay, cancellationToken);
-                    SendJumpValue(sender, 0);
-                    sender.Close();
-                }
+                return Task.FromResult(false);
+            }
 
-                return true;
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogEvent("AfkJumpModule", "Jump input sequence cancelled.", LogEventLevel.Warning);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogEvent("AfkJumpModule", $"Failed to send jump input sequence: {ex}", LogEventLevel.Error);
-                return false;
-            }
-        }
-
-        private static void SendJumpValue(OscSender sender, int value)
-        {
-            var message = new OscMessage("/input/Jump", value);
-            sender.Send(message);
+            var idleSeconds = context?.IdleSeconds ?? 0d;
+            _logger.LogEvent("AfkSoundCancel", $"AFK sound suppressed at {idleSeconds:F1} seconds.", LogEventLevel.Information);
+            return Task.FromResult(true);
         }
     }
 }

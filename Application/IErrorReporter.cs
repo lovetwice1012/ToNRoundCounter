@@ -5,6 +5,6 @@ namespace ToNRoundCounter.Application
     public interface IErrorReporter
     {
         void Register();
-        void Handle(Exception ex);
+        void Handle(Exception ex, bool isTerminating = false);
     }
 }

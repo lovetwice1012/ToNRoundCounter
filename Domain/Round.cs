@@ -17,10 +17,10 @@ namespace ToNRoundCounter.Domain
         public Round() : this(new RoundId(Guid.NewGuid())) { }
 
         public RoundId Id { get; }
-        public string RoundType { get; set; }
+        public string? RoundType { get; set; }
         public bool IsDeath { get; set; }
-        public string TerrorKey { get; set; }
-        public string MapName { get; set; }
+        public string? TerrorKey { get; set; }
+        public string? MapName { get; set; }
         public List<string> ItemNames { get; set; }
         public int Damage { get; set; }
         public int PageCount { get; set; }

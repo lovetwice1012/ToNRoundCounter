@@ -20,69 +20,70 @@ namespace ToNRoundCounter.UI
         private readonly IAppSettings _settings;
 
 
-        public NumericUpDown oscPortNumericUpDown { get; private set; }
-        public TextBox webSocketIpTextBox { get; private set; }
+        public NumericUpDown oscPortNumericUpDown { get; private set; } = null!;
+        public TextBox webSocketIpTextBox { get; private set; } = null!;
         // 統計情報表示・デバッグ情報チェック
-        public CheckBox ShowStatsCheckBox { get; private set; }
-        public CheckBox DebugInfoCheckBox { get; private set; }
+        public CheckBox ShowStatsCheckBox { get; private set; } = null!;
+        public CheckBox DebugInfoCheckBox { get; private set; } = null!;
 
         // フィルター項目（MAPは削除）
-        public CheckBox RoundTypeCheckBox { get; private set; }
-        public CheckBox TerrorCheckBox { get; private set; }
-        public CheckBox AppearanceCountCheckBox { get; private set; }
-        public CheckBox SurvivalCountCheckBox { get; private set; }
-        public CheckBox DeathCountCheckBox { get; private set; }
-        public CheckBox SurvivalRateCheckBox { get; private set; }
+        public CheckBox RoundTypeCheckBox { get; private set; } = null!;
+        public CheckBox TerrorCheckBox { get; private set; } = null!;
+        public CheckBox AppearanceCountCheckBox { get; private set; } = null!;
+        public CheckBox SurvivalCountCheckBox { get; private set; } = null!;
+        public CheckBox DeathCountCheckBox { get; private set; } = null!;
+        public CheckBox SurvivalRateCheckBox { get; private set; } = null!;
 
         // ラウンドログ表示切替チェックボックス
-        public CheckBox ToggleRoundLogCheckBox { get; private set; }
+        public CheckBox ToggleRoundLogCheckBox { get; private set; } = null!;
 
         // 追加設定項目
-        public Label FixedTerrorColorLabel { get; private set; }
-        public Button FixedTerrorColorButton { get; private set; }
-        public Label BackgroundColorLabel { get; private set; }
-        public Button BackgroundColorButton { get; private set; }
-        public Label RoundTypeStatsLabel { get; private set; }
-        public CheckedListBox RoundTypeStatsListBox { get; private set; }
+        public Label FixedTerrorColorLabel { get; private set; } = null!;
+        public Button FixedTerrorColorButton { get; private set; } = null!;
+        public Label BackgroundColorLabel { get; private set; } = null!;
+        public Button BackgroundColorButton { get; private set; } = null!;
+        public Label RoundTypeStatsLabel { get; private set; } = null!;
+        public CheckedListBox RoundTypeStatsListBox { get; private set; } = null!;
 
         // 個別背景色設定
-        public Label InfoPanelBgLabel { get; private set; }
-        public Button InfoPanelBgButton { get; private set; }
-        public Label StatsBgLabel { get; private set; }
-        public Button StatsBgButton { get; private set; }
-        public Label LogBgLabel { get; private set; }
-        public Button LogBgButton { get; private set; }
-        public CheckedListBox autoSuicideRoundListBox { get; internal set; }
-        public CheckBox autoSuicideCheckBox { get; internal set; }
-        public Label autoSuicideRoundLabel { get; private set; }
-        public CheckBox autoSuicideUseDetailCheckBox { get; private set; }
-        public Label autoSuicidePresetLabel { get; private set; }
-        public ComboBox autoSuicidePresetComboBox { get; private set; }
-        public Button autoSuicidePresetSaveButton { get; private set; }
-        public Button autoSuicidePresetLoadButton { get; private set; }
-        public Button autoSuicidePresetExportButton { get; private set; }
-        public Button autoSuicidePresetImportButton { get; private set; }
-        public TextBox autoSuicideDetailTextBox { get; private set; }
-        public CheckBox autoSuicideFuzzyCheckBox { get; private set; }
-        public Button autoSuicideSettingsConfirmButton { get; private set; }
-        public LinkLabel autoSuicideDetailDocLink { get; private set; }
+        public Label InfoPanelBgLabel { get; private set; } = null!;
+        public Button InfoPanelBgButton { get; private set; } = null!;
+        public Label StatsBgLabel { get; private set; } = null!;
+        public Button StatsBgButton { get; private set; } = null!;
+        public Label LogBgLabel { get; private set; } = null!;
+        public Button LogBgButton { get; private set; } = null!;
+        public CheckedListBox autoSuicideRoundListBox { get; internal set; } = null!;
+        public CheckBox autoSuicideCheckBox { get; internal set; } = null!;
+        public Label autoSuicideRoundLabel { get; private set; } = null!;
+        public CheckBox autoSuicideUseDetailCheckBox { get; private set; } = null!;
+        public Label autoSuicidePresetLabel { get; private set; } = null!;
+        public ComboBox autoSuicidePresetComboBox { get; private set; } = null!;
+        public Button autoSuicidePresetSaveButton { get; private set; } = null!;
+        public Button autoSuicidePresetLoadButton { get; private set; } = null!;
+        public Button autoSuicidePresetExportButton { get; private set; } = null!;
+        public Button autoSuicidePresetImportButton { get; private set; } = null!;
+        public TextBox autoSuicideDetailTextBox { get; private set; } = null!;
+        public CheckBox autoSuicideFuzzyCheckBox { get; private set; } = null!;
+        public Button autoSuicideSettingsConfirmButton { get; private set; } = null!;
+        public LinkLabel autoSuicideDetailDocLink { get; private set; } = null!;
         private int autoSuicideAutoRuleCount = 0;
 
-        public Label apiKeyLabel { get; private set; }
-        public TextBox apiKeyTextBox { get; private set; }
+        public Label apiKeyLabel { get; private set; } = null!;
+        public TextBox apiKeyTextBox { get; private set; } = null!;
 
-        public CheckBox DarkThemeCheckBox { get; private set; }
-        public CheckBox AutoLaunchEnabledCheckBox { get; private set; }
-        private DataGridView autoLaunchEntriesGrid;
-        private Button autoLaunchAddButton;
-        private Button autoLaunchRemoveButton;
-        private Button autoLaunchBrowseButton;
-        public CheckBox ItemMusicEnabledCheckBox { get; private set; }
-        private DataGridView itemMusicEntriesGrid;
-        private Button itemMusicAddButton;
-        private Button itemMusicRemoveButton;
-        private Button itemMusicBrowseButton;
-        public TextBox DiscordWebhookUrlTextBox { get; private set; }
+        public ComboBox ThemeComboBox { get; private set; } = null!;
+        public FlowLayoutPanel ModuleExtensionsPanel { get; private set; } = null!;
+        public CheckBox AutoLaunchEnabledCheckBox { get; private set; } = null!;
+        private DataGridView autoLaunchEntriesGrid = null!;
+        private Button autoLaunchAddButton = null!;
+        private Button autoLaunchRemoveButton = null!;
+        private Button autoLaunchBrowseButton = null!;
+        public CheckBox ItemMusicEnabledCheckBox { get; private set; } = null!;
+        private DataGridView itemMusicEntriesGrid = null!;
+        private Button itemMusicAddButton = null!;
+        private Button itemMusicRemoveButton = null!;
+        private Button itemMusicBrowseButton = null!;
+        public TextBox DiscordWebhookUrlTextBox { get; private set; } = null!;
 
         private const string AutoLaunchEnabledColumnName = "AutoLaunchEnabled";
         private const string AutoLaunchPathColumnName = "AutoLaunchPath";
@@ -108,13 +109,19 @@ namespace ToNRoundCounter.UI
             int rightColumnY = margin;
             int innerMargin = 10;
 
-            DarkThemeCheckBox = new CheckBox();
-            DarkThemeCheckBox.Text = LanguageManager.Translate("ダークテーマを使用する");
-            DarkThemeCheckBox.AutoSize = true;
-            DarkThemeCheckBox.Location = new Point(margin, currentY);
-            DarkThemeCheckBox.Checked = _settings.Theme == ThemeType.Dark;
-            this.Controls.Add(DarkThemeCheckBox);
-            currentY += DarkThemeCheckBox.Height + margin;
+            Label themeLabel = new Label();
+            themeLabel.Text = LanguageManager.Translate("テーマ");
+            themeLabel.AutoSize = true;
+            themeLabel.Location = new Point(margin, currentY + 4);
+            this.Controls.Add(themeLabel);
+
+            ThemeComboBox = new ComboBox();
+            ThemeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            ThemeComboBox.Location = new Point(themeLabel.Right + 10, currentY);
+            ThemeComboBox.Width = columnWidth - (ThemeComboBox.Left - margin);
+            this.Controls.Add(ThemeComboBox);
+            LoadThemeOptions(Theme.RegisteredThemes, _settings.ThemeKey);
+            currentY += ThemeComboBox.Height + margin;
 
             GroupBox grpOsc = new GroupBox();
             grpOsc.Text = LanguageManager.Translate("OSC設定");
@@ -406,7 +413,8 @@ namespace ToNRoundCounter.UI
                     }
                     else
                     {
-                        errors.Add($"{i + 1}行目: {LanguageManager.Translate(err)}");
+                        var errorKey = err ?? string.Empty;
+                        errors.Add($"{i + 1}行目: {LanguageManager.Translate(errorKey)}");
                     }
                 }
                 if (errors.Any())
@@ -463,7 +471,10 @@ namespace ToNRoundCounter.UI
 
                 foreach (var rw in roundWildcards)
                 {
-                    var roundName = rw.Round;
+                    if (string.IsNullOrEmpty(rw.Round))
+                        continue;
+
+                    var roundName = rw.Round!;
                     var baseValue = rw.Value;
                     var relatedDetails = detailRules.Where(d => d.Round == roundName).ToList();
                     var exceptions = relatedDetails.Where(d => d.Value != baseValue || d.TerrorNegate).ToList();
@@ -478,7 +489,7 @@ namespace ToNRoundCounter.UI
                         sb.AppendLine($"{roundName}では全てのテラーで{GetActionText(baseValue)}。");
                         foreach (var eg in exceptions.GroupBy(ex => ex.Value))
                         {
-                            var terrors = eg.Select(rule => rule.Terror).ToList();
+                            var terrors = eg.Select(rule => rule.Terror ?? string.Empty).Where(t => !string.IsNullOrEmpty(t)).ToList();
                             bool useBullet = ShouldBullet(terrors);
                             sb.AppendLine($"ただし、以下に記載する条件では{GetActionText(eg.Key)}");
                             if (useBullet)
@@ -521,7 +532,7 @@ namespace ToNRoundCounter.UI
                                                .GroupBy(x => x.Value);
                 foreach (var g in negRoundGroups)
                 {
-                    var rounds = g.SelectMany(x => x.Rounds).Distinct().ToList();
+                    var rounds = g.SelectMany(x => x.Rounds ?? Enumerable.Empty<string>()).Distinct().ToList();
                     bool useBullet = ShouldBullet(rounds);
                     if (useBullet)
                     {
@@ -541,8 +552,21 @@ namespace ToNRoundCounter.UI
                 {
                     foreach (var rule in g)
                     {
-                        var rounds = rule.GetRoundTerms() ?? new List<string> { rule.RoundExpression };
-                        var terrors = rule.GetTerrorTerms() ?? new List<string> { rule.TerrorExpression };
+                        var rounds = rule.GetRoundTerms();
+                        if (rounds == null || rounds.Count == 0)
+                        {
+                            rounds = string.IsNullOrEmpty(rule.RoundExpression)
+                                ? new List<string>()
+                                : new List<string> { rule.RoundExpression! };
+                        }
+
+                        var terrors = rule.GetTerrorTerms();
+                        if (terrors == null || terrors.Count == 0)
+                        {
+                            terrors = string.IsNullOrEmpty(rule.TerrorExpression)
+                                ? new List<string>()
+                                : new List<string> { rule.TerrorExpression! };
+                        }
                         bool roundBullet = ShouldBullet(rounds);
                         bool terrorBullet = ShouldBullet(terrors);
                         string roundPart = roundBullet
@@ -571,11 +595,15 @@ namespace ToNRoundCounter.UI
                                                 .GroupBy(d => d.Round);
                 foreach (var rg in remainingDetail)
                 {
-                    if (roundsWithHeader.Add(rg.Key))
-                        sb.AppendLine($"{rg.Key}では以下の設定が適用されています");
+                    if (string.IsNullOrEmpty(rg.Key))
+                        continue;
+
+                    var roundKey = rg.Key!;
+                    if (roundsWithHeader.Add(roundKey))
+                        sb.AppendLine($"{roundKey}では以下の設定が適用されています");
                     foreach (var ag in rg.GroupBy(r => r.Value))
                     {
-                        var terrors = ag.Select(a => a.Terror).ToList();
+                        var terrors = ag.Select(a => a.Terror ?? string.Empty).Where(t => !string.IsNullOrEmpty(t)).ToList();
                         bool useBullet = ShouldBullet(terrors);
                         if (useBullet)
                         {
@@ -594,8 +622,12 @@ namespace ToNRoundCounter.UI
                                                    .GroupBy(r => r.Round);
                 foreach (var cg in complexRoundRules)
                 {
-                    if (roundsWithHeader.Add(cg.Key))
-                        sb.AppendLine($"{cg.Key}では以下の設定が適用されています");
+                    if (string.IsNullOrEmpty(cg.Key))
+                        continue;
+
+                    var roundKey = cg.Key!;
+                    if (roundsWithHeader.Add(roundKey))
+                        sb.AppendLine($"{roundKey}では以下の設定が適用されています");
                     foreach (var rule in cg)
                     {
                         var terrors = rule.GetTerrorTerms();
@@ -603,9 +635,10 @@ namespace ToNRoundCounter.UI
                         string condition;
                         if (terrors != null)
                         {
+                            var terrorList = terrors;
                             condition = rule.TerrorNegate
-                                ? (useBullet ? "以下のテラー以外が出現した時" : $"{string.Join(",", terrors)}以外が出現した時")
-                                : (useBullet ? "以下のテラーが出現した時" : $"{string.Join(",", terrors)}が出現した時");
+                                ? (useBullet ? "以下のテラー以外が出現した時" : $"{string.Join(",", terrorList)}以外が出現した時")
+                                : (useBullet ? "以下のテラーが出現した時" : $"{string.Join(",", terrorList)}が出現した時");
                         }
                         else
                         {
@@ -617,7 +650,7 @@ namespace ToNRoundCounter.UI
                         sb.AppendLine($"・{condition}、{GetActionText(rule.Value)}");
                         if (useBullet)
                         {
-                            foreach (var t in terrors)
+                            foreach (var t in terrors!)
                                 sb.AppendLine($"　・{t}");
                         }
                     }
@@ -629,7 +662,7 @@ namespace ToNRoundCounter.UI
                                              .GroupBy(x => new { x.TerrorNegate, x.Value });
                 foreach (var g in terrorGroups)
                 {
-                    var terrors = g.SelectMany(x => x.Terrors).Distinct().ToList();
+                    var terrors = g.SelectMany(x => x.Terrors ?? Enumerable.Empty<string>()).Distinct().ToList();
                     bool useBullet = ShouldBullet(terrors);
                     if (g.Key.TerrorNegate)
                     {
@@ -1191,10 +1224,150 @@ namespace ToNRoundCounter.UI
 
             rightColumnY += grpDiscord.Height + margin;
 
+            ModuleExtensionsPanel = new FlowLayoutPanel();
+            ModuleExtensionsPanel.Name = "ModuleExtensionsPanel";
+            ModuleExtensionsPanel.AutoSize = true;
+            ModuleExtensionsPanel.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            ModuleExtensionsPanel.FlowDirection = FlowDirection.TopDown;
+            ModuleExtensionsPanel.WrapContents = false;
+            ModuleExtensionsPanel.Location = new Point(margin, currentY);
+            ModuleExtensionsPanel.Width = columnWidth;
+            this.Controls.Add(ModuleExtensionsPanel);
+
+            int moduleMargin = margin;
+            ModuleExtensionsPanel.ControlAdded += (s, e) =>
+            {
+                ModuleExtensionsPanel.Width = columnWidth;
+                currentY = Math.Max(currentY, ModuleExtensionsPanel.Bottom);
+                this.Height = Math.Max(Math.Max(currentY, rightColumnY), ModuleExtensionsPanel.Bottom) + moduleMargin;
+            };
+
             // 最後に、パネルの高さを調整
             this.Width = totalWidth;
             this.Height = Math.Max(currentY, rightColumnY) + margin;
 
+        }
+
+        public void LoadThemeOptions(IEnumerable<ThemeDescriptor> themes, string selectedThemeKey)
+        {
+            if (ThemeComboBox == null)
+            {
+                return;
+            }
+
+            var sourceThemes = themes ?? Theme.RegisteredThemes;
+            var items = new List<ThemeListItem>();
+            if (sourceThemes != null)
+            {
+                foreach (var descriptor in sourceThemes)
+                {
+                    if (descriptor == null)
+                    {
+                        continue;
+                    }
+
+                    items.Add(new ThemeListItem(descriptor));
+                }
+            }
+
+            items.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.CurrentCultureIgnoreCase));
+
+            ThemeComboBox.DisplayMember = nameof(ThemeListItem.DisplayName);
+            ThemeComboBox.ValueMember = nameof(ThemeListItem.Key);
+            ThemeComboBox.DataSource = items;
+
+            var selected = items.FirstOrDefault(i => string.Equals(i.Key, selectedThemeKey, StringComparison.OrdinalIgnoreCase));
+            if (selected != null)
+            {
+                ThemeComboBox.SelectedValue = selected.Key;
+            }
+            else if (items.Count > 0)
+            {
+                ThemeComboBox.SelectedIndex = 0;
+            }
+        }
+
+        public string SelectedThemeKey => ThemeComboBox?.SelectedValue as string ?? Theme.DefaultThemeKey;
+
+        public ThemeDescriptor? GetSelectedThemeDescriptor()
+        {
+            return ThemeComboBox?.SelectedItem is ThemeListItem item ? item.Descriptor : null;
+        }
+
+        public T AddModuleExtensionControl<T>(T control) where T : Control
+        {
+            if (control == null)
+            {
+                throw new ArgumentNullException(nameof(control));
+            }
+
+            if (ModuleExtensionsPanel == null)
+            {
+                throw new InvalidOperationException("Module extensions panel is not available yet.");
+            }
+
+            if (control.Margin == Padding.Empty)
+            {
+                control.Margin = new Padding(0, 0, 0, 10);
+            }
+            else if (control.Margin.Bottom == 0)
+            {
+                control.Margin = new Padding(control.Margin.Left, control.Margin.Top, control.Margin.Right, 10);
+            }
+
+            if (control.Dock == DockStyle.None && control.Width <= 0)
+            {
+                int targetWidth = ModuleExtensionsPanel.ClientSize.Width;
+                if (targetWidth <= 0)
+                {
+                    targetWidth = ModuleExtensionsPanel.Width;
+                }
+
+                if (targetWidth > 0)
+                {
+                    control.Width = Math.Max(control.Width, targetWidth - control.Margin.Horizontal);
+                }
+            }
+
+            ModuleExtensionsPanel.Controls.Add(control);
+            return control;
+        }
+
+        public GroupBox AddModuleSettingsGroup(string title)
+        {
+            if (ModuleExtensionsPanel == null)
+            {
+                throw new InvalidOperationException("Module extensions panel is not available yet.");
+            }
+
+            var group = new GroupBox
+            {
+                Text = title ?? string.Empty,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0, 0, 0, 10)
+            };
+
+            AddModuleExtensionControl(group);
+            return group;
+        }
+
+        private sealed class ThemeListItem
+        {
+            public ThemeListItem(ThemeDescriptor descriptor)
+            {
+                Descriptor = descriptor;
+                Key = descriptor.Key;
+                DisplayName = descriptor.DisplayName;
+            }
+
+            public string Key { get; }
+
+            public string DisplayName { get; }
+
+            public ThemeDescriptor Descriptor { get; }
+
+            public override string ToString() => DisplayName;
         }
 
         public void LoadAutoLaunchEntries(IEnumerable<AutoLaunchEntry> entries)
@@ -1490,7 +1663,7 @@ namespace ToNRoundCounter.UI
             var unparsedLines = new List<string>();
             foreach (var line in lines)
             {
-                if (AutoSuicideRule.TryParse(line, out var r))
+                if (AutoSuicideRule.TryParse(line, out var r) && r != null)
                 {
                     rules.Add(r);
                 }
@@ -1577,7 +1750,7 @@ namespace ToNRoundCounter.UI
             }
         }
 
-        private void AutoSuicideUseDetailCheckBox_CheckedChanged(object sender, EventArgs e)
+        private void AutoSuicideUseDetailCheckBox_CheckedChanged(object? sender, EventArgs e)
         {
             // Use the sender if available, otherwise fall back to the field. This
             // avoids a potential NullReferenceException when the handler is
@@ -1618,7 +1791,7 @@ namespace ToNRoundCounter.UI
             }
         }
 
-        private void AutoSuicideCheckBox_CheckedChanged(object sender, EventArgs e)
+        private void AutoSuicideCheckBox_CheckedChanged(object? sender, EventArgs e)
         {
             bool enabled = autoSuicideCheckBox.Checked;
             autoSuicideUseDetailCheckBox.Visible = enabled;
