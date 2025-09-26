@@ -38,14 +38,18 @@ jobs:
           Get-ChildItem -Path .\Modules -Filter *.csproj -Recurse | ForEach-Object {
             $projectDirectory = $_.DirectoryName
             $moduleName = $_.BaseName
-            $moduleOutput = Get-ChildItem -Path (Join-Path $projectDirectory 'bin') -Recurse -Filter "$moduleName.dll" |
+
+            $moduleDll = Get-ChildItem -Path (Join-Path $projectDirectory 'bin') -Recurse -Filter '*Module.dll' |
               Sort-Object LastWriteTime -Descending |
               Select-Object -First 1
-            if ($moduleOutput) {
-              $outputDirectory = $moduleOutput.Directory.FullName
-              $destination = Join-Path $modulePackagePath $moduleName
-              New-Item -ItemType Directory -Path $destination | Out-Null
-              Copy-Item -Path (Join-Path $outputDirectory '*') -Destination $destination -Recurse -Force
+
+            if ($moduleDll) {
+              $moduleDirectory = Join-Path $modulePackagePath $moduleName
+              if (Test-Path $moduleDirectory) {
+                Remove-Item -Path $moduleDirectory -Recurse -Force
+              }
+              New-Item -ItemType Directory -Path $moduleDirectory | Out-Null
+              Copy-Item -Path $moduleDll.FullName -Destination (Join-Path $moduleDirectory $moduleDll.Name) -Force
             }
           }
       - name: Package
