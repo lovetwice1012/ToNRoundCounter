@@ -381,7 +381,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public void NotifyMainWindowCreating(ModuleMainWindowCreationContext context)
         {
-            LogHostEvent(nameof(NotifyMainWindowCreating), $"Creating main window '{context.MainWindowType.FullName}'.");
+            LogHostEvent(nameof(NotifyMainWindowCreating), $"Creating main window '{context.WindowType.FullName}'.");
             MainWindowCreating?.Invoke(this, context);
             _bus.Publish(new MainWindowCreating(context));
             foreach (var module in _modules)
