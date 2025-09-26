@@ -86,6 +86,7 @@ namespace ToNRoundCounter
                 sp.GetRequiredService<IInputSender>(),
                 sp.GetRequiredService<IUiDispatcher>(),
                 sp.GetServices<IAfkWarningHandler>(),
+                sp.GetServices<IOscRepeaterPolicy>(),
                 sp.GetRequiredService<ModuleHost>()));
 
             eventLogger.LogEvent("Bootstrap", "Building service provider (pre-build notifications).");

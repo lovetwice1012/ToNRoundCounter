@@ -67,6 +67,7 @@ namespace ToNRoundCounter.Infrastructure
         public double ItemMusicMaxSpeed { get; set; }
         public string DiscordWebhookUrl { get; set; } = string.Empty;
         public string LastSaveCode { get; set; } = string.Empty;
+        public bool AfkSoundCancelEnabled { get; set; } = true;
 
         public void Load()
         {
@@ -313,7 +314,8 @@ namespace ToNRoundCounter.Infrastructure
                 ItemMusicEnabled = ItemMusicEnabled,
                 ItemMusicEntries = ItemMusicEntries,
                 DiscordWebhookUrl = DiscordWebhookUrl,
-                LastSaveCode = LastSaveCode
+                LastSaveCode = LastSaveCode,
+                AfkSoundCancelEnabled = AfkSoundCancelEnabled
             };
 
             string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
@@ -377,5 +379,6 @@ namespace ToNRoundCounter.Infrastructure
         public List<ItemMusicEntry> ItemMusicEntries { get; set; } = new List<ItemMusicEntry>();
         public string DiscordWebhookUrl { get; set; } = string.Empty;
         public string LastSaveCode { get; set; } = string.Empty;
+        public bool AfkSoundCancelEnabled { get; set; } = true;
     }
 }

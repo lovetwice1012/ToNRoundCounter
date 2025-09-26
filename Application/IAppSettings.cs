@@ -46,6 +46,7 @@ namespace ToNRoundCounter.Application
         double ItemMusicMaxSpeed { get; set; }
         string DiscordWebhookUrl { get; set; }
         string LastSaveCode { get; set; }
+        bool AfkSoundCancelEnabled { get; set; }
         void Load();
         Task SaveAsync();
     }

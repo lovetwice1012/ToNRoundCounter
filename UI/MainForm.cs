@@ -62,6 +62,7 @@ namespace ToNRoundCounter.UI
         private readonly IInputSender _inputSender;
         private readonly IUiDispatcher _dispatcher;
         private readonly IReadOnlyList<IAfkWarningHandler> _afkWarningHandlers;
+        private readonly IReadOnlyList<IOscRepeaterPolicy> _oscRepeaterPolicies;
         private readonly ModuleHost _moduleHost;
 
         private Action<WebSocketConnected> _wsConnectedHandler;
@@ -120,7 +121,7 @@ namespace ToNRoundCounter.UI
         }
 
 
-        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, ModuleHost moduleHost)
+        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, IEnumerable<IOscRepeaterPolicy> oscRepeaterPolicies, ModuleHost moduleHost)
         {
             InitializeSoundPlayers();
             this.Name = "MainForm";
@@ -137,7 +138,9 @@ namespace ToNRoundCounter.UI
             _inputSender = inputSender;
             _dispatcher = dispatcher;
             _afkWarningHandlers = (afkWarningHandlers ?? Array.Empty<IAfkWarningHandler>()).ToList();
+            _oscRepeaterPolicies = (oscRepeaterPolicies ?? Array.Empty<IOscRepeaterPolicy>()).ToList();
             LogUi($"AFK warning handlers resolved: {_afkWarningHandlers.Count}.", LogEventLevel.Debug);
+            LogUi($"OSC repeater policies resolved: {_oscRepeaterPolicies.Count}.", LogEventLevel.Debug);
             _moduleHost = moduleHost;
             _presenter.AttachView(this);
             LogUi("Presenter attached to main form view.", LogEventLevel.Debug);
@@ -582,7 +585,44 @@ namespace ToNRoundCounter.UI
             LogUi("Main form load sequence starting.");
             MainForm_Resize(null, null);
             UpdateDisplayVisibility();
-            await InitializeOSCRepeater();
+            var shouldStartOscRepeater = true;
+            if (_oscRepeaterPolicies.Count > 0)
+            {
+                foreach (var policy in _oscRepeaterPolicies)
+                {
+                    if (policy == null)
+                    {
+                        continue;
+                    }
+
+                    bool allowStartup = true;
+                    try
+                    {
+                        allowStartup = policy.ShouldStartOscRepeater(_settings);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUi($"OSC repeater policy {policy.GetType().FullName} threw an exception: {ex.Message}", LogEventLevel.Warning);
+                        continue;
+                    }
+
+                    if (!allowStartup)
+                    {
+                        LogUi($"OSC repeater startup vetoed by {policy.GetType().FullName}.", LogEventLevel.Information);
+                        shouldStartOscRepeater = false;
+                        break;
+                    }
+                }
+            }
+
+            if (shouldStartOscRepeater)
+            {
+                await InitializeOSCRepeater();
+            }
+            else
+            {
+                LogUi("OSC repeater startup skipped by policy.", LogEventLevel.Information);
+            }
             await CheckForUpdatesAsync();
             LogUi("Main form load sequence completed.", LogEventLevel.Debug);
         }
