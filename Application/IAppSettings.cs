@@ -31,7 +31,7 @@ namespace ToNRoundCounter.Application
         List<string> RoundTypeStats { get; set; }
         bool AutoSuicideEnabled { get; set; }
         string apikey { get; set; }
-        ThemeType Theme { get; set; }
+        string ThemeKey { get; set; }
         string LogFilePath { get; set; }
         string WebSocketIp { get; set; }
         bool AutoLaunchEnabled { get; set; }

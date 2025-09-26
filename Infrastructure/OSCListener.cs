@@ -33,10 +33,12 @@ namespace ToNRoundCounter.Infrastructure
             {
                 using (var listener = new OscReceiver(IPAddress.Parse("127.0.0.1"), port))
                 {
+                    Exception? failure = null;
                     try
                     {
+                        _bus.Publish(new OscConnecting(port));
                         listener.Connect();
-                        _bus.Publish(new OscConnected());
+                        _bus.Publish(new OscConnected(port));
                         while (!_cancellation.Token.IsCancellationRequested)
                         {
                             if (listener.State != OscSocketState.Connected)
@@ -47,9 +49,14 @@ namespace ToNRoundCounter.Infrastructure
                             }
                         }
                     }
+                    catch (Exception ex)
+                    {
+                        failure = ex;
+                        _logger.LogEvent("OSC", ex.Message, Serilog.Events.LogEventLevel.Error);
+                    }
                     finally
                     {
-                        _bus.Publish(new OscDisconnected());
+                        _bus.Publish(new OscDisconnected(port, failure));
                     }
                 }
             }, _cancellation.Token).ConfigureAwait(false);

@@ -71,7 +71,8 @@ namespace ToNRoundCounter.UI
         public Label apiKeyLabel { get; private set; }
         public TextBox apiKeyTextBox { get; private set; }
 
-        public CheckBox DarkThemeCheckBox { get; private set; }
+        public ComboBox ThemeComboBox { get; private set; }
+        public FlowLayoutPanel ModuleExtensionsPanel { get; private set; }
         public CheckBox AutoLaunchEnabledCheckBox { get; private set; }
         private DataGridView autoLaunchEntriesGrid;
         private Button autoLaunchAddButton;
@@ -108,13 +109,19 @@ namespace ToNRoundCounter.UI
             int rightColumnY = margin;
             int innerMargin = 10;
 
-            DarkThemeCheckBox = new CheckBox();
-            DarkThemeCheckBox.Text = LanguageManager.Translate("ダークテーマを使用する");
-            DarkThemeCheckBox.AutoSize = true;
-            DarkThemeCheckBox.Location = new Point(margin, currentY);
-            DarkThemeCheckBox.Checked = _settings.Theme == ThemeType.Dark;
-            this.Controls.Add(DarkThemeCheckBox);
-            currentY += DarkThemeCheckBox.Height + margin;
+            Label themeLabel = new Label();
+            themeLabel.Text = LanguageManager.Translate("テーマ");
+            themeLabel.AutoSize = true;
+            themeLabel.Location = new Point(margin, currentY + 4);
+            this.Controls.Add(themeLabel);
+
+            ThemeComboBox = new ComboBox();
+            ThemeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            ThemeComboBox.Location = new Point(themeLabel.Right + 10, currentY);
+            ThemeComboBox.Width = columnWidth - (ThemeComboBox.Left - margin);
+            this.Controls.Add(ThemeComboBox);
+            LoadThemeOptions(Theme.RegisteredThemes, _settings.ThemeKey);
+            currentY += ThemeComboBox.Height + margin;
 
             GroupBox grpOsc = new GroupBox();
             grpOsc.Text = LanguageManager.Translate("OSC設定");
@@ -1191,10 +1198,150 @@ namespace ToNRoundCounter.UI
 
             rightColumnY += grpDiscord.Height + margin;
 
+            ModuleExtensionsPanel = new FlowLayoutPanel();
+            ModuleExtensionsPanel.Name = "ModuleExtensionsPanel";
+            ModuleExtensionsPanel.AutoSize = true;
+            ModuleExtensionsPanel.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            ModuleExtensionsPanel.FlowDirection = FlowDirection.TopDown;
+            ModuleExtensionsPanel.WrapContents = false;
+            ModuleExtensionsPanel.Location = new Point(margin, currentY);
+            ModuleExtensionsPanel.Width = columnWidth;
+            this.Controls.Add(ModuleExtensionsPanel);
+
+            int moduleMargin = margin;
+            ModuleExtensionsPanel.ControlAdded += (s, e) =>
+            {
+                ModuleExtensionsPanel.Width = columnWidth;
+                currentY = Math.Max(currentY, ModuleExtensionsPanel.Bottom);
+                this.Height = Math.Max(Math.Max(currentY, rightColumnY), ModuleExtensionsPanel.Bottom) + moduleMargin;
+            };
+
             // 最後に、パネルの高さを調整
             this.Width = totalWidth;
             this.Height = Math.Max(currentY, rightColumnY) + margin;
 
+        }
+
+        public void LoadThemeOptions(IEnumerable<ThemeDescriptor> themes, string selectedThemeKey)
+        {
+            if (ThemeComboBox == null)
+            {
+                return;
+            }
+
+            var sourceThemes = themes ?? Theme.RegisteredThemes;
+            var items = new List<ThemeListItem>();
+            if (sourceThemes != null)
+            {
+                foreach (var descriptor in sourceThemes)
+                {
+                    if (descriptor == null)
+                    {
+                        continue;
+                    }
+
+                    items.Add(new ThemeListItem(descriptor));
+                }
+            }
+
+            items.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.CurrentCultureIgnoreCase));
+
+            ThemeComboBox.DisplayMember = nameof(ThemeListItem.DisplayName);
+            ThemeComboBox.ValueMember = nameof(ThemeListItem.Key);
+            ThemeComboBox.DataSource = items;
+
+            var selected = items.FirstOrDefault(i => string.Equals(i.Key, selectedThemeKey, StringComparison.OrdinalIgnoreCase));
+            if (selected != null)
+            {
+                ThemeComboBox.SelectedValue = selected.Key;
+            }
+            else if (items.Count > 0)
+            {
+                ThemeComboBox.SelectedIndex = 0;
+            }
+        }
+
+        public string SelectedThemeKey => ThemeComboBox?.SelectedValue as string ?? Theme.DefaultThemeKey;
+
+        public ThemeDescriptor? GetSelectedThemeDescriptor()
+        {
+            return ThemeComboBox?.SelectedItem is ThemeListItem item ? item.Descriptor : null;
+        }
+
+        public T AddModuleExtensionControl<T>(T control) where T : Control
+        {
+            if (control == null)
+            {
+                throw new ArgumentNullException(nameof(control));
+            }
+
+            if (ModuleExtensionsPanel == null)
+            {
+                throw new InvalidOperationException("Module extensions panel is not available yet.");
+            }
+
+            if (control.Margin == Padding.Empty)
+            {
+                control.Margin = new Padding(0, 0, 0, 10);
+            }
+            else if (control.Margin.Bottom == 0)
+            {
+                control.Margin = new Padding(control.Margin.Left, control.Margin.Top, control.Margin.Right, 10);
+            }
+
+            if (control.Dock == DockStyle.None && control.Width <= 0)
+            {
+                int targetWidth = ModuleExtensionsPanel.ClientSize.Width;
+                if (targetWidth <= 0)
+                {
+                    targetWidth = ModuleExtensionsPanel.Width;
+                }
+
+                if (targetWidth > 0)
+                {
+                    control.Width = Math.Max(control.Width, targetWidth - control.Margin.Horizontal);
+                }
+            }
+
+            ModuleExtensionsPanel.Controls.Add(control);
+            return control;
+        }
+
+        public GroupBox AddModuleSettingsGroup(string title)
+        {
+            if (ModuleExtensionsPanel == null)
+            {
+                throw new InvalidOperationException("Module extensions panel is not available yet.");
+            }
+
+            var group = new GroupBox
+            {
+                Text = title ?? string.Empty,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0, 0, 0, 10)
+            };
+
+            AddModuleExtensionControl(group);
+            return group;
+        }
+
+        private sealed class ThemeListItem
+        {
+            public ThemeListItem(ThemeDescriptor descriptor)
+            {
+                Descriptor = descriptor;
+                Key = descriptor.Key;
+                DisplayName = descriptor.DisplayName;
+            }
+
+            public string Key { get; }
+
+            public string DisplayName { get; }
+
+            public ThemeDescriptor Descriptor { get; }
+
+            public override string ToString() => DisplayName;
         }
 
         public void LoadAutoLaunchEntries(IEnumerable<AutoLaunchEntry> entries)

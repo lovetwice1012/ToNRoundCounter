@@ -12,10 +12,15 @@ namespace ToNRoundCounter.Infrastructure
     /// </summary>
     public static class ModuleLoader
     {
-        public static void LoadModules(IServiceCollection services, IEventLogger logger, IEventBus bus, string path = "Modules")
+        public static void LoadModules(IServiceCollection services, ModuleHost host, IEventLogger logger, IEventBus bus, string path = "Modules")
         {
+            host.NotifyDiscoveryStarted(path);
+
             if (!Directory.Exists(path))
+            {
+                host.NotifyDiscoveryCompleted();
                 return;
+            }
 
             foreach (var file in Directory.GetFiles(path, "*.dll"))
             {
@@ -28,7 +33,9 @@ namespace ToNRoundCounter.Infrastructure
                     {
                         if (Activator.CreateInstance(type) is IModule module)
                         {
-                            module.RegisterServices(services);
+                            var moduleName = type.FullName ?? type.Name;
+                            var discovery = new ModuleDiscoveryContext(moduleName, asm, file);
+                            host.RegisterModule(module, discovery, services);
                         }
                     }
                 }
@@ -38,6 +45,8 @@ namespace ToNRoundCounter.Infrastructure
                     bus.Publish(new ModuleLoadFailed(file, ex));
                 }
             }
+
+            host.NotifyDiscoveryCompleted();
         }
     }
 }

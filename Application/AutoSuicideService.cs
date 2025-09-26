@@ -11,7 +11,19 @@ namespace ToNRoundCounter.Application
     {
         private readonly object _lock = new object();
         private CancellationTokenSource _tokenSource;
+        private readonly IEventBus? _bus;
+        private DateTime? _scheduledAtUtc;
+        private TimeSpan _scheduledDelay;
         public DateTime RoundStartTime { get; private set; }
+
+        public AutoSuicideService()
+        {
+        }
+
+        public AutoSuicideService(IEventBus bus)
+        {
+            _bus = bus;
+        }
 
         public bool HasScheduled
         {
@@ -37,6 +49,8 @@ namespace ToNRoundCounter.Application
                 }
                 cts = new CancellationTokenSource();
                 _tokenSource = cts;
+                _scheduledAtUtc = DateTime.UtcNow;
+                _scheduledDelay = delay;
             }
             oldCts?.Cancel();
             oldCts?.Dispose();
@@ -48,6 +62,7 @@ namespace ToNRoundCounter.Application
                     await Task.Delay(delay, cts.Token);
                     if (!cts.IsCancellationRequested)
                     {
+                        _bus?.Publish(new AutoSuicideTriggered());
                         action();
                     }
                 }
@@ -61,23 +76,40 @@ namespace ToNRoundCounter.Application
                         if (_tokenSource == cts)
                         {
                             _tokenSource = null;
+                            _scheduledAtUtc = null;
+                            _scheduledDelay = TimeSpan.Zero;
                         }
                     }
                     cts.Dispose();
                 }
             });
+
+            _bus?.Publish(new AutoSuicideScheduled(delay, resetStartTime));
         }
 
         public void Cancel()
         {
             CancellationTokenSource cts;
+            TimeSpan? remainingDelay = null;
             lock (_lock)
             {
+                if (_tokenSource != null && _scheduledAtUtc.HasValue && _scheduledDelay > TimeSpan.Zero)
+                {
+                    var elapsed = DateTime.UtcNow - _scheduledAtUtc.Value;
+                    var remaining = _scheduledDelay - elapsed;
+                    if (remaining > TimeSpan.Zero)
+                    {
+                        remainingDelay = remaining;
+                    }
+                }
                 cts = _tokenSource;
                 _tokenSource = null;
+                _scheduledAtUtc = null;
+                _scheduledDelay = TimeSpan.Zero;
             }
             cts?.Cancel();
             cts?.Dispose();
+            _bus?.Publish(new AutoSuicideCancelled(remainingDelay));
         }
     }
 }
