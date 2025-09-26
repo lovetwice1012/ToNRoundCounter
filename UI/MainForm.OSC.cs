@@ -9,6 +9,7 @@ using System.IO;
 using System.Diagnostics;
 using Newtonsoft.Json.Linq;
 using Rug.Osc;
+using Serilog.Events;
 
 namespace ToNRoundCounter.UI
 {
@@ -24,6 +25,7 @@ namespace ToNRoundCounter.UI
 
         private async Task InitializeOSCRepeater()
         {
+            LogUi("Initializing OSC repeater integration.", LogEventLevel.Debug);
             if (File.Exists("./OscRepeater.exe"))
             {
                 foreach (var processName in new[] { "OscRepeater", "OSCRepeater" })
@@ -54,6 +56,7 @@ namespace ToNRoundCounter.UI
                 {
                     int port = 30000;
                     bool portFound = false;
+                    LogUi("Selecting OSC port for repeater.", LogEventLevel.Debug);
                     while (!portFound)
                     {
                         try
@@ -68,43 +71,77 @@ namespace ToNRoundCounter.UI
                             port++;
                         }
                     }
+                    LogUi($"OSC repeater port selected: {port}.", LogEventLevel.Debug);
                     _settings.OSCPort = port;
                     _settings.OSCPortChanged = true;
                     await _settings.SaveAsync();
+                    LogUi("OSC port persisted to settings.", LogEventLevel.Debug);
                 }
 
                 ProcessStartInfo psi = new ProcessStartInfo();
                 psi.FileName = "./OscRepeater.exe";
                 psi.Arguments = $"--autostart --autoconfig 127.0.0.1:{_settings.OSCPort} --minimized";
                 psi.UseShellExecute = false;
+                LogUi($"Starting OSC repeater process with arguments '{psi.Arguments}'.");
                 oscRepeaterProcess = Process.Start(psi);
                 if (oscRepeaterProcess != null)
                 {
+                    LogUi($"OSC repeater process started (PID: {oscRepeaterProcess.Id}).", LogEventLevel.Debug);
                     oscRepeaterProcess.EnableRaisingEvents = true;
                     oscRepeaterProcess.Exited += (s, ev) =>
                     {
+                        LogUi("OSC repeater process exited. Closing application.", LogEventLevel.Warning);
                         _dispatcher.Invoke(() => { this.Close(); });
                     };
                 }
+                else
+                {
+                    LogUi("Failed to start OSC repeater process.", LogEventLevel.Error);
+                }
+            }
+            else
+            {
+                LogUi("OscRepeater.exe not found. Skipping repeater startup.", LogEventLevel.Warning);
             }
         }
 
         private void HandleOscMessage(OscMessage message)
         {
-            if (message == null) return;
+            if (message == null)
+            {
+                LogUi("Received null OSC message.", LogEventLevel.Warning);
+                return;
+            }
+            LogUi($"OSC message received: {message.Address} ({message.Count} argument(s)).", LogEventLevel.Debug);
             if (message.Address == "/avatar/parameters/VelocityMagnitude")
             {
-                try { receivedVelocityMagnitude = Convert.ToSingle(message.ToArray()[0]); } catch { }
+                try
+                {
+                    receivedVelocityMagnitude = Convert.ToSingle(message.ToArray()[0]);
+                    LogUi($"Velocity magnitude updated to {receivedVelocityMagnitude}.", LogEventLevel.Debug);
+                }
+                catch (Exception ex)
+                {
+                    LogUi($"Failed to parse velocity magnitude: {ex.Message}", LogEventLevel.Warning);
+                }
             }
             else if (message.Address == "/avatar/parameters/suside")
             {
                 bool suicideFlag = false;
                 if (message.Count > 0)
                 {
-                    try { suicideFlag = Convert.ToBoolean(message.ToArray()[0]); } catch { }
+                    try
+                    {
+                        suicideFlag = Convert.ToBoolean(message.ToArray()[0]);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUi($"Failed to parse suicide flag: {ex.Message}", LogEventLevel.Warning);
+                    }
                 }
                 if (suicideFlag)
                 {
+                    LogUi("Immediate suicide flag received. Executing auto suicide action.");
                     _ = Task.Run(() => PerformAutoSuicide());
                 }
             }
@@ -113,19 +150,35 @@ namespace ToNRoundCounter.UI
                 bool autoSuicideOSC = false;
                 if (message.Count > 0)
                 {
-                    try { autoSuicideOSC = Convert.ToBoolean(message.ToArray()[0]); } catch { }
+                    try
+                    {
+                        autoSuicideOSC = Convert.ToBoolean(message.ToArray()[0]);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUi($"Failed to parse auto-suicide OSC toggle: {ex.Message}", LogEventLevel.Warning);
+                    }
                     _settings.AutoSuicideEnabled = autoSuicideOSC;
                 }
+                LogUi($"Auto suicide OSC toggle set to {autoSuicideOSC}.", LogEventLevel.Debug);
             }
             else if (message.Address == "/avatar/parameters/abortAutoSuside")
             {
                 bool abortFlag = true;
                 if (message.Count > 0)
                 {
-                    try { abortFlag = Convert.ToBoolean(message.ToArray()[0]); } catch { }
+                    try
+                    {
+                        abortFlag = Convert.ToBoolean(message.ToArray()[0]);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUi($"Failed to parse abort flag: {ex.Message}", LogEventLevel.Warning);
+                    }
                 }
                 if (abortFlag)
                 {
+                    LogUi("Abort auto suicide requested via OSC.");
                     autoSuicideService.Cancel();
                 }
             }
@@ -134,13 +187,21 @@ namespace ToNRoundCounter.UI
                 bool delayFlag = true;
                 if (message.Count > 0)
                 {
-                    try { delayFlag = Convert.ToBoolean(message.ToArray()[0]); } catch { }
+                    try
+                    {
+                        delayFlag = Convert.ToBoolean(message.ToArray()[0]);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUi($"Failed to parse delay flag: {ex.Message}", LogEventLevel.Warning);
+                    }
                 }
                 if (delayFlag && autoSuicideService.HasScheduled)
                 {
                     TimeSpan remaining = TimeSpan.FromSeconds(40) - (DateTime.UtcNow - autoSuicideService.RoundStartTime);
                     if (remaining > TimeSpan.Zero)
                     {
+                        LogUi($"Delaying auto suicide by {remaining}.", LogEventLevel.Debug);
                         autoSuicideService.Schedule(remaining, false, PerformAutoSuicide);
                     }
                 }
@@ -150,10 +211,18 @@ namespace ToNRoundCounter.UI
                 float setAlertValue = 0;
                 if (message.Count > 0)
                 {
-                    try { setAlertValue = Convert.ToSingle(message.ToArray()[0]); } catch { }
+                    try
+                    {
+                        setAlertValue = Convert.ToSingle(message.ToArray()[0]);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUi($"Failed to parse alert value: {ex.Message}", LogEventLevel.Warning);
+                    }
                 }
                 if (setAlertValue != 0)
                 {
+                    LogUi($"Forwarding alert value {setAlertValue} to TonSprink.", LogEventLevel.Debug);
                     _ = SendAlertToTonSprinkAsync(setAlertValue);
                 }
             }
@@ -162,10 +231,18 @@ namespace ToNRoundCounter.UI
                 bool getLatestSaveCode = false;
                 if (message.Count > 0)
                 {
-                    try { getLatestSaveCode = Convert.ToBoolean(message.ToArray()[0]); } catch { }
+                    try
+                    {
+                        getLatestSaveCode = Convert.ToBoolean(message.ToArray()[0]);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUi($"Failed to parse save code request flag: {ex.Message}", LogEventLevel.Warning);
+                    }
                 }
                 if (getLatestSaveCode)
                 {
+                    LogUi("OSC request received for latest save code.");
                     if (string.IsNullOrEmpty(_settings.apikey))
                     {
                         CopyCachedSaveCode("API key is not configured");
@@ -211,14 +288,30 @@ namespace ToNRoundCounter.UI
             {
                 if (message.Count > 0)
                 {
-                    try { issetAllSelfKillMode = Convert.ToBoolean(message.ToArray()[0]); } catch { }
+                    try
+                    {
+                        issetAllSelfKillMode = Convert.ToBoolean(message.ToArray()[0]);
+                        LogUi($"Received 'isAllSelfKill' flag: {issetAllSelfKillMode}.", LogEventLevel.Debug);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUi($"Failed to parse isAllSelfKill flag: {ex.Message}", LogEventLevel.Warning);
+                    }
                 }
             }
             else if (message.Address == "/avatar/parameters/followAutoSelfKill")
             {
                 if (message.Count > 0)
                 {
-                    try { followAutoSelfKill = Convert.ToBoolean(message.ToArray()[0]); } catch { }
+                    try
+                    {
+                        followAutoSelfKill = Convert.ToBoolean(message.ToArray()[0]);
+                        LogUi($"Received 'followAutoSelfKill' flag: {followAutoSelfKill}.", LogEventLevel.Debug);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUi($"Failed to parse followAutoSelfKill flag: {ex.Message}", LogEventLevel.Warning);
+                    }
                 }
             }
 

@@ -114,6 +114,11 @@ namespace ToNRoundCounter.UI
         private string terrorCountdownTargetName = string.Empty;
         private int terrorCountdownLastDisplayedSeconds = -1;
 
+        private void LogUi(string message, LogEventLevel level = LogEventLevel.Information)
+        {
+            _logger?.LogEvent("MainForm", message, level);
+        }
+
 
         public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, ModuleHost moduleHost)
         {
@@ -125,20 +130,24 @@ namespace ToNRoundCounter.UI
             this.stateService = stateService;
             _settings = settings;
             _logger = logger;
+            LogUi("Constructing main form instance and wiring dependencies.");
             _presenter = presenter;
             _eventBus = eventBus;
             _cancellation = cancellation;
             _inputSender = inputSender;
             _dispatcher = dispatcher;
             _afkWarningHandlers = (afkWarningHandlers ?? Array.Empty<IAfkWarningHandler>()).ToList();
+            LogUi($"AFK warning handlers resolved: {_afkWarningHandlers.Count}.", LogEventLevel.Debug);
             _moduleHost = moduleHost;
             _presenter.AttachView(this);
+            LogUi("Presenter attached to main form view.", LogEventLevel.Debug);
 
             terrorColors = new Dictionary<string, Color>();
             LoadTerrorInfo();
             _settings.Load();
             _lastSaveCode = _settings.LastSaveCode ?? string.Empty;
             UpdateItemMusicPlayer(null);
+            LogUi("Initial settings and resources loaded.", LogEventLevel.Debug);
             _moduleHost.NotifyThemeCatalogBuilding(new ModuleThemeCatalogContext(Theme.RegisteredThemes, Theme.RegisterTheme, _moduleHost.CurrentServiceProvider));
             _moduleHost.NotifyAuxiliaryWindowCatalogBuilding();
             Theme.SetTheme(_settings.ThemeKey, new ThemeApplicationContext(this, _moduleHost.CurrentServiceProvider));
@@ -150,6 +159,7 @@ namespace ToNRoundCounter.UI
             _moduleHost.NotifyMainWindowUiComposed(new ModuleMainWindowUiContext(this, this.Controls, mainMenuStrip, _moduleHost.CurrentServiceProvider));
             ApplyTheme();
             _moduleHost.NotifyMainWindowLayoutUpdated(new ModuleMainWindowLayoutContext(this, _moduleHost.CurrentServiceProvider));
+            LogUi("Main window composition and module notifications completed.");
             this.Load += MainForm_Load;
             _wsConnectedHandler = _ => _dispatcher.Invoke(() =>
             {
@@ -194,10 +204,12 @@ namespace ToNRoundCounter.UI
             velocityTimer.Interval = 50;
             velocityTimer.Tick += VelocityTimer_Tick;
             velocityTimer.Start();
+            LogUi("Main form construction complete. Background listeners and timers started.");
         }
 
         private void InitializeComponents()
         {
+            LogUi("Initializing main form visual components.", LogEventLevel.Debug);
             this.Text = LanguageManager.Translate("ToNRoundCouter");
             this.Size = new Size(600, 800);
             this.MinimumSize = new Size(300, 400);
@@ -363,10 +375,12 @@ namespace ToNRoundCounter.UI
             logPanel.AggregateStatsTextBox.BackColor = useCustomPanelColors ? Color.White : themeColors.PanelBackground;
             logPanel.RoundLogTextBox.BackColor = useCustomPanelColors ? Color.White : themeColors.PanelBackground;
             terrorInfoPanel.ApplyTheme();
+            LogUi("Theme applied to main form components.", LogEventLevel.Debug);
         }
 
         private void MainForm_Resize(object sender, EventArgs e)
         {
+            LogUi($"Main form resized to {this.ClientSize.Width}x{this.ClientSize.Height}.", LogEventLevel.Debug);
             int margin = 10;
             int contentWidth = this.ClientSize.Width - 2 * margin;
             int currentY = (mainMenuStrip != null ? mainMenuStrip.Bottom : 0) + margin;
@@ -395,10 +409,12 @@ namespace ToNRoundCounter.UI
         {
             this.TopMost = !this.TopMost;
             btnToggleTopMost.Text = this.TopMost ? LanguageManager.Translate("固定解除") : LanguageManager.Translate("固定する");
+            LogUi($"TopMost toggled. New state: {this.TopMost}.", LogEventLevel.Debug);
         }
 
         private async void BtnSettings_Click(object sender, EventArgs e)
         {
+            LogUi("Settings dialog requested by user.");
             using (SettingsForm settingsForm = new SettingsForm(_settings))
             {
                 var buildContext = new ModuleSettingsViewBuildContext(settingsForm, settingsForm.SettingsPanel, _settings, _moduleHost.CurrentServiceProvider);
@@ -563,16 +579,19 @@ namespace ToNRoundCounter.UI
 
         private async void MainForm_Load(object sender, EventArgs e)
         {
+            LogUi("Main form load sequence starting.");
             MainForm_Resize(null, null);
             UpdateDisplayVisibility();
             await InitializeOSCRepeater();
             await CheckForUpdatesAsync();
+            LogUi("Main form load sequence completed.", LogEventLevel.Debug);
         }
 
         private async Task CheckForUpdatesAsync()
         {
             try
             {
+                LogUi("Checking for application updates.", LogEventLevel.Debug);
                 using (var client = new HttpClient())
                 {
                     var json = await client.GetStringAsync("https://raw.githubusercontent.com/lovetwice1012/ToNRoundCounter/refs/heads/master/version.json");
@@ -581,9 +600,11 @@ namespace ToNRoundCounter.UI
                     var url = data["url"]?.ToString();
                     if (!string.IsNullOrEmpty(latest) && !string.IsNullOrEmpty(url) && IsOlderVersion(version, latest))
                     {
+                        LogUi($"Update available. Current: {version}, Latest: {latest}.");
                         var result = MessageBox.Show($"新しいバージョン {latest} が利用可能です。\n更新をダウンロードして適用しますか？", "アップデート", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
                         if (result == DialogResult.Yes)
                         {
+                            LogUi("User accepted update download.");
                             var zipPath = Path.Combine(Path.GetTempPath(), "ToNRoundCounter_update.zip");
                             var bytes = await client.GetByteArrayAsync(url);
                             File.WriteAllBytes(zipPath, bytes);
@@ -591,6 +612,7 @@ namespace ToNRoundCounter.UI
                             var updaterExe = Path.Combine(Directory.GetCurrentDirectory(), "Updater.exe");
                             if (File.Exists(updaterExe))
                             {
+                                LogUi($"Launching updater from '{updaterExe}' with package '{zipPath}'.");
                                 Process.Start(new ProcessStartInfo(updaterExe)
                                 {
                                     Arguments = $"\"{zipPath}\" \"{WinFormsApp.ExecutablePath}\"",
@@ -600,15 +622,24 @@ namespace ToNRoundCounter.UI
                             }
                             else
                             {
+                                LogUi("Updater executable not found during update attempt.", LogEventLevel.Error);
                                 MessageBox.Show("Updater.exe が見つかりません。", "アップデート", MessageBoxButtons.OK, MessageBoxIcon.Error);
                             }
                         }
+                        else
+                        {
+                            LogUi("User declined update installation.", LogEventLevel.Debug);
+                        }
+                    }
+                    else
+                    {
+                        LogUi("Application is up to date.", LogEventLevel.Debug);
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // ignore errors while checking for updates
+                LogUi($"Failed to check for updates: {ex.Message}", LogEventLevel.Warning);
             }
         }
 
@@ -626,6 +657,7 @@ namespace ToNRoundCounter.UI
 
         private void UnsubscribeEventBus()
         {
+            LogUi("Unsubscribing event bus handlers.", LogEventLevel.Debug);
             if (_wsConnectedHandler != null) _eventBus.Unsubscribe(_wsConnectedHandler);
             if (_wsDisconnectedHandler != null) _eventBus.Unsubscribe(_wsDisconnectedHandler);
             if (_oscConnectedHandler != null) _eventBus.Unsubscribe(_oscConnectedHandler);
@@ -638,6 +670,7 @@ namespace ToNRoundCounter.UI
 
         protected override async void OnFormClosing(FormClosingEventArgs e)
         {
+            LogUi("Main form closing initiated.");
             SaveRoundLogsToFile();
             _cancellation.Cancel();
             await webSocketClient.StopAsync();
@@ -651,6 +684,7 @@ namespace ToNRoundCounter.UI
                 }
                 catch { }
             }
+            LogUi("Main form closing sequence finished. Base closing invoked.", LogEventLevel.Debug);
             base.OnFormClosing(e);
         }
 
@@ -658,9 +692,11 @@ namespace ToNRoundCounter.UI
         {
             try
             {
+                LogUi("Persisting round logs to disk.", LogEventLevel.Debug);
                 var history = stateService.GetRoundLogHistory();
                 if (history == null)
                 {
+                    LogUi("No round log history available; skipping save.", LogEventLevel.Debug);
                     return;
                 }
 
@@ -683,15 +719,18 @@ namespace ToNRoundCounter.UI
                 }
 
                 _logger?.LogEvent("RoundLog", $"ラウンドログをファイルに保存しました: {filePath}");
+                LogUi($"Round log history saved to '{filePath}'.", LogEventLevel.Debug);
             }
             catch (Exception ex)
             {
                 _logger?.LogEvent("RoundLogError", $"ラウンドログの保存に失敗しました: {ex.Message}", LogEventLevel.Error);
+                LogUi($"Failed to save round logs: {ex.Message}", LogEventLevel.Error);
             }
         }
 
         private async Task HandleEventAsync(string message)
         {
+            LogUi($"Processing inbound WebSocket payload ({message.Length} chars).", LogEventLevel.Debug);
             try
             {
                 var json = JObject.Parse(message);
@@ -702,6 +741,7 @@ namespace ToNRoundCounter.UI
                 {
                     command = commandToken.Value<int>();
                 }
+                LogUi($"WebSocket event '{eventType}' received with command {command}.", LogEventLevel.Debug);
                 if (eventType == "CONNECTED")
                 {
                     stateService.PlayerDisplayName = json.Value<string>("DisplayName") ?? "";
@@ -1099,9 +1139,10 @@ namespace ToNRoundCounter.UI
 
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 _logger.LogEvent(LanguageManager.Translate("ParseError"), message);
+                LogUi($"Failed to process WebSocket payload: {ex.Message}", LogEventLevel.Error);
             }
         }
 
@@ -1460,6 +1501,7 @@ namespace ToNRoundCounter.UI
 
         private void UpdateDisplayVisibility()
         {
+            LogUi($"Updating display visibility. Stats: {_settings.ShowStats}, RoundLog: {_settings.ShowRoundLog}.", LogEventLevel.Debug);
             lblStatsTitle.Visible = _settings.ShowStats;
             rtbStatsDisplay.Visible = _settings.ShowStats;
             lblRoundLogTitle.Visible = _settings.ShowRoundLog;
@@ -1507,7 +1549,6 @@ namespace ToNRoundCounter.UI
 
         private void LoadTerrorInfo()
         {
-
             string path = "./terrorsInfo.json";
 
 
@@ -1516,13 +1557,20 @@ namespace ToNRoundCounter.UI
             {
                 try
                 {
+                    LogUi($"Loading terror info from '{path}'.", LogEventLevel.Debug);
                     string json = File.ReadAllText(path, Encoding.UTF8);
                     terrorInfoData = JObject.Parse(json);
+                    LogUi("Terror info loaded successfully.", LogEventLevel.Debug);
                 }
                 catch
                 {
+                    LogUi("Failed to parse terror info file. Terror info disabled.", LogEventLevel.Warning);
                     terrorInfoData = null;
                 }
+            }
+            else
+            {
+                LogUi($"Terror info file '{path}' not found.", LogEventLevel.Debug);
             }
         }
 
