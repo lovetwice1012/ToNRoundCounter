@@ -32,6 +32,7 @@ namespace ToNRoundCounter.UI
 
         private void InitializeSoundPlayers()
         {
+            LogUi("Initializing media players for notifications.", LogEventLevel.Debug);
             notifyPlayer.Stop();
             afkPlayer.Stop();
             punishPlayer.Stop();
@@ -47,6 +48,7 @@ namespace ToNRoundCounter.UI
         {
             if (!_settings.ItemMusicEnabled || entry == null || !entry.Enabled)
             {
+                LogUi("Item music playback skipped due to settings or entry state.", LogEventLevel.Debug);
                 return;
             }
 
@@ -57,6 +59,7 @@ namespace ToNRoundCounter.UI
                 itemMusicLoopRequested = true;
                 itemMusicActive = true;
                 PlayFromStart(itemMusicPlayer);
+                LogUi($"Item music started for '{entry.DisplayName}'.");
             }
         }
 
@@ -65,10 +68,12 @@ namespace ToNRoundCounter.UI
             itemMusicLoopRequested = false;
             itemMusicActive = false;
             itemMusicPlayer?.Stop();
+            LogUi("Item music playback stopped.", LogEventLevel.Debug);
         }
 
         private void ResetItemMusicTracking()
         {
+            LogUi("Resetting item music tracking state.", LogEventLevel.Debug);
             itemMusicMatchStart = DateTime.MinValue;
             itemMusicLoopRequested = false;
             if (itemMusicActive)
@@ -81,6 +86,7 @@ namespace ToNRoundCounter.UI
         {
             if (!_settings.ItemMusicEnabled || entry == null || !entry.Enabled)
             {
+                LogUi("EnsureItemMusicPlayer skipped due to configuration.", LogEventLevel.Debug);
                 return;
             }
 
@@ -91,6 +97,7 @@ namespace ToNRoundCounter.UI
 
             if (needsReload)
             {
+                LogUi("Reloading item music player due to configuration change.", LogEventLevel.Debug);
                 UpdateItemMusicPlayer(entry);
             }
         }
@@ -103,6 +110,7 @@ namespace ToNRoundCounter.UI
 
                 if (!_settings.ItemMusicEnabled)
                 {
+                    LogUi("Item music disabled. Skipping player update.", LogEventLevel.Debug);
                     return;
                 }
 
@@ -110,12 +118,14 @@ namespace ToNRoundCounter.UI
 
                 if (entry == null || !entry.Enabled)
                 {
+                    LogUi("No active item music entry. Player not updated.", LogEventLevel.Debug);
                     return;
                 }
 
                 string configuredPath = entry.SoundPath ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(configuredPath))
                 {
+                    LogUi("Item music entry has no configured path.", LogEventLevel.Warning);
                     return;
                 }
 
@@ -123,6 +133,7 @@ namespace ToNRoundCounter.UI
                 if (!File.Exists(fullPath))
                 {
                     _logger.LogEvent("ItemMusic", $"Sound file not found: {fullPath}", LogEventLevel.Warning);
+                    LogUi($"Configured item music file not found: {fullPath}.", LogEventLevel.Warning);
                     return;
                 }
 
@@ -132,10 +143,12 @@ namespace ToNRoundCounter.UI
                 itemMusicPlayer.MediaFailed += ItemMusicPlayer_MediaFailed;
                 lastLoadedItemMusicPath = fullPath;
                 _logger.LogEvent("ItemMusic", $"Loaded sound file: {fullPath}");
+                LogUi($"Item music player loaded file '{fullPath}'.", LogEventLevel.Debug);
             }
             catch (Exception ex)
             {
                 _logger.LogEvent("ItemMusic", ex.ToString(), LogEventLevel.Error);
+                LogUi($"Failed to update item music player: {ex.Message}", LogEventLevel.Error);
             }
         }
 
@@ -156,6 +169,7 @@ namespace ToNRoundCounter.UI
                 finally
                 {
                     itemMusicPlayer = null;
+                    LogUi("Item music player disposed.", LogEventLevel.Debug);
                 }
             }
 
@@ -169,6 +183,7 @@ namespace ToNRoundCounter.UI
         {
             if (itemMusicLoopRequested && itemMusicPlayer != null)
             {
+                LogUi("Item music track ended. Loop restart requested.", LogEventLevel.Debug);
                 PlayFromStart(itemMusicPlayer);
             }
         }
@@ -176,6 +191,7 @@ namespace ToNRoundCounter.UI
         private void ItemMusicPlayer_MediaFailed(object sender, ExceptionEventArgs e)
         {
             _logger.LogEvent("ItemMusic", $"Failed to play sound: {e.ErrorException?.Message}", LogEventLevel.Error);
+            LogUi($"Item music playback failure: {e.ErrorException?.Message}", LogEventLevel.Error);
             StopItemMusic();
         }
     }
