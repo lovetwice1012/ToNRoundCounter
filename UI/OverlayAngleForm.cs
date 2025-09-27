@@ -170,11 +170,12 @@ namespace ToNRoundCounter.UI
                 float crossLength = radius * 0.85f;
                 g.DrawLine(crossPen, -crossLength, 0, crossLength, 0);
                 g.DrawLine(crossPen, 0, -crossLength, 0, crossLength);
+                g.Restore(state);
 
-                g.RotateTransform(-45f);
+                state = g.Save();
+                g.TranslateTransform(centerX, centerY);
                 float pointerLength = radius * 0.9f;
                 g.DrawLine(pointerPen, 0, 0, 0, -pointerLength);
-
                 g.Restore(state);
 
                 using var centerBrush = new SolidBrush(Color.White);

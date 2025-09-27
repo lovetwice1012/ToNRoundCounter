@@ -45,7 +45,11 @@ namespace ToNRoundCounter.UI
         public NumericUpDown OverlayRoundHistoryCountNumeric { get; private set; } = null!;
         public CheckBox OverlayTerrorInfoCheckBox { get; private set; } = null!;
         public CheckBox OverlayShortcutsCheckBox { get; private set; } = null!;
+        public CheckBox OverlayClockCheckBox { get; private set; } = null!;
+        public CheckBox OverlayInstanceTimerCheckBox { get; private set; } = null!;
         public CheckBox OverlayUnboundTerrorDetailsCheckBox { get; private set; } = null!;
+        public TrackBar OverlayOpacityTrackBar { get; private set; } = null!;
+        public Label OverlayOpacityValueLabel { get; private set; } = null!;
 
         // ラウンドログ表示切替チェックボックス
         public CheckBox ToggleRoundLogCheckBox { get; private set; } = null!;
@@ -823,6 +827,50 @@ namespace ToNRoundCounter.UI
 
             overlayInnerY = OverlayShortcutsCheckBox.Bottom + 8;
 
+            OverlayClockCheckBox = new CheckBox();
+            OverlayClockCheckBox.Text = LanguageManager.Translate("時計を表示");
+            OverlayClockCheckBox.AutoSize = true;
+            OverlayClockCheckBox.Location = new Point(overlayInnerMargin, overlayInnerY);
+            grpOverlay.Controls.Add(OverlayClockCheckBox);
+
+            overlayInnerY = OverlayClockCheckBox.Bottom + 8;
+
+            OverlayInstanceTimerCheckBox = new CheckBox();
+            OverlayInstanceTimerCheckBox.Text = LanguageManager.Translate("滞在タイマーを表示");
+            OverlayInstanceTimerCheckBox.AutoSize = true;
+            OverlayInstanceTimerCheckBox.Location = new Point(overlayInnerMargin, overlayInnerY);
+            grpOverlay.Controls.Add(OverlayInstanceTimerCheckBox);
+
+            overlayInnerY = OverlayInstanceTimerCheckBox.Bottom + 12;
+
+            var overlayOpacityLabel = new Label();
+            overlayOpacityLabel.Text = LanguageManager.Translate("透明度");
+            overlayOpacityLabel.AutoSize = true;
+            overlayOpacityLabel.Location = new Point(overlayInnerMargin + 4, overlayInnerY + 4);
+            grpOverlay.Controls.Add(overlayOpacityLabel);
+
+            OverlayOpacityValueLabel = new Label();
+            OverlayOpacityValueLabel.AutoSize = false;
+            OverlayOpacityValueLabel.Width = 60;
+            OverlayOpacityValueLabel.TextAlign = ContentAlignment.MiddleRight;
+            OverlayOpacityValueLabel.Location = new Point(columnWidth - overlayInnerMargin - OverlayOpacityValueLabel.Width, overlayInnerY + 4);
+            grpOverlay.Controls.Add(OverlayOpacityValueLabel);
+
+            OverlayOpacityTrackBar = new TrackBar();
+            OverlayOpacityTrackBar.Minimum = 20;
+            OverlayOpacityTrackBar.Maximum = 100;
+            OverlayOpacityTrackBar.TickFrequency = 5;
+            OverlayOpacityTrackBar.TickStyle = TickStyle.None;
+            OverlayOpacityTrackBar.LargeChange = 5;
+            OverlayOpacityTrackBar.SmallChange = 1;
+            OverlayOpacityTrackBar.Width = columnWidth - overlayInnerMargin * 2;
+            OverlayOpacityTrackBar.Location = new Point(overlayInnerMargin + 4, overlayOpacityLabel.Bottom + 6);
+            grpOverlay.Controls.Add(OverlayOpacityTrackBar);
+            OverlayOpacityTrackBar.ValueChanged += (s, e) => UpdateOverlayOpacityLabel();
+
+            overlayInnerY = OverlayOpacityTrackBar.Bottom + 8;
+            UpdateOverlayOpacityLabel();
+
             grpOverlay.Height = overlayInnerY + 7;
             thirdColumnY = grpOverlay.Bottom + margin;
 
@@ -1473,6 +1521,44 @@ namespace ToNRoundCounter.UI
 
             AddModuleExtensionControl(group);
             return group;
+        }
+
+        public void SetOverlayOpacity(double opacity)
+        {
+            if (OverlayOpacityTrackBar == null)
+            {
+                return;
+            }
+
+            if (opacity <= 0d)
+            {
+                opacity = 0.95d;
+            }
+
+            int value = (int)Math.Round(opacity * 100d);
+            value = Math.Max(OverlayOpacityTrackBar.Minimum, Math.Min(OverlayOpacityTrackBar.Maximum, value));
+            OverlayOpacityTrackBar.Value = value;
+            UpdateOverlayOpacityLabel();
+        }
+
+        public double GetOverlayOpacity()
+        {
+            if (OverlayOpacityTrackBar == null)
+            {
+                return 1d;
+            }
+
+            return OverlayOpacityTrackBar.Value / 100d;
+        }
+
+        private void UpdateOverlayOpacityLabel()
+        {
+            if (OverlayOpacityTrackBar == null || OverlayOpacityValueLabel == null)
+            {
+                return;
+            }
+
+            OverlayOpacityValueLabel.Text = $"{OverlayOpacityTrackBar.Value}%";
         }
 
         private sealed class ThemeListItem
