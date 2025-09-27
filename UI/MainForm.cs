@@ -126,6 +126,7 @@ namespace ToNRoundCounter.UI
         private System.Windows.Forms.Timer? overlayVisibilityTimer;
         private OverlayShortcutForm? shortcutOverlayForm;
         private bool overlayTemporarilyHidden;
+        private int activeOverlayInteractions;
         private readonly object instanceTimerSync = new();
         private string currentInstanceId = string.Empty;
         private DateTimeOffset currentInstanceEnteredAt = DateTimeOffset.Now;
@@ -288,6 +289,14 @@ namespace ToNRoundCounter.UI
             {
                 OverlaySectionForm form = section switch
                 {
+                    OverlaySection.Velocity => new OverlayVelocityForm(title)
+                    {
+                        StartPosition = FormStartPosition.Manual,
+                    },
+                    OverlaySection.Clock => new OverlayClockForm(title)
+                    {
+                        StartPosition = FormStartPosition.Manual,
+                    },
                     OverlaySection.RoundHistory => new OverlayRoundHistoryForm(title)
                     {
                         StartPosition = FormStartPosition.Manual,
@@ -306,7 +315,7 @@ namespace ToNRoundCounter.UI
                     }
                 };
 
-                form.Opacity = GetEffectiveOverlayOpacity();
+                form.SetBackgroundOpacity(GetEffectiveOverlayOpacity());
 
                 string key = GetOverlaySectionKey(section);
 
@@ -318,6 +327,14 @@ namespace ToNRoundCounter.UI
                 {
                     shortcutOverlayForm = shortcuts;
                     SetupShortcutOverlay(shortcuts);
+                }
+                else if (section == OverlaySection.Clock && form is OverlayClockForm clockForm)
+                {
+                    UpdateClockForm(clockForm);
+                }
+                else if (section == OverlaySection.Velocity && form is OverlayVelocityForm velocityForm)
+                {
+                    velocityForm.UpdateReadings(currentVelocity, lastIdleSeconds);
                 }
                 else
                 {
@@ -361,6 +378,8 @@ namespace ToNRoundCounter.UI
                 overlayForms[section] = form;
                 form.Move += (_, _) => HandleOverlayMoved(section, form);
                 form.SizeChanged += (_, _) => HandleOverlayResized(section, form);
+                form.DragInteractionStarted += HandleOverlayInteractionStarted;
+                form.DragInteractionEnded += HandleOverlayInteractionEnded;
             }
 
             ApplyOverlayRoundHistorySettings();
@@ -377,6 +396,7 @@ namespace ToNRoundCounter.UI
         private void OverlayVisibilityTimer_Tick(object? sender, EventArgs e)
         {
             UpdateClockOverlay();
+            UpdateVelocityOverlay();
             UpdateInstanceTimerOverlay();
             UpdateOverlayVisibility();
         }
@@ -402,7 +422,8 @@ namespace ToNRoundCounter.UI
 
                 bool enabled = IsOverlaySectionEnabled(section);
                 bool overlayHasFocus = form.ContainsFocus;
-                bool shouldShow = enabled && (isVrChatForeground || overlayHasFocus) && !overlayTemporarilyHidden;
+                bool shouldShow = enabled && !overlayTemporarilyHidden &&
+                                  (isVrChatForeground || overlayHasFocus || activeOverlayInteractions > 0);
 
                 if (shouldShow)
                 {
@@ -424,7 +445,30 @@ namespace ToNRoundCounter.UI
             }
         }
 
-        private void ApplyOverlayOpacityToForms()
+        private void HandleOverlayInteractionStarted(object? sender, EventArgs e)
+        {
+            activeOverlayInteractions++;
+
+            if (activeOverlayInteractions == 1)
+            {
+                UpdateOverlayVisibility();
+            }
+        }
+
+        private void HandleOverlayInteractionEnded(object? sender, EventArgs e)
+        {
+            if (activeOverlayInteractions > 0)
+            {
+                activeOverlayInteractions--;
+            }
+
+            if (activeOverlayInteractions == 0)
+            {
+                UpdateOverlayVisibility();
+            }
+        }
+
+        private void ApplyOverlayBackgroundOpacityToForms()
         {
             double opacity = GetEffectiveOverlayOpacity();
 
@@ -435,7 +479,7 @@ namespace ToNRoundCounter.UI
                     continue;
                 }
 
-                form.Opacity = opacity;
+                form.SetBackgroundOpacity(opacity);
             }
         }
 
@@ -600,7 +644,37 @@ namespace ToNRoundCounter.UI
 
         private void UpdateClockOverlay()
         {
-            UpdateOverlay(OverlaySection.Clock, form => form.SetValue(GetClockOverlayText()));
+            DateTimeOffset now = DateTimeOffset.Now;
+            string fallback = FormatClockOverlayText(now);
+
+            UpdateOverlay(OverlaySection.Clock, form =>
+            {
+                if (form is OverlayClockForm clockForm)
+                {
+                    clockForm.UpdateTime(now, JapaneseCulture);
+                }
+                else
+                {
+                    form.SetValue(fallback);
+                }
+            });
+        }
+
+        private void UpdateVelocityOverlay()
+        {
+            string fallback = $"{currentVelocity:F2}\nAFK: {lastIdleSeconds:F1}秒";
+
+            UpdateOverlay(OverlaySection.Velocity, form =>
+            {
+                if (form is OverlayVelocityForm velocityForm)
+                {
+                    velocityForm.UpdateReadings(currentVelocity, lastIdleSeconds);
+                }
+                else
+                {
+                    form.SetValue(fallback);
+                }
+            });
         }
 
         private void UpdateInstanceTimerOverlay()
@@ -610,7 +684,11 @@ namespace ToNRoundCounter.UI
 
         private string GetClockOverlayText()
         {
-            DateTimeOffset now = DateTimeOffset.Now;
+            return FormatClockOverlayText(DateTimeOffset.Now);
+        }
+
+        private string FormatClockOverlayText(DateTimeOffset now)
+        {
             string dayName = JapaneseCulture.DateTimeFormat.GetDayName(now.DayOfWeek);
             if (dayName.EndsWith("曜日", StringComparison.Ordinal))
             {
@@ -623,7 +701,13 @@ namespace ToNRoundCounter.UI
                 dayName = JapaneseCulture.DateTimeFormat.GetAbbreviatedDayName(now.DayOfWeek);
             }
 
-            return $"{now:yyyy}年{now:MM}月{now:dd}日({dayName}) {now:HH}時{now:mm}分{now:ss}秒";
+            return $"{now:yyyy:MM:dd} ({dayName})\n{now:HH:mm:ss}";
+        }
+
+        private void UpdateClockForm(OverlayClockForm form)
+        {
+            DateTimeOffset now = DateTimeOffset.Now;
+            form.UpdateTime(now, JapaneseCulture);
         }
 
         private string GetInstanceTimerDisplayText()
@@ -1078,7 +1162,7 @@ namespace ToNRoundCounter.UI
                     InfoPanel.TerrorValue.ForeColor = _settings.FixedTerrorColor;
                     UpdateAggregateStatsDisplay();
                     UpdateDisplayVisibility();
-                    ApplyOverlayOpacityToForms();
+                    ApplyOverlayBackgroundOpacityToForms();
                     UpdateOverlayVisibility();
                     UpdateShortcutOverlayState();
                     ApplyOverlayRoundHistorySettings();
@@ -1898,6 +1982,7 @@ namespace ToNRoundCounter.UI
         private async void VelocityTimer_Tick(object sender, EventArgs e)
         {
             // 無操作判定：VelocityMagnitudeの絶対値が1未満の場合、最低1秒連続してidleと判定する
+            double idleSecondsForDisplay = 0d;
             if (stateService.CurrentRound != null && currentVelocity < 1)
             {
                 if (idleStartTime == DateTime.MinValue)
@@ -1907,6 +1992,7 @@ namespace ToNRoundCounter.UI
                 else
                 {
                     double idleSeconds = (DateTime.Now - idleStartTime).TotalSeconds;
+                    idleSecondsForDisplay = idleSeconds;
                     // 70秒以上無操作の場合、70秒時点で音声再生（まだ再生していなければ）
                     if (idleSeconds >= 70 && !afkSoundPlayed)
                     {
@@ -1945,9 +2031,13 @@ namespace ToNRoundCounter.UI
             else
             {
                 idleStartTime = DateTime.MinValue;
-                InfoPanel.IdleTimeLabel.Text = "";
+                InfoPanel.IdleTimeLabel.Text = string.Empty;
+                InfoPanel.IdleTimeLabel.ForeColor = Color.White;
                 afkSoundPlayed = false;
             }
+
+            lastIdleSeconds = idleSecondsForDisplay;
+            UpdateVelocityOverlay();
 
             string currentItemText = InfoPanel.ItemValue.Text ?? string.Empty;
 

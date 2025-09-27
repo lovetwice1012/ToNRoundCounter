@@ -4,6 +4,7 @@ using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using ToNRoundCounter.Infrastructure.Interop;
+using ToNRoundCounter.UI.DirectX;
 
 namespace ToNRoundCounter.UI
 {
@@ -13,11 +14,20 @@ namespace ToNRoundCounter.UI
 
         private readonly Label? valueLabel;
         private readonly TableLayoutPanel layout;
+        private readonly Color baseBackgroundColor;
         private Size baseContentSize;
         private Size pendingBaseContentSize;
         private float currentScaleFactor = 1f;
         private float pendingScaleFactor = 1f;
+        private Size defaultBaseContentSize;
+        private float defaultScaleFactor = 1f;
+        private bool defaultSizeCaptured;
         private bool isUserResizing;
+        private bool isInSystemDragOperation;
+        private bool interactionActive;
+        private double backgroundOpacity = DefaultBackgroundOpacity;
+
+        private const double DefaultBackgroundOpacity = 0.7d;
 
         public OverlaySectionForm(string title)
             : this(title, null)
@@ -33,17 +43,19 @@ namespace ToNRoundCounter.UI
                     ControlStyles.UserPaint |
                     ControlStyles.SupportsTransparentBackColor,
                     true);
+            UpdateStyles();
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
             TopMost = false;
             DoubleBuffered = true;
-            BackColor = Color.FromArgb(180, 30, 30, 30);
+            baseBackgroundColor = Color.FromArgb(30, 30, 30);
+            BackColor = Color.Transparent;
             ForeColor = Color.White;
-            Opacity = 0.95;
             Padding = new Padding(12);
             MinimumSize = new Size(180, 100);
             ClientSize = new Size(220, 120);
             ResizeRedraw = true;
+            SetBackgroundOpacity(DefaultBackgroundOpacity);
 
             layout = new TableLayoutPanel
             {
@@ -91,7 +103,7 @@ namespace ToNRoundCounter.UI
 
             ContentControl = content;
             RegisterDragEvents(ContentControl);
-            ContentControl.Dock = DockStyle.Top;
+            ConfigureContentControl();
             layout.Controls.Add(ContentControl, 0, 1);
 
             RegisterDragEvents(this);
@@ -99,6 +111,7 @@ namespace ToNRoundCounter.UI
             AdjustSizeToContent();
             baseContentSize = Size;
             pendingBaseContentSize = baseContentSize;
+            CaptureDefaultSize();
         }
 
         public virtual void SetValue(string value)
@@ -111,6 +124,15 @@ namespace ToNRoundCounter.UI
             AdjustSizeToContent();
         }
 
+        protected void CaptureDefaultSize()
+        {
+            EnsureBaseContentSize();
+
+            defaultBaseContentSize = baseContentSize;
+            defaultScaleFactor = currentScaleFactor <= 0f ? 1f : currentScaleFactor;
+            defaultSizeCaptured = true;
+        }
+
         public float ScaleFactor
         {
             get => currentScaleFactor;
@@ -118,6 +140,32 @@ namespace ToNRoundCounter.UI
         }
 
         public void EnsureTopMost() => SetTopMostState(true);
+
+        public void SetBackgroundOpacity(double opacity)
+        {
+            double clamped = opacity;
+            if (clamped < 0.2d)
+            {
+                clamped = 0.2d;
+            }
+            else if (clamped > 1d)
+            {
+                clamped = 1d;
+            }
+
+            backgroundOpacity = clamped;
+            int alpha = (int)Math.Round(backgroundOpacity * 255d);
+            alpha = Math.Max(0, Math.Min(255, alpha));
+            Color overlayColor = Color.FromArgb(alpha, baseBackgroundColor);
+            BackColor = overlayColor;
+
+            if (ContentControl is IDirectXOverlaySurface directXSurface)
+            {
+                directXSurface.SetBackgroundColor(overlayColor);
+            }
+
+            Invalidate();
+        }
 
         public void SetTopMostState(bool shouldBeTopMost)
         {
@@ -149,7 +197,12 @@ namespace ToNRoundCounter.UI
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-            using var pen = new Pen(Color.FromArgb(200, 255, 255, 255), 1);
+            if (ContentControl is IDirectXOverlaySurface directXSurface && directXSurface.HandlesChrome)
+            {
+                return;
+            }
+
+            using var pen = new Pen(Color.FromArgb(160, 255, 255, 255), 1);
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
             if (Width > 1 && Height > 1)
@@ -158,8 +211,7 @@ namespace ToNRoundCounter.UI
                 e.Graphics.DrawPath(pen, borderPath);
             }
 
-            var gripRect = new Rectangle(Width - ResizeGripSize - 2, Height - ResizeGripSize - 2, ResizeGripSize, ResizeGripSize);
-            ControlPaint.DrawSizeGrip(e.Graphics, Color.Transparent, gripRect);
+            DrawResizeGrip(e.Graphics);
         }
 
         protected override void OnShown(EventArgs e)
@@ -206,12 +258,54 @@ namespace ToNRoundCounter.UI
         {
             control.MouseDown += (s, e) =>
             {
-                if (e.Button == MouseButtons.Left && !IsInResizeGrip(control, e.Location))
+                if (e.Button != MouseButtons.Left)
+                {
+                    return;
+                }
+
+                if (e.Clicks >= 3)
+                {
+                    ResetToDefaultSize();
+                    return;
+                }
+
+                BeginUserInteraction();
+
+                if (!IsInResizeGrip(control, e.Location))
                 {
                     ReleaseCapture();
                     _ = SendMessage(Handle, WM_NCLBUTTONDOWN, HTCAPTION, 0);
                 }
             };
+
+            control.MouseUp += (s, e) =>
+            {
+                if (e.Button != MouseButtons.Left)
+                {
+                    return;
+                }
+
+                if (!isInSystemDragOperation)
+                {
+                    EndUserInteraction();
+                }
+            };
+        }
+
+        private void ConfigureContentControl()
+        {
+            if (ContentControl == null)
+            {
+                return;
+            }
+
+            ContentControl.Dock = DockStyle.Top;
+            ContentControl.Margin = new Padding(0);
+
+            if (ContentControl is IDirectXOverlaySurface directXSurface)
+            {
+                directXSurface.SetBackgroundColor(BackColor);
+            }
         }
 
         protected override void WndProc(ref Message m)
@@ -231,6 +325,8 @@ namespace ToNRoundCounter.UI
                     }
                     return;
                 case WM_ENTERSIZEMOVE:
+                    isInSystemDragOperation = true;
+                    BeginUserInteraction();
                     isUserResizing = true;
                     pendingScaleFactor = currentScaleFactor;
                     pendingBaseContentSize = baseContentSize;
@@ -242,6 +338,11 @@ namespace ToNRoundCounter.UI
                         baseContentSize = pendingBaseContentSize;
                         SetScaleFactor(pendingScaleFactor);
                         WindowUtilities.TryFocusProcessWindowIfAltNotPressed("VRChat");
+                    }
+                    if (isInSystemDragOperation)
+                    {
+                        isInSystemDragOperation = false;
+                        EndUserInteraction();
                     }
                     break;
                 case WM_SIZING:
@@ -437,6 +538,93 @@ namespace ToNRoundCounter.UI
             baseContentSize = new Size(width, height);
             pendingBaseContentSize = baseContentSize;
         }
+
+        private void ResetToDefaultSize()
+        {
+            if (!defaultSizeCaptured)
+            {
+                CaptureDefaultSize();
+            }
+
+            float targetScale = Math.Max(MinScaleFactor, Math.Min(MaxScaleFactor, defaultScaleFactor <= 0f ? 1f : defaultScaleFactor));
+            float current = currentScaleFactor <= 0f ? 1f : currentScaleFactor;
+            float relativeScale = targetScale / current;
+
+            if (Math.Abs(relativeScale - 1f) > 0.01f)
+            {
+                Scale(new SizeF(relativeScale, relativeScale));
+            }
+
+            currentScaleFactor = targetScale;
+            pendingScaleFactor = targetScale;
+
+            Size baseSize = EnsureMinimumSize(defaultBaseContentSize);
+            baseContentSize = baseSize;
+            pendingBaseContentSize = baseContentSize;
+
+            layout.PerformLayout();
+            ApplyScaledSize();
+        }
+
+        private void BeginUserInteraction()
+        {
+            if (interactionActive)
+            {
+                return;
+            }
+
+            interactionActive = true;
+            DragInteractionStarted?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void EndUserInteraction()
+        {
+            if (!interactionActive)
+            {
+                return;
+            }
+
+            interactionActive = false;
+            DragInteractionEnded?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void DrawResizeGrip(Graphics graphics)
+        {
+            if (graphics == null || Width < 4 || Height < 4)
+            {
+                return;
+            }
+
+            SmoothingMode previousMode = graphics.SmoothingMode;
+            graphics.SmoothingMode = SmoothingMode.None;
+            var gripColor = Color.FromArgb(150, 255, 255, 255);
+
+            using var gripPen = new Pen(gripColor, 1f);
+            const int lineSpacing = 4;
+            int lines = Math.Min(3, (ResizeGripSize / lineSpacing) + 1);
+
+            for (int i = 0; i < lines; i++)
+            {
+                int offset = 1 + (i * lineSpacing);
+                int startX = Width - 2 - offset;
+                int startY = Height - 2;
+                int endX = Width - 2;
+                int endY = Height - 2 - offset;
+
+                if (startX < 0 || endY < 0)
+                {
+                    continue;
+                }
+
+                graphics.DrawLine(gripPen, startX, startY, endX, endY);
+            }
+
+            graphics.SmoothingMode = previousMode;
+        }
+
+        public event EventHandler? DragInteractionStarted;
+
+        public event EventHandler? DragInteractionEnded;
 
         private static GraphicsPath CreateRoundedRectanglePath(Rectangle bounds, int radius)
         {

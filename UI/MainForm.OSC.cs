@@ -26,6 +26,7 @@ namespace ToNRoundCounter.UI
         private bool hasFacingAngleMeasurement = false;
         private bool afkSoundPlayed = false;
         private bool punishSoundPlayed = false;
+        private double lastIdleSeconds = 0d;
 
         private async Task InitializeOSCRepeater()
         {
@@ -366,7 +367,7 @@ namespace ToNRoundCounter.UI
             {
                 string angleText = GetOverlayAngleDisplayText();
                 lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2} (Angle: {angleText})  Members: {connected}";
-                UpdateOverlay(OverlaySection.Velocity, form => form.SetValue($"{currentVelocity:F2}"));
+                UpdateVelocityOverlay();
                 UpdateOverlay(OverlaySection.Angle, form =>
                 {
                     if (form is OverlayAngleForm angleForm)

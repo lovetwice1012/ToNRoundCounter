@@ -101,6 +101,10 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="SharpDX" Version="4.2.0" />
+    <PackageReference Include="SharpDX.Direct2D1" Version="4.2.0" />
+    <PackageReference Include="SharpDX.DirectWrite" Version="4.2.0" />
+    <PackageReference Include="SharpDX.Mathematics" Version="4.2.0" />
     <PackageReference Include="Rug.Osc" Version="1.2.5" />
     <PackageReference Include="Serilog" Version="4.0.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
@@ -144,6 +148,15 @@
     <Compile Include="UI\OverlayShortcutForm.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="UI\OverlayClockForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\OverlayVelocityForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\DirectX\DirectXDeviceManager.cs" />
+    <Compile Include="UI\DirectX\DirectXOverlaySurface.cs" />
+    <Compile Include="UI\DirectX\DirectXSegmentRenderer.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="IsExternalInit.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
