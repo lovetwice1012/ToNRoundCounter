@@ -1,6 +1,8 @@
 using System;
 using SharpDX.Direct2D1;
 using SharpDX.DirectWrite;
+using D2DFactory1 = SharpDX.Direct2D1.Factory1;
+using DWFactory = SharpDX.DirectWrite.Factory;
 
 namespace ToNRoundCounter.UI.DirectX
 {
@@ -14,13 +16,13 @@ namespace ToNRoundCounter.UI.DirectX
 
         private DirectXDeviceManager()
         {
-            Direct2DFactory = new Factory1(FactoryType.SingleThreaded);
-            DirectWriteFactory = new Factory();
+            Direct2DFactory = new D2DFactory1(FactoryType.SingleThreaded);
+            DirectWriteFactory = new DWFactory();
         }
 
-        public Factory1 Direct2DFactory { get; }
+        public D2DFactory1 Direct2DFactory { get; }
 
-        public Factory DirectWriteFactory { get; }
+        public DWFactory DirectWriteFactory { get; }
 
         public void Dispose()
         {

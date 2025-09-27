@@ -4,11 +4,12 @@ using System.Windows.Forms;
 using SharpDX;
 using SharpDX.Direct2D1;
 using SharpDX.Mathematics.Interop;
+using DrawingColor = System.Drawing.Color;
 namespace ToNRoundCounter.UI.DirectX
 {
     internal interface IDirectXOverlaySurface
     {
-        void SetBackgroundColor(Color color);
+        void SetBackgroundColor(DrawingColor color);
 
         bool HandlesChrome { get; }
     }
@@ -114,13 +115,13 @@ namespace ToNRoundCounter.UI.DirectX
             return preferredSize;
         }
 
-        public void SetBackgroundColor(Color color)
+        public void SetBackgroundColor(DrawingColor color)
         {
             backgroundColor = ToRawColor(color);
             Invalidate();
         }
 
-        protected void SetBorderColor(Color color)
+        protected void SetBorderColor(DrawingColor color)
         {
             borderColor = ToRawColor(color);
             Invalidate();
@@ -318,7 +319,7 @@ namespace ToNRoundCounter.UI.DirectX
             renderTarget = null;
         }
 
-        protected static RawColor4 ToRawColor(Color color)
+        protected static RawColor4 ToRawColor(DrawingColor color)
         {
             const float inverse = 1f / 255f;
             return new RawColor4(color.R * inverse, color.G * inverse, color.B * inverse, color.A * inverse);
