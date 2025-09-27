@@ -380,7 +380,8 @@ namespace ToNRoundCounter.UI
                 }
 
                 bool enabled = IsOverlaySectionEnabled(section);
-                bool shouldShow = enabled && isVrChatForeground && !overlayTemporarilyHidden;
+                bool overlayHasFocus = form.ContainsFocus;
+                bool shouldShow = enabled && (isVrChatForeground || overlayHasFocus) && !overlayTemporarilyHidden;
 
                 if (shouldShow)
                 {
