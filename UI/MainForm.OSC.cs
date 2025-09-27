@@ -20,6 +20,10 @@ namespace ToNRoundCounter.UI
         private DateTime idleStartTime = DateTime.MinValue;
         private System.Windows.Forms.Timer velocityTimer; // Windows.Forms.Timer
         private float receivedVelocityMagnitude = 0;
+        private float currentVelocityX = 0;
+        private float currentVelocityZ = 0;
+        private float lastKnownFacingAngle = 0;
+        private bool hasFacingAngleMeasurement = false;
         private bool afkSoundPlayed = false;
         private bool punishSoundPlayed = false;
 
@@ -125,6 +129,30 @@ namespace ToNRoundCounter.UI
                     LogUi($"Failed to parse velocity magnitude: {ex.Message}", LogEventLevel.Warning);
                 }
             }
+            else if (message.Address == "/avatar/parameters/VelocityX")
+            {
+                try
+                {
+                    currentVelocityX = Convert.ToSingle(message.ToArray()[0]);
+                    LogUi($"Velocity X updated to {currentVelocityX}.", LogEventLevel.Debug);
+                }
+                catch (Exception ex)
+                {
+                    LogUi($"Failed to parse velocity X: {ex.Message}", LogEventLevel.Warning);
+                }
+            }
+            else if (message.Address == "/avatar/parameters/VelocityZ")
+            {
+                try
+                {
+                    currentVelocityZ = Convert.ToSingle(message.ToArray()[0]);
+                    LogUi($"Velocity Z updated to {currentVelocityZ}.", LogEventLevel.Debug);
+                }
+                catch (Exception ex)
+                {
+                    LogUi($"Failed to parse velocity Z: {ex.Message}", LogEventLevel.Warning);
+                }
+            }
             else if (message.Address == "/avatar/parameters/suside")
             {
                 bool suicideFlag = false;
@@ -159,6 +187,12 @@ namespace ToNRoundCounter.UI
                         LogUi($"Failed to parse auto-suicide OSC toggle: {ex.Message}", LogEventLevel.Warning);
                     }
                     _settings.AutoSuicideEnabled = autoSuicideOSC;
+                    LoadAutoSuicideRules();
+                    if (!autoSuicideOSC)
+                    {
+                        CancelAutoSuicide();
+                    }
+                    UpdateShortcutOverlayState();
                 }
                 LogUi($"Auto suicide OSC toggle set to {autoSuicideOSC}.", LogEventLevel.Debug);
             }
@@ -179,7 +213,7 @@ namespace ToNRoundCounter.UI
                 if (abortFlag)
                 {
                     LogUi("Abort auto suicide requested via OSC.");
-                    autoSuicideService.Cancel();
+                    CancelAutoSuicide();
                 }
             }
             else if (message.Address == "/avatar/parameters/delayAutoSuside")
@@ -202,7 +236,7 @@ namespace ToNRoundCounter.UI
                     if (remaining > TimeSpan.Zero)
                     {
                         LogUi($"Delaying auto suicide by {remaining}.", LogEventLevel.Debug);
-                        autoSuicideService.Schedule(remaining, false, PerformAutoSuicide);
+                        ScheduleAutoSuicide(remaining, false);
                     }
                 }
             }
@@ -292,6 +326,7 @@ namespace ToNRoundCounter.UI
                     {
                         issetAllSelfKillMode = Convert.ToBoolean(message.ToArray()[0]);
                         LogUi($"Received 'isAllSelfKill' flag: {issetAllSelfKillMode}.", LogEventLevel.Debug);
+                        UpdateShortcutOverlayState();
                     }
                     catch (Exception ex)
                     {
@@ -316,10 +351,37 @@ namespace ToNRoundCounter.UI
             }
 
             currentVelocity = Math.Abs(receivedVelocityMagnitude);
+            float planarMagnitudeSquared = (currentVelocityX * currentVelocityX) + (currentVelocityZ * currentVelocityZ);
+            if (planarMagnitudeSquared > 0.0001f)
+            {
+                float computedAngle = (float)(Math.Atan2(currentVelocityX, currentVelocityZ) * (180.0 / Math.PI));
+                if (computedAngle < 0)
+                {
+                    computedAngle += 360f;
+                }
+
+                lastKnownFacingAngle = computedAngle;
+                hasFacingAngleMeasurement = true;
+            }
+
             _logger.LogEvent("Receive: ", $"{message.Address} => Computed Velocity: {currentVelocity:F2}");
             _dispatcher.Invoke(() =>
             {
-                lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2}  Members: {connected}";
+                string angleText = GetOverlayAngleDisplayText();
+                lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2} (Angle: {angleText})  Members: {connected}";
+                UpdateOverlay(OverlaySection.Velocity, form => form.SetValue($"{currentVelocity:F2}"));
+                UpdateOverlay(OverlaySection.Angle, form =>
+                {
+                    if (form is OverlayAngleForm angleForm)
+                    {
+                        angleForm.SetAngle(lastKnownFacingAngle);
+                        angleForm.SetValue(angleText);
+                    }
+                    else
+                    {
+                        form.SetValue(angleText);
+                    }
+                });
             });
         }
 
