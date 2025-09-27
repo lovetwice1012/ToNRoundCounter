@@ -6,6 +6,7 @@ using SharpDX.Direct2D1;
 using SharpDX.DirectWrite;
 using SharpDX.Mathematics.Interop;
 using ToNRoundCounter.UI.DirectX;
+using DWFontStyle = SharpDX.DirectWrite.FontStyle;
 
 namespace ToNRoundCounter.UI
 {
@@ -137,7 +138,7 @@ namespace ToNRoundCounter.UI
             {
                 dateFormat?.Dispose();
                 string fontFamily = Font?.FontFamily?.Name ?? "Segoe UI";
-                dateFormat = new TextFormat(DirectWriteFactory, fontFamily, FontWeight.Regular, FontStyle.Normal, FontStretch.Normal, 12f)
+                dateFormat = new TextFormat(DirectWriteFactory, fontFamily, FontWeight.Regular, DWFontStyle.Normal, FontStretch.Normal, 12f)
                 {
                     TextAlignment = TextAlignment.Leading,
                     ParagraphAlignment = ParagraphAlignment.Near,

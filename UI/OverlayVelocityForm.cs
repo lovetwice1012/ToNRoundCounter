@@ -6,6 +6,7 @@ using SharpDX.Direct2D1;
 using SharpDX.DirectWrite;
 using SharpDX.Mathematics.Interop;
 using ToNRoundCounter.UI.DirectX;
+using DWFontStyle = SharpDX.DirectWrite.FontStyle;
 
 namespace ToNRoundCounter.UI
 {
@@ -121,7 +122,7 @@ namespace ToNRoundCounter.UI
             {
                 afkFormat?.Dispose();
                 string fontFamily = Font?.FontFamily?.Name ?? "Segoe UI";
-                afkFormat = new TextFormat(DirectWriteFactory, fontFamily, FontWeight.Regular, FontStyle.Normal, FontStretch.Normal, afkFontSize)
+                afkFormat = new TextFormat(DirectWriteFactory, fontFamily, FontWeight.Regular, DWFontStyle.Normal, FontStretch.Normal, afkFontSize)
                 {
                     TextAlignment = TextAlignment.Leading,
                     ParagraphAlignment = ParagraphAlignment.Near,
