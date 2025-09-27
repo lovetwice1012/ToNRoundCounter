@@ -22,6 +22,7 @@ using ToNRoundCounter.Infrastructure;
 using ToNRoundCounter.Application;
 using MediaPlayer = System.Windows.Media.MediaPlayer;
 using WinFormsApp = System.Windows.Forms.Application;
+using ToNRoundCounter.Infrastructure.Interop;
 
 namespace ToNRoundCounter.UI
 {
@@ -109,11 +110,34 @@ namespace ToNRoundCounter.UI
         private string lastLoadedItemMusicPath = string.Empty;
         private ItemMusicEntry? activeItemMusicEntry;
         private string currentTerrorBaseText = string.Empty;
+        private string currentOverlayTerrorBaseText = string.Empty;
+        private string currentTerrorCountdownSuffix = string.Empty;
+        private string? currentUnboundDisplayName;
+        private string? currentUnboundTerrorDetails;
+        private readonly List<string> currentTerrorInfoNames = new();
         private bool terrorCountdownActive;
         private DateTime terrorCountdownStart = DateTime.MinValue;
         private int terrorCountdownDurationSeconds;
         private string terrorCountdownTargetName = string.Empty;
         private int terrorCountdownLastDisplayedSeconds = -1;
+        private readonly Dictionary<OverlaySection, OverlaySectionForm> overlayForms = new();
+        private readonly List<(string Label, string Status)> overlayRoundHistory = new();
+        private Timer? overlayVisibilityTimer;
+        private OverlayShortcutForm? shortcutOverlayForm;
+        private bool overlayTemporarilyHidden;
+
+        private enum OverlaySection
+        {
+            Velocity,
+            Angle,
+            Terror,
+            Damage,
+            NextRound,
+            RoundStatus,
+            RoundHistory,
+            TerrorInfo,
+            Shortcuts
+        }
 
         private void LogUi(string message, LogEventLevel level = LogEventLevel.Information)
         {
@@ -163,6 +187,7 @@ namespace ToNRoundCounter.UI
             {
                 throw new InvalidOperationException("Main form controls failed to initialize.");
             }
+            InitializeOverlay();
             _moduleHost.NotifyMainWindowMenuBuilding(new ModuleMainWindowMenuContext(this, mainMenuStrip, _moduleHost.CurrentServiceProvider));
             BuildAuxiliaryWindowsMenu();
             _moduleHost.NotifyMainWindowUiComposed(new ModuleMainWindowUiContext(this, this.Controls, mainMenuStrip, _moduleHost.CurrentServiceProvider));
@@ -214,6 +239,358 @@ namespace ToNRoundCounter.UI
             velocityTimer.Tick += VelocityTimer_Tick;
             velocityTimer.Start();
             LogUi("Main form construction complete. Background listeners and timers started.");
+        }
+
+        private void InitializeOverlay()
+        {
+            overlayForms.Clear();
+            if (shortcutOverlayForm != null)
+            {
+                shortcutOverlayForm.ShortcutClicked -= ShortcutOverlay_ShortcutClicked;
+                shortcutOverlayForm = null;
+            }
+
+            Rectangle workingArea = Screen.PrimaryScreen?.WorkingArea ?? Screen.AllScreens.FirstOrDefault()?.WorkingArea ?? new Rectangle(0, 0, 1280, 720);
+            int offsetX = 40;
+            int offsetY = 80;
+            int spacing = 16;
+
+            _settings.OverlayPositions ??= new Dictionary<string, Point>();
+            _settings.OverlayScaleFactors ??= new Dictionary<string, float>();
+
+            var sections = new (OverlaySection Section, string Title, string InitialValue)[]
+            {
+                (OverlaySection.Velocity, "速度", $"{currentVelocity:F2}"),
+                (OverlaySection.Angle, "角度", GetOverlayAngleDisplayText()),
+                (OverlaySection.Terror, "テラー", GetOverlayTerrorDisplayText()),
+                (OverlaySection.Damage, "ダメージ", InfoPanel?.DamageValue?.Text ?? string.Empty),
+                (OverlaySection.NextRound, "次ラウンド予測", InfoPanel?.NextRoundType?.Text ?? string.Empty),
+                (OverlaySection.RoundStatus, "ラウンド状況", InfoPanel?.RoundTypeValue?.Text ?? string.Empty),
+                (OverlaySection.RoundHistory, "ラウンドタイプ推移", string.Empty),
+                (OverlaySection.TerrorInfo, "テラー詳細", BuildTerrorInfoOverlayText()),
+                (OverlaySection.Shortcuts, "ショートカット", string.Empty)
+            };
+
+            int x = Math.Max(workingArea.Left, workingArea.Right - 260 - offsetX);
+            int nextDefaultY = Math.Max(workingArea.Top, workingArea.Top + offsetY);
+
+            foreach (var (section, title, initialValue) in sections)
+            {
+                OverlaySectionForm form = section switch
+                {
+                    OverlaySection.RoundHistory => new OverlayRoundHistoryForm(title)
+                    {
+                        StartPosition = FormStartPosition.Manual,
+                    },
+                    OverlaySection.Shortcuts => new OverlayShortcutForm(title)
+                    {
+                        StartPosition = FormStartPosition.Manual,
+                    },
+                    OverlaySection.Angle => new OverlayAngleForm(title)
+                    {
+                        StartPosition = FormStartPosition.Manual,
+                    },
+                    _ => new OverlaySectionForm(title)
+                    {
+                        StartPosition = FormStartPosition.Manual,
+                    }
+                };
+
+                string key = GetOverlaySectionKey(section);
+
+                if (section == OverlaySection.RoundHistory && form is OverlayRoundHistoryForm historyForm)
+                {
+                    historyForm.SetHistory(overlayRoundHistory);
+                }
+                else if (section == OverlaySection.Shortcuts && form is OverlayShortcutForm shortcuts)
+                {
+                    shortcutOverlayForm = shortcuts;
+                    SetupShortcutOverlay(shortcuts);
+                }
+                else
+                {
+                    form.SetValue(initialValue);
+                }
+
+                if (section == OverlaySection.Angle && form is OverlayAngleForm angleForm)
+                {
+                    angleForm.SetAngle(lastKnownFacingAngle);
+                }
+
+                if (_settings.OverlayScaleFactors.TryGetValue(key, out var savedScale) && savedScale > 0f)
+                {
+                    form.ScaleFactor = savedScale;
+                }
+
+                _settings.OverlayScaleFactors[key] = form.ScaleFactor;
+
+                Point location;
+                if (_settings.OverlayPositions.TryGetValue(key, out var savedLocation))
+                {
+                    location = ClampOverlayLocation(savedLocation, form.Size, workingArea);
+                }
+                else
+                {
+                    location = new Point(x, nextDefaultY);
+                    nextDefaultY += form.Height + spacing;
+                }
+
+                form.Location = location;
+                _settings.OverlayPositions[key] = form.Location;
+
+                form.Hide();
+                overlayForms[section] = form;
+                form.Move += (_, _) => HandleOverlayMoved(section, form);
+                form.SizeChanged += (_, _) => HandleOverlayResized(section, form);
+            }
+
+            ApplyOverlayRoundHistorySettings();
+
+            overlayVisibilityTimer = new Timer
+            {
+                Interval = 500
+            };
+            overlayVisibilityTimer.Tick += OverlayVisibilityTimer_Tick;
+            overlayVisibilityTimer.Start();
+            UpdateShortcutOverlayState();
+        }
+
+        private void OverlayVisibilityTimer_Tick(object? sender, EventArgs e)
+        {
+            UpdateOverlayVisibility();
+        }
+
+        private void UpdateOverlayVisibility()
+        {
+            if (overlayForms.Count == 0)
+            {
+                return;
+            }
+
+            bool isVrChatForeground = WindowUtilities.IsProcessInForeground("VRChat");
+
+            foreach (var (section, form) in overlayForms.ToList())
+            {
+                if (form.IsDisposed)
+                {
+                    overlayForms.Remove(section);
+                    continue;
+                }
+
+                bool enabled = IsOverlaySectionEnabled(section);
+                bool shouldShow = enabled && isVrChatForeground && !overlayTemporarilyHidden;
+
+                if (shouldShow)
+                {
+                    if (!form.Visible)
+                    {
+                        form.Show();
+                    }
+                    form.SetTopMostState(true);
+                }
+                else
+                {
+                    form.SetTopMostState(false);
+
+                    if (form.Visible)
+                    {
+                        form.Hide();
+                    }
+                }
+            }
+        }
+
+        private void SetupShortcutOverlay(OverlayShortcutForm form)
+        {
+            form.ShortcutClicked += ShortcutOverlay_ShortcutClicked;
+            form.SetButtonEnabled(OverlayShortcutForm.ShortcutButton.AutoSuicideCancel, autoSuicideService.HasScheduled);
+            form.SetButtonEnabled(OverlayShortcutForm.ShortcutButton.AutoSuicideDelay, autoSuicideService.HasScheduled);
+        }
+
+        private void UpdateShortcutOverlayState()
+        {
+            if (shortcutOverlayForm == null)
+            {
+                return;
+            }
+
+            shortcutOverlayForm.SetToggleState(OverlayShortcutForm.ShortcutButton.AutoSuicideToggle, _settings.AutoSuicideEnabled);
+            shortcutOverlayForm.SetToggleState(OverlayShortcutForm.ShortcutButton.AllRoundsModeToggle, issetAllSelfKillMode);
+            shortcutOverlayForm.SetToggleState(OverlayShortcutForm.ShortcutButton.CoordinatedBrainToggle, _settings.CoordinatedAutoSuicideBrainEnabled);
+            shortcutOverlayForm.SetToggleState(OverlayShortcutForm.ShortcutButton.AfkDetectionToggle, _settings.AfkSoundCancelEnabled);
+            shortcutOverlayForm.SetToggleState(OverlayShortcutForm.ShortcutButton.HideUntilRoundEnd, overlayTemporarilyHidden);
+            shortcutOverlayForm.SetButtonEnabled(OverlayShortcutForm.ShortcutButton.AutoSuicideCancel, autoSuicideService.HasScheduled);
+            shortcutOverlayForm.SetButtonEnabled(OverlayShortcutForm.ShortcutButton.AutoSuicideDelay, autoSuicideService.HasScheduled);
+        }
+
+        private async void ShortcutOverlay_ShortcutClicked(object? sender, OverlayShortcutForm.ShortcutButtonEventArgs e)
+        {
+            switch (e.Button)
+            {
+                case OverlayShortcutForm.ShortcutButton.AutoSuicideToggle:
+                    _settings.AutoSuicideEnabled = !_settings.AutoSuicideEnabled;
+                    LoadAutoSuicideRules();
+                    if (!_settings.AutoSuicideEnabled)
+                    {
+                        CancelAutoSuicide();
+                    }
+                    UpdateShortcutOverlayState();
+                    await _settings.SaveAsync();
+                    break;
+                case OverlayShortcutForm.ShortcutButton.AutoSuicideCancel:
+                    bool hadScheduled = autoSuicideService.HasScheduled;
+                    CancelAutoSuicide();
+                    shortcutOverlayForm?.SetToggleState(OverlayShortcutForm.ShortcutButton.AutoSuicideCancel, hadScheduled);
+                    break;
+                case OverlayShortcutForm.ShortcutButton.AutoSuicideDelay:
+                    bool canDelay = autoSuicideService.HasScheduled;
+                    DelayAutoSuicide();
+                    shortcutOverlayForm?.SetToggleState(OverlayShortcutForm.ShortcutButton.AutoSuicideDelay, canDelay);
+                    break;
+                case OverlayShortcutForm.ShortcutButton.ManualSuicide:
+                    _ = Task.Run(PerformAutoSuicide);
+                    shortcutOverlayForm?.SetToggleState(OverlayShortcutForm.ShortcutButton.ManualSuicide, true);
+                    break;
+                case OverlayShortcutForm.ShortcutButton.AllRoundsModeToggle:
+                    issetAllSelfKillMode = !issetAllSelfKillMode;
+                    UpdateShortcutOverlayState();
+                    break;
+                case OverlayShortcutForm.ShortcutButton.CoordinatedBrainToggle:
+                    _settings.CoordinatedAutoSuicideBrainEnabled = !_settings.CoordinatedAutoSuicideBrainEnabled;
+                    UpdateShortcutOverlayState();
+                    await _settings.SaveAsync();
+                    break;
+                case OverlayShortcutForm.ShortcutButton.AfkDetectionToggle:
+                    _settings.AfkSoundCancelEnabled = !_settings.AfkSoundCancelEnabled;
+                    UpdateShortcutOverlayState();
+                    await _settings.SaveAsync();
+                    break;
+                case OverlayShortcutForm.ShortcutButton.HideUntilRoundEnd:
+                    SetOverlayTemporarilyHidden(!overlayTemporarilyHidden);
+                    break;
+            }
+
+            WindowUtilities.TryFocusProcessWindowIfAltNotPressed("VRChat");
+        }
+
+        private void SetOverlayTemporarilyHidden(bool hidden)
+        {
+            overlayTemporarilyHidden = hidden;
+            UpdateOverlayVisibility();
+            UpdateShortcutOverlayState();
+        }
+
+        private void ResetRoundScopedShortcutButtons()
+        {
+            shortcutOverlayForm?.ResetButtons(
+                OverlayShortcutForm.ShortcutButton.AutoSuicideDelay,
+                OverlayShortcutForm.ShortcutButton.ManualSuicide,
+                OverlayShortcutForm.ShortcutButton.AutoSuicideCancel);
+        }
+
+        private void HandleOverlayMoved(OverlaySection section, OverlaySectionForm form)
+        {
+            if (form.IsDisposed)
+            {
+                return;
+            }
+
+            string key = GetOverlaySectionKey(section);
+            Rectangle workingArea = Screen.FromPoint(form.Location)?.WorkingArea
+                ?? Screen.PrimaryScreen?.WorkingArea
+                ?? new Rectangle(0, 0, 1920, 1080);
+            Point clampedLocation = ClampOverlayLocation(form.Location, form.Size, workingArea);
+            if (form.Location != clampedLocation)
+            {
+                form.Location = clampedLocation;
+            }
+
+            _settings.OverlayPositions ??= new Dictionary<string, Point>();
+            _settings.OverlayPositions[key] = form.Location;
+        }
+
+        private void HandleOverlayResized(OverlaySection section, OverlaySectionForm form)
+        {
+            if (form.IsDisposed)
+            {
+                return;
+            }
+
+            HandleOverlayMoved(section, form);
+
+            string key = GetOverlaySectionKey(section);
+            _settings.OverlayScaleFactors ??= new Dictionary<string, float>();
+            _settings.OverlayScaleFactors[key] = form.ScaleFactor;
+        }
+
+        private static Point ClampOverlayLocation(Point location, Size size, Rectangle workingArea)
+        {
+            int maxX = Math.Max(workingArea.Left, workingArea.Right - size.Width);
+            int maxY = Math.Max(workingArea.Top, workingArea.Bottom - size.Height);
+
+            int x = Math.Min(Math.Max(location.X, workingArea.Left), maxX);
+            int y = Math.Min(Math.Max(location.Y, workingArea.Top), maxY);
+
+            return new Point(x, y);
+        }
+
+        private static string GetOverlaySectionKey(OverlaySection section) => section.ToString();
+
+        private void CaptureOverlayPositions()
+        {
+            if (overlayForms.Count == 0)
+            {
+                return;
+            }
+
+            _settings.OverlayPositions ??= new Dictionary<string, Point>();
+            _settings.OverlayScaleFactors ??= new Dictionary<string, float>();
+
+            foreach (var (section, form) in overlayForms)
+            {
+                if (form.IsDisposed)
+                {
+                    continue;
+                }
+
+                string key = GetOverlaySectionKey(section);
+                _settings.OverlayPositions[key] = form.Location;
+                _settings.OverlayScaleFactors[key] = form.ScaleFactor;
+            }
+        }
+
+        private bool IsOverlaySectionEnabled(OverlaySection section)
+        {
+            return section switch
+            {
+                OverlaySection.Velocity => _settings.OverlayShowVelocity,
+                OverlaySection.Angle => _settings.OverlayShowAngle,
+                OverlaySection.Terror => _settings.OverlayShowTerror,
+                OverlaySection.Damage => _settings.OverlayShowDamage,
+                OverlaySection.NextRound => _settings.OverlayShowNextRound,
+                OverlaySection.RoundStatus => _settings.OverlayShowRoundStatus,
+                OverlaySection.RoundHistory => _settings.OverlayShowRoundHistory,
+                OverlaySection.TerrorInfo => _settings.OverlayShowTerrorInfo,
+                OverlaySection.Shortcuts => _settings.OverlayShowShortcuts,
+                _ => false
+            };
+        }
+
+        private void UpdateOverlay(OverlaySection section, Action<OverlaySectionForm> updater)
+        {
+            if (!overlayForms.TryGetValue(section, out var form) || form.IsDisposed)
+            {
+                return;
+            }
+
+            if (form.InvokeRequired)
+            {
+                form.Invoke(new Action(() => updater(form)));
+            }
+            else
+            {
+                updater(form);
+            }
         }
 
         private void InitializeComponents()
@@ -441,6 +818,19 @@ namespace ToNRoundCounter.UI
                 settingsForm.SettingsPanel.SurvivalCountCheckBox.Checked = _settings.Filter_Survival;
                 settingsForm.SettingsPanel.DeathCountCheckBox.Checked = _settings.Filter_Death;
                 settingsForm.SettingsPanel.SurvivalRateCheckBox.Checked = _settings.Filter_SurvivalRate;
+                settingsForm.SettingsPanel.OverlayVelocityCheckBox.Checked = _settings.OverlayShowVelocity;
+                settingsForm.SettingsPanel.OverlayAngleCheckBox.Checked = _settings.OverlayShowAngle;
+                settingsForm.SettingsPanel.OverlayTerrorCheckBox.Checked = _settings.OverlayShowTerror;
+                settingsForm.SettingsPanel.OverlayUnboundTerrorDetailsCheckBox.Checked = _settings.OverlayShowUnboundTerrorDetails;
+                settingsForm.SettingsPanel.OverlayDamageCheckBox.Checked = _settings.OverlayShowDamage;
+                settingsForm.SettingsPanel.OverlayNextRoundCheckBox.Checked = _settings.OverlayShowNextRound;
+                settingsForm.SettingsPanel.OverlayRoundStatusCheckBox.Checked = _settings.OverlayShowRoundStatus;
+                settingsForm.SettingsPanel.OverlayRoundHistoryCheckBox.Checked = _settings.OverlayShowRoundHistory;
+                settingsForm.SettingsPanel.OverlayTerrorInfoCheckBox.Checked = _settings.OverlayShowTerrorInfo;
+                settingsForm.SettingsPanel.OverlayShortcutsCheckBox.Checked = _settings.OverlayShowShortcuts;
+                int historyLength = _settings.OverlayRoundHistoryLength <= 0 ? 3 : _settings.OverlayRoundHistoryLength;
+                historyLength = Math.Max((int)settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Minimum, Math.Min((int)settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Maximum, historyLength));
+                settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Value = historyLength;
                 settingsForm.SettingsPanel.InfoPanelBgLabel.BackColor = _settings.BackgroundColor_InfoPanel;
                 settingsForm.SettingsPanel.StatsBgLabel.BackColor = _settings.BackgroundColor_Stats;
                 settingsForm.SettingsPanel.LogBgLabel.BackColor = _settings.BackgroundColor_Log;
@@ -489,6 +879,17 @@ namespace ToNRoundCounter.UI
                     _settings.Filter_Survival = settingsForm.SettingsPanel.SurvivalCountCheckBox.Checked;
                     _settings.Filter_Death = settingsForm.SettingsPanel.DeathCountCheckBox.Checked;
                     _settings.Filter_SurvivalRate = settingsForm.SettingsPanel.SurvivalRateCheckBox.Checked;
+                    _settings.OverlayShowVelocity = settingsForm.SettingsPanel.OverlayVelocityCheckBox.Checked;
+                    _settings.OverlayShowAngle = settingsForm.SettingsPanel.OverlayAngleCheckBox.Checked;
+                    _settings.OverlayShowTerror = settingsForm.SettingsPanel.OverlayTerrorCheckBox.Checked;
+                    _settings.OverlayShowUnboundTerrorDetails = settingsForm.SettingsPanel.OverlayUnboundTerrorDetailsCheckBox.Checked;
+                    _settings.OverlayShowDamage = settingsForm.SettingsPanel.OverlayDamageCheckBox.Checked;
+                    _settings.OverlayShowNextRound = settingsForm.SettingsPanel.OverlayNextRoundCheckBox.Checked;
+                    _settings.OverlayShowRoundStatus = settingsForm.SettingsPanel.OverlayRoundStatusCheckBox.Checked;
+                    _settings.OverlayShowRoundHistory = settingsForm.SettingsPanel.OverlayRoundHistoryCheckBox.Checked;
+                    _settings.OverlayShowTerrorInfo = settingsForm.SettingsPanel.OverlayTerrorInfoCheckBox.Checked;
+                    _settings.OverlayShowShortcuts = settingsForm.SettingsPanel.OverlayShortcutsCheckBox.Checked;
+                    _settings.OverlayRoundHistoryLength = (int)settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Value;
                     _settings.BackgroundColor_InfoPanel = settingsForm.SettingsPanel.InfoPanelBgLabel.BackColor;
                     _settings.BackgroundColor_Stats = settingsForm.SettingsPanel.StatsBgLabel.BackColor;
                     _settings.BackgroundColor_Log = settingsForm.SettingsPanel.LogBgLabel.BackColor;
@@ -521,6 +922,10 @@ namespace ToNRoundCounter.UI
                     _settings.DiscordWebhookUrl = settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text.Trim();
                     _settings.ThemeKey = settingsForm.SettingsPanel.SelectedThemeKey;
                     LoadAutoSuicideRules();
+                    if (!_settings.AutoSuicideEnabled)
+                    {
+                        CancelAutoSuicide();
+                    }
                     UpdateItemMusicPlayer(null);
                     ResetItemMusicTracking();
 
@@ -535,6 +940,9 @@ namespace ToNRoundCounter.UI
                         return;
                     }
 
+                    RecomputeOverlayTerrorBase();
+                    RefreshTerrorInfoOverlay();
+
                     Theme.SetTheme(_settings.ThemeKey, new ThemeApplicationContext(this, _moduleHost.CurrentServiceProvider));
                     _moduleHost.NotifyMainWindowThemeChanged(new ModuleMainWindowThemeContext(this, _settings.ThemeKey, Theme.CurrentDescriptor, _moduleHost.CurrentServiceProvider));
                     ApplyTheme();
@@ -542,6 +950,9 @@ namespace ToNRoundCounter.UI
                     InfoPanel.TerrorValue.ForeColor = _settings.FixedTerrorColor;
                     UpdateAggregateStatsDisplay();
                     UpdateDisplayVisibility();
+                    UpdateOverlayVisibility();
+                    UpdateShortcutOverlayState();
+                    ApplyOverlayRoundHistorySettings();
                     _moduleHost.NotifyAuxiliaryWindowCatalogBuilding();
                     BuildAuxiliaryWindowsMenu();
                     await _settings.SaveAsync();
@@ -724,6 +1135,15 @@ namespace ToNRoundCounter.UI
         {
             LogUi("Main form closing initiated.");
             SaveRoundLogsToFile();
+            CaptureOverlayPositions();
+            try
+            {
+                await _settings.SaveAsync();
+            }
+            catch (Exception ex)
+            {
+                LogUi($"Failed to save settings on close: {ex.Message}", LogEventLevel.Warning);
+            }
             _cancellation.Cancel();
             await webSocketClient.StopAsync();
             oscListener.Stop();
@@ -843,16 +1263,16 @@ namespace ToNRoundCounter.UI
                     int autoAction = ShouldAutoSuicide(roundType, null, out var hasPendingDelayed);
                     if (issetAllSelfKillMode)
                     {
-                        autoSuicideService.Schedule(TimeSpan.FromSeconds(13), true, PerformAutoSuicide);
+                        ScheduleAutoSuicide(TimeSpan.FromSeconds(13), true);
                     }
                     else if (autoAction == 1)
                     {
                         var delay = hasPendingDelayed ? TimeSpan.FromSeconds(40) : TimeSpan.FromSeconds(13);
-                        autoSuicideService.Schedule(delay, true, PerformAutoSuicide);
+                        ScheduleAutoSuicide(delay, true);
                     }
                     else if (autoAction == 2)
                     {
-                        autoSuicideService.Schedule(TimeSpan.FromSeconds(40), true, PerformAutoSuicide);
+                        ScheduleAutoSuicide(TimeSpan.FromSeconds(40), true);
                     }
 
                 }
@@ -956,7 +1376,7 @@ namespace ToNRoundCounter.UI
                         int terrorAction = ShouldAutoSuicide(roundType, activeRoundForAuto.TerrorKey);
                         if (terrorAction == 0 && autoSuicideService.HasScheduled)
                         {
-                            autoSuicideService.Cancel();
+                            CancelAutoSuicide();
                         }
                         if (issetAllSelfKillMode || terrorAction == 1)
                         {
@@ -967,7 +1387,7 @@ namespace ToNRoundCounter.UI
                             TimeSpan remaining = TimeSpan.FromSeconds(40) - (DateTime.UtcNow - autoSuicideService.RoundStartTime);
                             if (remaining > TimeSpan.Zero)
                             {
-                                autoSuicideService.Schedule(remaining, false, PerformAutoSuicide);
+                                ScheduleAutoSuicide(remaining, false);
                             }
                         }
                     }
@@ -991,6 +1411,7 @@ namespace ToNRoundCounter.UI
                             if (InfoPanel?.DamageValue != null)
                             {
                                 InfoPanel.DamageValue.Text = currentRound.Damage.ToString();
+                                UpdateOverlay(OverlaySection.Damage, form => form.SetValue(InfoPanel.DamageValue.Text ?? string.Empty));
                             }
                         });
                     }
@@ -1235,6 +1656,8 @@ namespace ToNRoundCounter.UI
                 var overrideTypes = new HashSet<string> { "アンバウンド", "8ページ", "ゴースト", "オルタネイト" };
                 string current = stateService.CurrentRound.RoundType ?? string.Empty;
 
+                string? historyStatusOverride = null;
+
                 if (normalTypes.Any(type => current.Contains(type)))
                 {
                     // 通常ラウンド
@@ -1252,6 +1675,7 @@ namespace ToNRoundCounter.UI
                         stateService.SetRoundCycle(0); // 特殊として扱いリセット
                     else
                         stateService.SetRoundCycle(1); // 通常扱いだが次は不確定
+                    historyStatusOverride = "置き換え";
                 }
                 else
                 {
@@ -1262,7 +1686,7 @@ namespace ToNRoundCounter.UI
                 var round = stateService.CurrentRound;
                 _dispatcher.Invoke(() =>
                 {
-                    UpdateNextRoundPrediction();
+                    UpdateNextRoundPrediction(historyStatusOverride);
                     UpdateAggregateStatsDisplay();
                     _presenter.AppendRoundLog(round, status);
                     ClearEventDisplays();
@@ -1271,7 +1695,9 @@ namespace ToNRoundCounter.UI
                 });
                 _ = _presenter.UploadRoundLogAsync(round, status);
                 stateService.UpdateCurrentRound(null);
+                ResetRoundScopedShortcutButtons();
             }
+            SetOverlayTemporarilyHidden(false);
         }
 
 
@@ -1421,6 +1847,7 @@ namespace ToNRoundCounter.UI
                     {
                         InfoPanel.RoundTypeValue.Text = "パニッシュ or 8ページの可能性あり";
                         InfoPanel.RoundTypeValue.ForeColor = Color.Red;
+                        UpdateOverlay(OverlaySection.RoundStatus, form => form.SetValue(InfoPanel.RoundTypeValue.Text ?? string.Empty));
                         if (!punishSoundPlayed)
                         {
                             // パニッシュ・8ページ検出時の音声再生
@@ -1433,6 +1860,7 @@ namespace ToNRoundCounter.UI
                 {
                     velocityInRangeStart = DateTime.MinValue;
                     punishSoundPlayed = false;
+                    UpdateOverlay(OverlaySection.RoundStatus, form => form.SetValue(InfoPanel.RoundTypeValue.Text ?? string.Empty));
                 }
             }
 
@@ -1447,7 +1875,7 @@ namespace ToNRoundCounter.UI
             base.OnHandleCreated(e);
         }
 
-        private void UpdateNextRoundPrediction()
+        private void UpdateNextRoundPrediction(string? historyStatusOverride = null)
         {
             // stateService.RoundCycle == 0: 次は通常ラウンド
             // stateService.RoundCycle == 1: 「通常ラウンド or 特殊ラウンド」と表示（50/50の抽選結果によるため不明）
@@ -1467,6 +1895,91 @@ namespace ToNRoundCounter.UI
                 InfoPanel.NextRoundType.Text = "特殊ラウンド";
                 InfoPanel.NextRoundType.ForeColor = Color.Red;
             }
+
+            UpdateOverlay(OverlaySection.NextRound, form => form.SetValue(InfoPanel.NextRoundType.Text ?? string.Empty));
+            RecordRoundHistory(historyStatusOverride);
+        }
+
+        private void RecordRoundHistory(string? statusOverride)
+        {
+            string label = InfoPanel?.NextRoundType?.Text ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(label) && string.IsNullOrWhiteSpace(statusOverride))
+            {
+                return;
+            }
+
+            string status = statusOverride ?? GetDefaultRoundHistoryStatus();
+
+            if (overlayRoundHistory.Count > 0)
+            {
+                var last = overlayRoundHistory[^1];
+                if (last.Label == label && last.Status == status)
+                {
+                    return;
+                }
+            }
+
+            int maxEntries = _settings.OverlayRoundHistoryLength;
+            if (maxEntries <= 0)
+            {
+                maxEntries = 3;
+            }
+            maxEntries = Math.Max(1, maxEntries);
+
+            overlayRoundHistory.Add((label, status));
+            while (overlayRoundHistory.Count > maxEntries)
+            {
+                overlayRoundHistory.RemoveAt(0);
+            }
+
+            RefreshRoundHistoryOverlay();
+        }
+
+        private string GetDefaultRoundHistoryStatus()
+        {
+            if (stateService.RoundCycle <= 0)
+            {
+                return "クラシック確定";
+            }
+
+            if (stateService.RoundCycle == 1)
+            {
+                return "50/50";
+            }
+
+            return "特殊確定";
+        }
+
+        private void ApplyOverlayRoundHistorySettings()
+        {
+            int maxEntries = _settings.OverlayRoundHistoryLength;
+            if (maxEntries <= 0)
+            {
+                maxEntries = 3;
+            }
+            maxEntries = Math.Max(1, maxEntries);
+
+            while (overlayRoundHistory.Count > maxEntries)
+            {
+                overlayRoundHistory.RemoveAt(0);
+            }
+
+            RefreshRoundHistoryOverlay();
+        }
+
+        private void RefreshRoundHistoryOverlay()
+        {
+            UpdateOverlay(OverlaySection.RoundHistory, form =>
+            {
+                if (form is OverlayRoundHistoryForm historyForm)
+                {
+                    historyForm.SetHistory(overlayRoundHistory);
+                }
+                else
+                {
+                    form.SetValue(string.Join(" >> ", overlayRoundHistory.Select(h => h.Label)));
+                }
+            });
         }
 
         private void UpdateAggregateStatsDisplay()
@@ -1589,11 +2102,15 @@ namespace ToNRoundCounter.UI
         {
             InfoPanel.RoundTypeValue.Text = "";
             InfoPanel.MapValue.Text = "";
-            currentTerrorBaseText = "";
-            InfoPanel.TerrorValue.Text = currentTerrorBaseText;
+            currentUnboundDisplayName = null;
+            currentUnboundTerrorDetails = null;
+            SetTerrorBaseText(string.Empty);
+            UpdateTerrorInfoPanel(null);
             ResetTerrorCountdown();
             InfoPanel.DamageValue.Text = "";
             InfoPanel.ItemValue.Text = "";
+            UpdateOverlay(OverlaySection.Damage, form => form.SetValue(InfoPanel.DamageValue.Text ?? string.Empty));
+            UpdateOverlay(OverlaySection.RoundStatus, form => form.SetValue(InfoPanel.RoundTypeValue.Text ?? string.Empty));
         }
 
         private void UpdateItemDisplay(JObject json)
@@ -1637,10 +2154,19 @@ namespace ToNRoundCounter.UI
             {
                 LogUi($"Terror info file '{path}' not found.", LogEventLevel.Debug);
             }
+
+            RefreshTerrorInfoOverlay();
         }
 
         private void UpdateTerrorInfoPanel(List<string>? names)
         {
+            currentTerrorInfoNames.Clear();
+            if (names != null)
+            {
+                currentTerrorInfoNames.AddRange(names);
+            }
+            RefreshTerrorInfoOverlay();
+
             if (terrorInfoPanel == null)
                 return;
 
@@ -1694,6 +2220,7 @@ namespace ToNRoundCounter.UI
                         UpdateRoundTypeLabel();
                         InfoPanel.RoundTypeValue.ForeColor = Color.White;
                         InfoPanel.DamageValue.Text = "0";
+                        UpdateOverlay(OverlaySection.Damage, form => form.SetValue(InfoPanel.DamageValue.Text ?? string.Empty));
                     });
                 }
 
@@ -1711,16 +2238,16 @@ namespace ToNRoundCounter.UI
                         int action = ShouldAutoSuicide(checkType, terror, out var hasPendingDelayed);
                         if (issetAllSelfKillMode)
                         {
-                            autoSuicideService.Schedule(TimeSpan.FromSeconds(13), true, PerformAutoSuicide);
+                            ScheduleAutoSuicide(TimeSpan.FromSeconds(13), true);
                         }
                         else if (action == 1)
                         {
                             var delay = hasPendingDelayed ? TimeSpan.FromSeconds(40) : TimeSpan.FromSeconds(13);
-                            autoSuicideService.Schedule(delay, true, PerformAutoSuicide);
+                            ScheduleAutoSuicide(delay, true);
                         }
                         else if (action == 2)
                         {
-                            autoSuicideService.Schedule(TimeSpan.FromSeconds(40), true, PerformAutoSuicide);
+                            ScheduleAutoSuicide(TimeSpan.FromSeconds(40), true);
                         }
                     }
                 }
@@ -1731,7 +2258,7 @@ namespace ToNRoundCounter.UI
                 {
                     FinalizeCurrentRound(stateService.CurrentRound.IsDeath ? "☠" : "✅");
                 }
-                autoSuicideService.Cancel();
+                CancelAutoSuicide();
             }
         }
 
@@ -1740,6 +2267,40 @@ namespace ToNRoundCounter.UI
             _logger.LogEvent("Suicide", "Performing Suside");
             LaunchSuicideInputIfExists();
             _logger.LogEvent("Suicide", "finish");
+            UpdateShortcutOverlayState();
+        }
+
+        private void ScheduleAutoSuicide(TimeSpan delay, bool resetStartTime)
+        {
+            autoSuicideService.Schedule(delay, resetStartTime, PerformAutoSuicide);
+            UpdateShortcutOverlayState();
+        }
+
+        private void CancelAutoSuicide()
+        {
+            if (autoSuicideService.HasScheduled)
+            {
+                autoSuicideService.Cancel();
+            }
+            UpdateShortcutOverlayState();
+        }
+
+        private void DelayAutoSuicide()
+        {
+            if (!autoSuicideService.HasScheduled)
+            {
+                UpdateShortcutOverlayState();
+                return;
+            }
+
+            TimeSpan elapsed = DateTime.UtcNow - autoSuicideService.RoundStartTime;
+            TimeSpan remaining = TimeSpan.FromSeconds(40) - elapsed;
+            if (remaining <= TimeSpan.Zero)
+            {
+                remaining = TimeSpan.FromSeconds(40);
+            }
+
+            ScheduleAutoSuicide(remaining, false);
         }
 
         private void LoadAutoSuicideRules()
@@ -1772,7 +2333,11 @@ namespace ToNRoundCounter.UI
             }
             cleaned.Reverse();
             autoSuicideRules = cleaned;
-            _moduleHost.NotifyAutoSuicideRulesPrepared(new ModuleAutoSuicideRuleContext(autoSuicideRules, _settings, _moduleHost.CurrentServiceProvider));
+            if (_settings.CoordinatedAutoSuicideBrainEnabled)
+            {
+                _moduleHost.NotifyAutoSuicideRulesPrepared(new ModuleAutoSuicideRuleContext(autoSuicideRules, _settings, _moduleHost.CurrentServiceProvider));
+            }
+            UpdateShortcutOverlayState();
         }
 
         private int ShouldAutoSuicide(string roundType, string? terrorName, out bool hasPendingDelayed)
@@ -1806,7 +2371,10 @@ namespace ToNRoundCounter.UI
             }
 
             var decisionContext = new ModuleAutoSuicideDecisionContext(roundType, terrorName, decision, hasPendingDelayed, _moduleHost.CurrentServiceProvider);
-            _moduleHost.NotifyAutoSuicideDecisionEvaluated(decisionContext);
+            if (_settings.CoordinatedAutoSuicideBrainEnabled)
+            {
+                _moduleHost.NotifyAutoSuicideDecisionEvaluated(decisionContext);
+            }
             hasPendingDelayed = decisionContext.HasPendingDelayed;
             return decisionContext.Decision;
         }
@@ -1830,6 +2398,7 @@ namespace ToNRoundCounter.UI
             if (round == null)
             {
                 InfoPanel.RoundTypeValue.Text = string.Empty;
+                UpdateOverlay(OverlaySection.RoundStatus, form => form.SetValue(InfoPanel.RoundTypeValue.Text ?? string.Empty));
                 return;
             }
 
@@ -1841,6 +2410,8 @@ namespace ToNRoundCounter.UI
             {
                 InfoPanel.RoundTypeValue.Text = round.RoundType;
             }
+
+            UpdateOverlay(OverlaySection.RoundStatus, form => form.SetValue(InfoPanel.RoundTypeValue.Text ?? string.Empty));
         }
 
         private Color ConvertColorFromInt(int colorInt)
@@ -1858,6 +2429,8 @@ namespace ToNRoundCounter.UI
             terrorCountdownDurationSeconds = 0;
             terrorCountdownStart = DateTime.MinValue;
             terrorCountdownLastDisplayedSeconds = -1;
+            currentTerrorCountdownSuffix = string.Empty;
+            RefreshTerrorDisplays();
         }
 
         private void UpdateTerrorCountdownState(string primaryDisplayName)
@@ -1870,7 +2443,6 @@ namespace ToNRoundCounter.UI
                 if (terrorCountdownActive)
                 {
                     ResetTerrorCountdown();
-                    InfoPanel.TerrorValue.Text = currentTerrorBaseText;
                 }
                 return;
             }
@@ -1917,18 +2489,13 @@ namespace ToNRoundCounter.UI
                 seconds = 0;
             }
 
-            string currentText = InfoPanel.TerrorValue.Text ?? string.Empty;
+            string suffix = $"(出現まで {seconds} 秒)";
 
-            if (seconds != terrorCountdownLastDisplayedSeconds || !currentText.Contains("(出現まで"))
+            if (seconds != terrorCountdownLastDisplayedSeconds || !string.Equals(currentTerrorCountdownSuffix, suffix, StringComparison.Ordinal))
             {
-                string baseText = currentTerrorBaseText ?? string.Empty;
-                string suffix = $"(出現まで {seconds} 秒)";
-                if (!string.IsNullOrEmpty(baseText) && !char.IsWhiteSpace(baseText[baseText.Length - 1]))
-                {
-                    baseText += " ";
-                }
-                InfoPanel.TerrorValue.Text = baseText + suffix;
+                currentTerrorCountdownSuffix = suffix;
                 terrorCountdownLastDisplayedSeconds = seconds;
+                RefreshTerrorDisplays();
             }
         }
 
@@ -1946,50 +2513,210 @@ namespace ToNRoundCounter.UI
                 {
                     var lookup = UnboundRoundDefinitions.GetTerrors(displayName);
                     if (lookup != null)
+                    {
                         terrors = lookup.ToList();
+                    }
                 }
+            }
 
+            List<string>? expanded = terrors?.SelectMany(t => Enumerable.Repeat(t.name, t.count)).ToList();
+            if (expanded != null && expanded.Count == 0)
+            {
+                expanded = null;
+            }
+
+            if (roundType == "アンバウンド")
+            {
+                currentUnboundDisplayName = displayName;
                 if (terrors != null && terrors.Count > 0)
                 {
                     string terrorText = string.Join(", ", terrors.Select(t => $"{t.name} x{t.count}"));
-                    InfoPanel.TerrorValue.Text = $"{displayName} ({terrorText})";
-                    InfoPanel.TerrorValue.ForeColor = (_settings.FixedTerrorColor != Color.Empty) ? _settings.FixedTerrorColor : color;
-                    var expanded = terrors.SelectMany(t => Enumerable.Repeat(t.name, t.count)).ToList();
+                    currentUnboundTerrorDetails = terrorText;
+                    SetTerrorBaseText($"{displayName} ({terrorText})");
+
                     var terrorKeyValue = currentRound?.TerrorKey;
                     if (!string.IsNullOrEmpty(terrorKeyValue))
                     {
                         terrorColors[terrorKeyValue!] = color;
                     }
-                    UpdateTerrorInfoPanel(expanded);
-                    currentTerrorBaseText = InfoPanel.TerrorValue.Text;
-                    UpdateTerrorCountdownState(displayName);
-                    return;
                 }
-            }
-
-            if (terrors != null && terrors.Count > 0)
-            {
-                var expanded = terrors.SelectMany(t => Enumerable.Repeat(t.name, t.count)).ToList();
-                string joinedNames = string.Join(" & ", expanded);
-                if (joinedNames != displayName)
-                    InfoPanel.TerrorValue.Text = displayName + Environment.NewLine + string.Join(Environment.NewLine, expanded);
                 else
-                    InfoPanel.TerrorValue.Text = displayName;
-                InfoPanel.TerrorValue.ForeColor = (_settings.FixedTerrorColor != Color.Empty) ? _settings.FixedTerrorColor : color;
-                if (!string.IsNullOrEmpty(joinedNames))
-                    terrorColors[joinedNames] = color;
-                UpdateTerrorInfoPanel(expanded);
-                currentTerrorBaseText = InfoPanel.TerrorValue.Text;
-                UpdateTerrorCountdownState(displayName);
+                {
+                    currentUnboundTerrorDetails = null;
+                    SetTerrorBaseText(displayName);
+                }
             }
             else
             {
-                InfoPanel.TerrorValue.Text = displayName;
-                InfoPanel.TerrorValue.ForeColor = (_settings.FixedTerrorColor != Color.Empty) ? _settings.FixedTerrorColor : color;
-                UpdateTerrorInfoPanel(null);
-                currentTerrorBaseText = InfoPanel.TerrorValue.Text;
-                UpdateTerrorCountdownState(displayName);
+                currentUnboundDisplayName = null;
+                currentUnboundTerrorDetails = null;
+
+                if (expanded != null && expanded.Count > 0)
+                {
+                    string joinedNames = string.Join(" & ", expanded);
+                    string infoText = joinedNames != displayName
+                        ? displayName + Environment.NewLine + string.Join(Environment.NewLine, expanded)
+                        : displayName;
+
+                    SetTerrorBaseText(infoText);
+
+                    if (!string.IsNullOrEmpty(joinedNames))
+                    {
+                        terrorColors[joinedNames] = color;
+                    }
+                }
+                else
+                {
+                    SetTerrorBaseText(displayName);
+                }
             }
+
+            InfoPanel.TerrorValue.ForeColor = (_settings.FixedTerrorColor != Color.Empty) ? _settings.FixedTerrorColor : color;
+
+            UpdateTerrorInfoPanel(expanded);
+            UpdateTerrorCountdownState(displayName);
+        }
+
+        private void SetTerrorBaseText(string text)
+        {
+            currentTerrorBaseText = text ?? string.Empty;
+            RecomputeOverlayTerrorBase();
+        }
+
+        private void RecomputeOverlayTerrorBase()
+        {
+            RecomputeOverlayTerrorBase(true);
+        }
+
+        private void RecomputeOverlayTerrorBase(bool refreshDisplay)
+        {
+            bool isUnbound = string.Equals(stateService.CurrentRound?.RoundType, "アンバウンド", StringComparison.Ordinal);
+            if (isUnbound && !string.IsNullOrEmpty(currentUnboundDisplayName))
+            {
+                if (_settings.OverlayShowUnboundTerrorDetails && !string.IsNullOrEmpty(currentUnboundTerrorDetails))
+                {
+                    currentOverlayTerrorBaseText = $"{currentUnboundDisplayName} ({currentUnboundTerrorDetails})";
+                }
+                else
+                {
+                    currentOverlayTerrorBaseText = currentUnboundDisplayName ?? string.Empty;
+                }
+            }
+            else
+            {
+                currentOverlayTerrorBaseText = currentTerrorBaseText;
+            }
+
+            if (refreshDisplay)
+            {
+                RefreshTerrorDisplays();
+            }
+        }
+
+        private void RefreshTerrorDisplays()
+        {
+            string overlayBase = string.IsNullOrEmpty(currentOverlayTerrorBaseText)
+                ? currentTerrorBaseText
+                : currentOverlayTerrorBaseText;
+            string overlayText = CombineBaseAndSuffix(overlayBase, currentTerrorCountdownSuffix);
+
+            if (InfoPanel?.TerrorValue != null)
+            {
+                string infoText = CombineBaseAndSuffix(currentTerrorBaseText, currentTerrorCountdownSuffix);
+                InfoPanel.TerrorValue.Text = infoText;
+            }
+
+            UpdateOverlay(OverlaySection.Terror, form => form.SetValue(overlayText));
+        }
+
+        private static string CombineBaseAndSuffix(string? baseText, string? suffix)
+        {
+            string baseValue = baseText ?? string.Empty;
+            string suffixValue = suffix ?? string.Empty;
+            if (string.IsNullOrEmpty(suffixValue))
+            {
+                return baseValue;
+            }
+
+            if (string.IsNullOrEmpty(baseValue))
+            {
+                return suffixValue;
+            }
+
+            if (!char.IsWhiteSpace(baseValue[baseValue.Length - 1]))
+            {
+                return baseValue + " " + suffixValue;
+            }
+
+            return baseValue + suffixValue;
+        }
+
+        private string GetOverlayTerrorDisplayText()
+        {
+            if (string.IsNullOrEmpty(currentOverlayTerrorBaseText) && !string.IsNullOrEmpty(currentTerrorBaseText))
+            {
+                RecomputeOverlayTerrorBase(false);
+            }
+
+            string overlayBase = string.IsNullOrEmpty(currentOverlayTerrorBaseText)
+                ? currentTerrorBaseText
+                : currentOverlayTerrorBaseText;
+            return CombineBaseAndSuffix(overlayBase, currentTerrorCountdownSuffix);
+        }
+
+        private string GetOverlayAngleDisplayText()
+        {
+            if (!hasFacingAngleMeasurement)
+            {
+                return "―";
+            }
+
+            return $"{lastKnownFacingAngle:0.#}°";
+        }
+
+        private void RefreshTerrorInfoOverlay()
+        {
+            UpdateOverlay(OverlaySection.TerrorInfo, form => form.SetValue(BuildTerrorInfoOverlayText()));
+        }
+
+        private string BuildTerrorInfoOverlayText()
+        {
+            if (currentTerrorInfoNames.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var sb = new StringBuilder();
+            var groups = currentTerrorInfoNames
+                .GroupBy(name => name)
+                .OrderBy(g => g.Key, StringComparer.Ordinal);
+
+            foreach (var group in groups)
+            {
+                string header = group.Count() > 1 ? $"{group.Key} x{group.Count()}" : group.Key;
+                sb.AppendLine(header);
+
+                if (terrorInfoData != null && terrorInfoData[group.Key] is JArray infoArray)
+                {
+                    foreach (JObject obj in infoArray.OfType<JObject>())
+                    {
+                        var prop = obj.Properties().FirstOrDefault();
+                        if (prop == null)
+                        {
+                            continue;
+                        }
+
+                        sb.Append("  • ");
+                        sb.Append(prop.Name);
+                        sb.Append(": ");
+                        sb.AppendLine(prop.Value.ToString());
+                    }
+                }
+
+                sb.AppendLine();
+            }
+
+            return sb.ToString().TrimEnd();
         }
         private void LaunchSuicideInputIfExists()
         {

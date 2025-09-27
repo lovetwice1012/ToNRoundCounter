@@ -34,6 +34,19 @@ namespace ToNRoundCounter.UI
         public CheckBox DeathCountCheckBox { get; private set; } = null!;
         public CheckBox SurvivalRateCheckBox { get; private set; } = null!;
 
+        // オーバーレイ表示切替
+        public CheckBox OverlayVelocityCheckBox { get; private set; } = null!;
+        public CheckBox OverlayTerrorCheckBox { get; private set; } = null!;
+        public CheckBox OverlayDamageCheckBox { get; private set; } = null!;
+        public CheckBox OverlayAngleCheckBox { get; private set; } = null!;
+        public CheckBox OverlayNextRoundCheckBox { get; private set; } = null!;
+        public CheckBox OverlayRoundStatusCheckBox { get; private set; } = null!;
+        public CheckBox OverlayRoundHistoryCheckBox { get; private set; } = null!;
+        public NumericUpDown OverlayRoundHistoryCountNumeric { get; private set; } = null!;
+        public CheckBox OverlayTerrorInfoCheckBox { get; private set; } = null!;
+        public CheckBox OverlayShortcutsCheckBox { get; private set; } = null!;
+        public CheckBox OverlayUnboundTerrorDetailsCheckBox { get; private set; } = null!;
+
         // ラウンドログ表示切替チェックボックス
         public CheckBox ToggleRoundLogCheckBox { get; private set; } = null!;
 
@@ -102,11 +115,13 @@ namespace ToNRoundCounter.UI
 
             int margin = 10;
             int columnWidth = 540;
-            int totalWidth = columnWidth * 2 + margin * 3;
+            int totalWidth = columnWidth * 3 + margin * 4;
             this.Size = new Size(totalWidth, 1100);
 
             int currentY = margin;
             int rightColumnY = margin;
+            int thirdColumnY = margin;
+            int thirdColumnX = margin * 3 + columnWidth * 2;
             int innerMargin = 10;
 
             Label themeLabel = new Label();
@@ -703,6 +718,114 @@ namespace ToNRoundCounter.UI
 
             rightColumnY = grpAutoSuicide.Bottom + margin;
 
+            GroupBox grpOverlay = new GroupBox();
+            grpOverlay.Text = LanguageManager.Translate("オーバーレイ設定");
+            grpOverlay.Location = new Point(thirdColumnX, thirdColumnY);
+            grpOverlay.Size = new Size(columnWidth, 230);
+            this.Controls.Add(grpOverlay);
+
+            int overlayInnerMargin = 10;
+            int overlayInnerY = 25;
+
+            OverlayVelocityCheckBox = new CheckBox();
+            OverlayVelocityCheckBox.Text = LanguageManager.Translate("速度を表示");
+            OverlayVelocityCheckBox.AutoSize = true;
+            OverlayVelocityCheckBox.Location = new Point(overlayInnerMargin, overlayInnerY);
+            grpOverlay.Controls.Add(OverlayVelocityCheckBox);
+
+            overlayInnerY = OverlayVelocityCheckBox.Bottom + 8;
+
+            OverlayAngleCheckBox = new CheckBox();
+            OverlayAngleCheckBox.Text = LanguageManager.Translate("角度を表示");
+            OverlayAngleCheckBox.AutoSize = true;
+            OverlayAngleCheckBox.Location = new Point(overlayInnerMargin, overlayInnerY);
+            grpOverlay.Controls.Add(OverlayAngleCheckBox);
+
+            overlayInnerY = OverlayAngleCheckBox.Bottom + 8;
+
+            OverlayTerrorCheckBox = new CheckBox();
+            OverlayTerrorCheckBox.Text = LanguageManager.Translate("テラーを表示");
+            OverlayTerrorCheckBox.AutoSize = true;
+            OverlayTerrorCheckBox.Location = new Point(overlayInnerMargin, overlayInnerY);
+            grpOverlay.Controls.Add(OverlayTerrorCheckBox);
+
+            overlayInnerY = OverlayTerrorCheckBox.Bottom + 4;
+
+            OverlayUnboundTerrorDetailsCheckBox = new CheckBox();
+            OverlayUnboundTerrorDetailsCheckBox.Text = LanguageManager.Translate("アンバウンドのテラー内容を表示");
+            OverlayUnboundTerrorDetailsCheckBox.AutoSize = true;
+            OverlayUnboundTerrorDetailsCheckBox.Location = new Point(overlayInnerMargin + 20, overlayInnerY);
+            grpOverlay.Controls.Add(OverlayUnboundTerrorDetailsCheckBox);
+
+            overlayInnerY = OverlayUnboundTerrorDetailsCheckBox.Bottom + 8;
+
+            OverlayDamageCheckBox = new CheckBox();
+            OverlayDamageCheckBox.Text = LanguageManager.Translate("ダメージを表示");
+            OverlayDamageCheckBox.AutoSize = true;
+            OverlayDamageCheckBox.Location = new Point(overlayInnerMargin, overlayInnerY);
+            grpOverlay.Controls.Add(OverlayDamageCheckBox);
+
+            overlayInnerY = OverlayDamageCheckBox.Bottom + 8;
+
+            OverlayNextRoundCheckBox = new CheckBox();
+            OverlayNextRoundCheckBox.Text = LanguageManager.Translate("次ラウンド予測を表示");
+            OverlayNextRoundCheckBox.AutoSize = true;
+            OverlayNextRoundCheckBox.Location = new Point(overlayInnerMargin, overlayInnerY);
+            grpOverlay.Controls.Add(OverlayNextRoundCheckBox);
+
+            overlayInnerY = OverlayNextRoundCheckBox.Bottom + 8;
+
+            OverlayRoundStatusCheckBox = new CheckBox();
+            OverlayRoundStatusCheckBox.Text = LanguageManager.Translate("ラウンド状況を表示");
+            OverlayRoundStatusCheckBox.AutoSize = true;
+            OverlayRoundStatusCheckBox.Location = new Point(overlayInnerMargin, overlayInnerY);
+            grpOverlay.Controls.Add(OverlayRoundStatusCheckBox);
+
+            overlayInnerY = OverlayRoundStatusCheckBox.Bottom + 8;
+
+            OverlayRoundHistoryCheckBox = new CheckBox();
+            OverlayRoundHistoryCheckBox.Text = LanguageManager.Translate("ラウンドタイプ推移を表示");
+            OverlayRoundHistoryCheckBox.AutoSize = true;
+            OverlayRoundHistoryCheckBox.Location = new Point(overlayInnerMargin, overlayInnerY);
+            grpOverlay.Controls.Add(OverlayRoundHistoryCheckBox);
+
+            overlayInnerY = OverlayRoundHistoryCheckBox.Bottom + 8;
+
+            var overlayHistoryCountLabel = new Label();
+            overlayHistoryCountLabel.Text = LanguageManager.Translate("履歴表示数:");
+            overlayHistoryCountLabel.AutoSize = true;
+            overlayHistoryCountLabel.Location = new Point(overlayInnerMargin + 4, overlayInnerY + 4);
+            grpOverlay.Controls.Add(overlayHistoryCountLabel);
+
+            OverlayRoundHistoryCountNumeric = new NumericUpDown();
+            OverlayRoundHistoryCountNumeric.Minimum = 1;
+            OverlayRoundHistoryCountNumeric.Maximum = 10;
+            OverlayRoundHistoryCountNumeric.Value = 3;
+            OverlayRoundHistoryCountNumeric.Location = new Point(overlayHistoryCountLabel.Right + 10, overlayInnerY);
+            OverlayRoundHistoryCountNumeric.Width = 60;
+            grpOverlay.Controls.Add(OverlayRoundHistoryCountNumeric);
+
+            overlayInnerY = OverlayRoundHistoryCountNumeric.Bottom + 8;
+
+            OverlayTerrorInfoCheckBox = new CheckBox();
+            OverlayTerrorInfoCheckBox.Text = LanguageManager.Translate("テラー詳細情報を表示");
+            OverlayTerrorInfoCheckBox.AutoSize = true;
+            OverlayTerrorInfoCheckBox.Location = new Point(overlayInnerMargin, overlayInnerY);
+            grpOverlay.Controls.Add(OverlayTerrorInfoCheckBox);
+
+            overlayInnerY = OverlayTerrorInfoCheckBox.Bottom + 8;
+
+            OverlayShortcutsCheckBox = new CheckBox();
+            OverlayShortcutsCheckBox.Text = LanguageManager.Translate("ショートカットを表示");
+            OverlayShortcutsCheckBox.AutoSize = true;
+            OverlayShortcutsCheckBox.Location = new Point(overlayInnerMargin, overlayInnerY);
+            grpOverlay.Controls.Add(OverlayShortcutsCheckBox);
+
+            overlayInnerY = OverlayShortcutsCheckBox.Bottom + 8;
+
+            grpOverlay.Height = overlayInnerY + 7;
+            thirdColumnY = grpOverlay.Bottom + margin;
+
             currentY = currentY + grpOsc.Bottom + margin;
 
             // 表示設定グループ
@@ -1239,12 +1362,12 @@ namespace ToNRoundCounter.UI
             {
                 ModuleExtensionsPanel.Width = columnWidth;
                 currentY = Math.Max(currentY, ModuleExtensionsPanel.Bottom);
-                this.Height = Math.Max(Math.Max(currentY, rightColumnY), ModuleExtensionsPanel.Bottom) + moduleMargin;
+                this.Height = Math.Max(Math.Max(currentY, rightColumnY), Math.Max(thirdColumnY, ModuleExtensionsPanel.Bottom)) + moduleMargin;
             };
 
             // 最後に、パネルの高さを調整
             this.Width = totalWidth;
-            this.Height = Math.Max(currentY, rightColumnY) + margin;
+            this.Height = Math.Max(Math.Max(currentY, rightColumnY), thirdColumnY) + margin;
 
         }
 

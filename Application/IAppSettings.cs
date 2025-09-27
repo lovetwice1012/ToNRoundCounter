@@ -23,6 +23,19 @@ namespace ToNRoundCounter.Application
         bool Filter_Survival { get; set; }
         bool Filter_Death { get; set; }
         bool Filter_SurvivalRate { get; set; }
+        bool OverlayShowVelocity { get; set; }
+        bool OverlayShowTerror { get; set; }
+        bool OverlayShowDamage { get; set; }
+        bool OverlayShowNextRound { get; set; }
+        bool OverlayShowRoundStatus { get; set; }
+        bool OverlayShowRoundHistory { get; set; }
+        bool OverlayShowTerrorInfo { get; set; }
+        bool OverlayShowShortcuts { get; set; }
+        bool OverlayShowAngle { get; set; }
+        bool OverlayShowUnboundTerrorDetails { get; set; }
+        int OverlayRoundHistoryLength { get; set; }
+        Dictionary<string, Point> OverlayPositions { get; set; }
+        Dictionary<string, float> OverlayScaleFactors { get; set; }
         List<string> AutoSuicideRoundTypes { get; set; }
         Dictionary<string, AutoSuicidePreset> AutoSuicidePresets { get; set; }
         List<string> AutoSuicideDetailCustom { get; set; }
@@ -47,6 +60,7 @@ namespace ToNRoundCounter.Application
         string DiscordWebhookUrl { get; set; }
         string LastSaveCode { get; set; }
         bool AfkSoundCancelEnabled { get; set; }
+        bool CoordinatedAutoSuicideBrainEnabled { get; set; }
         void Load();
         Task SaveAsync();
     }
