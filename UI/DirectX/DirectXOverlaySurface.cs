@@ -201,22 +201,13 @@ namespace ToNRoundCounter.UI.DirectX
 
                 RenderAfterOverlay(renderTarget);
 
-                Result result = renderTarget.EndDraw();
-                if (result.Failure)
-                {
-                    if (result == Result.RecreateTarget)
-                    {
-                        deviceResourcesLost = true;
-                    }
-                }
-                else
-                {
-                    deviceResourcesLost = false;
-                }
+                renderTarget.EndDraw();
+                deviceResourcesLost = false;
             }
             catch (SharpDXException ex)
             {
-                if (ex.ResultCode == ResultCode.RecreateTarget || ex.ResultCode == ResultCode.DeviceRemoved)
+                if (ex.ResultCode == SharpDX.Direct2D1.ResultCode.RecreateTarget ||
+                    ex.ResultCode == SharpDX.DXGI.ResultCode.DeviceRemoved)
                 {
                     deviceResourcesLost = true;
                 }

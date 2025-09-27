@@ -179,9 +179,10 @@ namespace ToNRoundCounter.UI.DirectX
                 {
                     if (glyphs.Count > 0)
                     {
-                        Glyph previous = glyphs[^1];
+                        int previousIndex = glyphs.Count - 1;
+                        Glyph previous = glyphs[previousIndex];
                         previous.IncludeDecimal = true;
-                        glyphs[^1] = previous;
+                        glyphs[previousIndex] = previous;
                     }
 
                     continue;
