@@ -89,7 +89,13 @@ namespace ToNRoundCounter.UI
 
             public AngleIndicatorControl()
             {
-                SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
+                SetStyle(
+                    ControlStyles.AllPaintingInWmPaint |
+                    ControlStyles.OptimizedDoubleBuffer |
+                    ControlStyles.ResizeRedraw |
+                    ControlStyles.UserPaint |
+                    ControlStyles.SupportsTransparentBackColor,
+                    true);
                 BackColor = Color.Transparent;
                 Size = new Size(180, 180);
                 MinimumSize = new Size(140, 140);

@@ -25,6 +25,8 @@ namespace ToNRoundCounter.UI
 
         protected OverlaySectionForm(string title, Control? content)
         {
+            SetStyle(ControlStyles.SupportsTransparentBackColor, true);
+
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
             TopMost = false;
