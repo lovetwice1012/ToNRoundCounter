@@ -49,9 +49,11 @@ namespace ToNRoundCounter.Infrastructure
         public bool OverlayShowShortcuts { get; set; } = true;
         public bool OverlayShowAngle { get; set; } = true;
         public bool OverlayShowUnboundTerrorDetails { get; set; } = true;
+        public double OverlayOpacity { get; set; } = 0.95d;
         public int OverlayRoundHistoryLength { get; set; } = 3;
         public Dictionary<string, Point> OverlayPositions { get; set; } = new Dictionary<string, Point>();
         public Dictionary<string, float> OverlayScaleFactors { get; set; } = new Dictionary<string, float>();
+        public Dictionary<string, Size> OverlaySizes { get; set; } = new Dictionary<string, Size>();
         public List<string> AutoSuicideRoundTypes { get; set; } = new List<string>();
         public Dictionary<string, AutoSuicidePreset> AutoSuicidePresets { get; set; } = new Dictionary<string, AutoSuicidePreset>();
         public List<string> AutoSuicideDetailCustom { get; set; } = new List<string>();
@@ -139,6 +141,8 @@ namespace ToNRoundCounter.Infrastructure
 
                 OverlayPositions ??= new Dictionary<string, Point>();
                 OverlayScaleFactors ??= new Dictionary<string, float>();
+                OverlaySizes ??= new Dictionary<string, Size>();
+                OverlayOpacity = NormalizeOverlayOpacity(OverlayOpacity);
                 if (OverlayRoundHistoryLength <= 0)
                 {
                     OverlayRoundHistoryLength = 3;
@@ -167,6 +171,26 @@ namespace ToNRoundCounter.Infrastructure
                     _bus.Publish(new SettingsLoaded(this));
                 }
             }
+        }
+
+        private double NormalizeOverlayOpacity(double opacity)
+        {
+            if (opacity <= 0d)
+            {
+                return 0.95d;
+            }
+
+            if (opacity < 0.2d)
+            {
+                return 0.2d;
+            }
+
+            if (opacity > 1d)
+            {
+                return 1d;
+            }
+
+            return opacity;
         }
 
         private void NormalizeAutoLaunchEntries()
@@ -301,6 +325,7 @@ namespace ToNRoundCounter.Infrastructure
             _bus.Publish(new SettingsSaving(this));
             NormalizeAutoLaunchEntries();
             NormalizeItemMusicEntries();
+            OverlayOpacity = NormalizeOverlayOpacity(OverlayOpacity);
             var settings = new AppSettingsData
             {
                 OSCPort = OSCPort,
@@ -327,9 +352,11 @@ namespace ToNRoundCounter.Infrastructure
                 OverlayShowTerrorInfo = OverlayShowTerrorInfo,
                 OverlayShowShortcuts = OverlayShowShortcuts,
                 OverlayShowAngle = OverlayShowAngle,
+                OverlayOpacity = OverlayOpacity,
                 OverlayRoundHistoryLength = OverlayRoundHistoryLength,
                 OverlayPositions = OverlayPositions,
                 OverlayScaleFactors = OverlayScaleFactors,
+                OverlaySizes = OverlaySizes,
                 RoundTypeStats = RoundTypeStats,
                 AutoSuicideEnabled = AutoSuicideEnabled,
                 AutoSuicideRoundTypes = AutoSuicideRoundTypes,
@@ -404,9 +431,11 @@ namespace ToNRoundCounter.Infrastructure
         public bool OverlayShowTerrorInfo { get; set; }
         public bool OverlayShowShortcuts { get; set; }
         public bool OverlayShowAngle { get; set; }
+        public double OverlayOpacity { get; set; }
         public int OverlayRoundHistoryLength { get; set; }
         public Dictionary<string, Point> OverlayPositions { get; set; } = new Dictionary<string, Point>();
         public Dictionary<string, float> OverlayScaleFactors { get; set; } = new Dictionary<string, float>();
+        public Dictionary<string, Size> OverlaySizes { get; set; } = new Dictionary<string, Size>();
         public List<string> RoundTypeStats { get; set; } = new List<string>();
         public bool AutoSuicideEnabled { get; set; }
         public List<string> AutoSuicideRoundTypes { get; set; } = new List<string>();

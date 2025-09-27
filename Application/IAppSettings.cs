@@ -33,9 +33,11 @@ namespace ToNRoundCounter.Application
         bool OverlayShowShortcuts { get; set; }
         bool OverlayShowAngle { get; set; }
         bool OverlayShowUnboundTerrorDetails { get; set; }
+        double OverlayOpacity { get; set; }
         int OverlayRoundHistoryLength { get; set; }
         Dictionary<string, Point> OverlayPositions { get; set; }
         Dictionary<string, float> OverlayScaleFactors { get; set; }
+        Dictionary<string, Size> OverlaySizes { get; set; }
         List<string> AutoSuicideRoundTypes { get; set; }
         Dictionary<string, AutoSuicidePreset> AutoSuicidePresets { get; set; }
         List<string> AutoSuicideDetailCustom { get; set; }

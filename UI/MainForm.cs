@@ -257,6 +257,7 @@ namespace ToNRoundCounter.UI
 
             _settings.OverlayPositions ??= new Dictionary<string, Point>();
             _settings.OverlayScaleFactors ??= new Dictionary<string, float>();
+            _settings.OverlaySizes ??= new Dictionary<string, Size>();
 
             var sections = new (OverlaySection Section, string Title, string InitialValue)[]
             {
@@ -296,6 +297,8 @@ namespace ToNRoundCounter.UI
                     }
                 };
 
+                form.Opacity = GetEffectiveOverlayOpacity();
+
                 string key = GetOverlaySectionKey(section);
 
                 if (section == OverlaySection.RoundHistory && form is OverlayRoundHistoryForm historyForm)
@@ -323,6 +326,13 @@ namespace ToNRoundCounter.UI
                 }
 
                 _settings.OverlayScaleFactors[key] = form.ScaleFactor;
+
+                if (_settings.OverlaySizes.TryGetValue(key, out var savedSize) && savedSize.Width > 0 && savedSize.Height > 0)
+                {
+                    form.ApplySavedSize(savedSize);
+                }
+
+                _settings.OverlaySizes[key] = form.Size;
 
                 Point location;
                 if (_settings.OverlayPositions.TryGetValue(key, out var savedLocation))
@@ -401,6 +411,42 @@ namespace ToNRoundCounter.UI
                     }
                 }
             }
+        }
+
+        private void ApplyOverlayOpacityToForms()
+        {
+            double opacity = GetEffectiveOverlayOpacity();
+
+            foreach (var form in overlayForms.Values)
+            {
+                if (form.IsDisposed)
+                {
+                    continue;
+                }
+
+                form.Opacity = opacity;
+            }
+        }
+
+        private double GetEffectiveOverlayOpacity()
+        {
+            double opacity = _settings.OverlayOpacity;
+            if (opacity <= 0d)
+            {
+                opacity = 0.95d;
+            }
+
+            if (opacity < 0.2d)
+            {
+                opacity = 0.2d;
+            }
+
+            if (opacity > 1d)
+            {
+                opacity = 1d;
+            }
+
+            return opacity;
         }
 
         private void SetupShortcutOverlay(OverlayShortcutForm form)
@@ -524,6 +570,8 @@ namespace ToNRoundCounter.UI
             string key = GetOverlaySectionKey(section);
             _settings.OverlayScaleFactors ??= new Dictionary<string, float>();
             _settings.OverlayScaleFactors[key] = form.ScaleFactor;
+            _settings.OverlaySizes ??= new Dictionary<string, Size>();
+            _settings.OverlaySizes[key] = form.Size;
         }
 
         private static Point ClampOverlayLocation(Point location, Size size, Rectangle workingArea)
@@ -548,6 +596,7 @@ namespace ToNRoundCounter.UI
 
             _settings.OverlayPositions ??= new Dictionary<string, Point>();
             _settings.OverlayScaleFactors ??= new Dictionary<string, float>();
+            _settings.OverlaySizes ??= new Dictionary<string, Size>();
 
             foreach (var kvp in overlayForms)
             {
@@ -561,6 +610,7 @@ namespace ToNRoundCounter.UI
                 string key = GetOverlaySectionKey(section);
                 _settings.OverlayPositions[key] = form.Location;
                 _settings.OverlayScaleFactors[key] = form.ScaleFactor;
+                _settings.OverlaySizes[key] = form.Size;
             }
         }
 
@@ -833,6 +883,7 @@ namespace ToNRoundCounter.UI
                 settingsForm.SettingsPanel.OverlayRoundHistoryCheckBox.Checked = _settings.OverlayShowRoundHistory;
                 settingsForm.SettingsPanel.OverlayTerrorInfoCheckBox.Checked = _settings.OverlayShowTerrorInfo;
                 settingsForm.SettingsPanel.OverlayShortcutsCheckBox.Checked = _settings.OverlayShowShortcuts;
+                settingsForm.SettingsPanel.SetOverlayOpacity(_settings.OverlayOpacity);
                 int historyLength = _settings.OverlayRoundHistoryLength <= 0 ? 3 : _settings.OverlayRoundHistoryLength;
                 historyLength = Math.Max((int)settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Minimum, Math.Min((int)settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Maximum, historyLength));
                 settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Value = historyLength;
@@ -894,6 +945,7 @@ namespace ToNRoundCounter.UI
                     _settings.OverlayShowRoundHistory = settingsForm.SettingsPanel.OverlayRoundHistoryCheckBox.Checked;
                     _settings.OverlayShowTerrorInfo = settingsForm.SettingsPanel.OverlayTerrorInfoCheckBox.Checked;
                     _settings.OverlayShowShortcuts = settingsForm.SettingsPanel.OverlayShortcutsCheckBox.Checked;
+                    _settings.OverlayOpacity = settingsForm.SettingsPanel.GetOverlayOpacity();
                     _settings.OverlayRoundHistoryLength = (int)settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Value;
                     _settings.BackgroundColor_InfoPanel = settingsForm.SettingsPanel.InfoPanelBgLabel.BackColor;
                     _settings.BackgroundColor_Stats = settingsForm.SettingsPanel.StatsBgLabel.BackColor;
@@ -955,6 +1007,7 @@ namespace ToNRoundCounter.UI
                     InfoPanel.TerrorValue.ForeColor = _settings.FixedTerrorColor;
                     UpdateAggregateStatsDisplay();
                     UpdateDisplayVisibility();
+                    ApplyOverlayOpacityToForms();
                     UpdateOverlayVisibility();
                     UpdateShortcutOverlayState();
                     ApplyOverlayRoundHistorySettings();
