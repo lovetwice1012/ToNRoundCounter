@@ -197,6 +197,7 @@
     <Compile Include="Infrastructure\CancellationProvider.cs" />
     <Compile Include="Infrastructure\LanguageManager.cs" />
     <Compile Include="Infrastructure\NativeInputSender.cs" />
+    <Compile Include="Infrastructure\Interop\WindowUtilities.cs" />
     <Compile Include="Infrastructure\ErrorReporter.cs" />
     <Compile Include="Infrastructure\WinFormsDispatcher.cs" />
     <Compile Include="Infrastructure\ChannelReaderExtensions.cs" />
