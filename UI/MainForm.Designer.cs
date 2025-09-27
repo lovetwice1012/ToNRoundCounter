@@ -20,6 +20,23 @@
                 velocityTimer?.Dispose();
                 oscListener?.Stop();
                 _cancellation.Cancel();
+                overlayVisibilityTimer?.Stop();
+                overlayVisibilityTimer?.Dispose();
+                foreach (var form in overlayForms.Values)
+                {
+                    if (form == null)
+                    {
+                        continue;
+                    }
+
+                    if (!form.IsDisposed)
+                    {
+                        form.Hide();
+                        form.Close();
+                    }
+                    form.Dispose();
+                }
+                overlayForms.Clear();
                 components?.Dispose();
             }
             base.Dispose(disposing);

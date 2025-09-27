@@ -23,6 +23,11 @@ namespace ToNRoundCounter.Application
         bool Filter_Survival { get; set; }
         bool Filter_Death { get; set; }
         bool Filter_SurvivalRate { get; set; }
+        bool OverlayShowVelocity { get; set; }
+        bool OverlayShowTerror { get; set; }
+        bool OverlayShowDamage { get; set; }
+        bool OverlayShowNextRound { get; set; }
+        bool OverlayShowRoundStatus { get; set; }
         List<string> AutoSuicideRoundTypes { get; set; }
         Dictionary<string, AutoSuicidePreset> AutoSuicidePresets { get; set; }
         List<string> AutoSuicideDetailCustom { get; set; }

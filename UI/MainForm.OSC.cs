@@ -320,6 +320,7 @@ namespace ToNRoundCounter.UI
             _dispatcher.Invoke(() =>
             {
                 lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2}  Members: {connected}";
+                UpdateOverlay(OverlaySection.Velocity, form => form.SetValue($"{currentVelocity:F2}"));
             });
         }
 

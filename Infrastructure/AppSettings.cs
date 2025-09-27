@@ -39,6 +39,11 @@ namespace ToNRoundCounter.Infrastructure
         public bool Filter_Survival { get; set; } = true;
         public bool Filter_Death { get; set; } = true;
         public bool Filter_SurvivalRate { get; set; } = true;
+        public bool OverlayShowVelocity { get; set; } = true;
+        public bool OverlayShowTerror { get; set; } = true;
+        public bool OverlayShowDamage { get; set; } = true;
+        public bool OverlayShowNextRound { get; set; } = true;
+        public bool OverlayShowRoundStatus { get; set; } = true;
         public List<string> AutoSuicideRoundTypes { get; set; } = new List<string>();
         public Dictionary<string, AutoSuicidePreset> AutoSuicidePresets { get; set; } = new Dictionary<string, AutoSuicidePreset>();
         public List<string> AutoSuicideDetailCustom { get; set; } = new List<string>();
@@ -298,6 +303,11 @@ namespace ToNRoundCounter.Infrastructure
                 Filter_Survival = Filter_Survival,
                 Filter_Death = Filter_Death,
                 Filter_SurvivalRate = Filter_SurvivalRate,
+                OverlayShowVelocity = OverlayShowVelocity,
+                OverlayShowTerror = OverlayShowTerror,
+                OverlayShowDamage = OverlayShowDamage,
+                OverlayShowNextRound = OverlayShowNextRound,
+                OverlayShowRoundStatus = OverlayShowRoundStatus,
                 RoundTypeStats = RoundTypeStats,
                 AutoSuicideEnabled = AutoSuicideEnabled,
                 AutoSuicideRoundTypes = AutoSuicideRoundTypes,
@@ -362,6 +372,11 @@ namespace ToNRoundCounter.Infrastructure
         public bool Filter_Survival { get; set; }
         public bool Filter_Death { get; set; }
         public bool Filter_SurvivalRate { get; set; }
+        public bool OverlayShowVelocity { get; set; }
+        public bool OverlayShowTerror { get; set; }
+        public bool OverlayShowDamage { get; set; }
+        public bool OverlayShowNextRound { get; set; }
+        public bool OverlayShowRoundStatus { get; set; }
         public List<string> RoundTypeStats { get; set; } = new List<string>();
         public bool AutoSuicideEnabled { get; set; }
         public List<string> AutoSuicideRoundTypes { get; set; } = new List<string>();
