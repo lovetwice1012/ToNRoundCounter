@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -125,6 +126,10 @@ namespace ToNRoundCounter.UI
         private System.Windows.Forms.Timer? overlayVisibilityTimer;
         private OverlayShortcutForm? shortcutOverlayForm;
         private bool overlayTemporarilyHidden;
+        private readonly object instanceTimerSync = new();
+        private string currentInstanceId = string.Empty;
+        private DateTimeOffset currentInstanceEnteredAt = DateTimeOffset.Now;
+        private static readonly CultureInfo JapaneseCulture = CultureInfo.GetCultureInfo("ja-JP");
 
         private enum OverlaySection
         {
@@ -136,7 +141,9 @@ namespace ToNRoundCounter.UI
             RoundStatus,
             RoundHistory,
             TerrorInfo,
-            Shortcuts
+            Shortcuts,
+            Clock,
+            InstanceTimer
         }
 
         private void LogUi(string message, LogEventLevel level = LogEventLevel.Information)
@@ -257,6 +264,7 @@ namespace ToNRoundCounter.UI
 
             _settings.OverlayPositions ??= new Dictionary<string, Point>();
             _settings.OverlayScaleFactors ??= new Dictionary<string, float>();
+            _settings.OverlaySizes ??= new Dictionary<string, Size>();
 
             var sections = new (OverlaySection Section, string Title, string InitialValue)[]
             {
@@ -268,7 +276,9 @@ namespace ToNRoundCounter.UI
                 (OverlaySection.RoundStatus, "ラウンド状況", InfoPanel?.RoundTypeValue?.Text ?? string.Empty),
                 (OverlaySection.RoundHistory, "ラウンドタイプ推移", string.Empty),
                 (OverlaySection.TerrorInfo, "テラー詳細", BuildTerrorInfoOverlayText()),
-                (OverlaySection.Shortcuts, "ショートカット", string.Empty)
+                (OverlaySection.Shortcuts, "ショートカット", string.Empty),
+                (OverlaySection.Clock, "時計", GetClockOverlayText()),
+                (OverlaySection.InstanceTimer, "滞在時間", GetInstanceTimerDisplayText())
             };
 
             int x = Math.Max(workingArea.Left, workingArea.Right - 260 - offsetX);
@@ -295,6 +305,8 @@ namespace ToNRoundCounter.UI
                         StartPosition = FormStartPosition.Manual,
                     }
                 };
+
+                form.Opacity = GetEffectiveOverlayOpacity();
 
                 string key = GetOverlaySectionKey(section);
 
@@ -323,6 +335,13 @@ namespace ToNRoundCounter.UI
                 }
 
                 _settings.OverlayScaleFactors[key] = form.ScaleFactor;
+
+                if (_settings.OverlaySizes.TryGetValue(key, out var savedSize) && savedSize.Width > 0 && savedSize.Height > 0)
+                {
+                    form.ApplySavedSize(savedSize);
+                }
+
+                _settings.OverlaySizes[key] = form.Size;
 
                 Point location;
                 if (_settings.OverlayPositions.TryGetValue(key, out var savedLocation))
@@ -357,6 +376,8 @@ namespace ToNRoundCounter.UI
 
         private void OverlayVisibilityTimer_Tick(object? sender, EventArgs e)
         {
+            UpdateClockOverlay();
+            UpdateInstanceTimerOverlay();
             UpdateOverlayVisibility();
         }
 
@@ -401,6 +422,42 @@ namespace ToNRoundCounter.UI
                     }
                 }
             }
+        }
+
+        private void ApplyOverlayOpacityToForms()
+        {
+            double opacity = GetEffectiveOverlayOpacity();
+
+            foreach (var form in overlayForms.Values)
+            {
+                if (form.IsDisposed)
+                {
+                    continue;
+                }
+
+                form.Opacity = opacity;
+            }
+        }
+
+        private double GetEffectiveOverlayOpacity()
+        {
+            double opacity = _settings.OverlayOpacity;
+            if (opacity <= 0d)
+            {
+                opacity = 0.95d;
+            }
+
+            if (opacity < 0.2d)
+            {
+                opacity = 0.2d;
+            }
+
+            if (opacity > 1d)
+            {
+                opacity = 1d;
+            }
+
+            return opacity;
         }
 
         private void SetupShortcutOverlay(OverlayShortcutForm form)
@@ -524,6 +581,8 @@ namespace ToNRoundCounter.UI
             string key = GetOverlaySectionKey(section);
             _settings.OverlayScaleFactors ??= new Dictionary<string, float>();
             _settings.OverlayScaleFactors[key] = form.ScaleFactor;
+            _settings.OverlaySizes ??= new Dictionary<string, Size>();
+            _settings.OverlaySizes[key] = form.Size;
         }
 
         private static Point ClampOverlayLocation(Point location, Size size, Rectangle workingArea)
@@ -539,6 +598,60 @@ namespace ToNRoundCounter.UI
 
         private static string GetOverlaySectionKey(OverlaySection section) => section.ToString();
 
+        private void UpdateClockOverlay()
+        {
+            UpdateOverlay(OverlaySection.Clock, form => form.SetValue(GetClockOverlayText()));
+        }
+
+        private void UpdateInstanceTimerOverlay()
+        {
+            UpdateOverlay(OverlaySection.InstanceTimer, form => form.SetValue(GetInstanceTimerDisplayText()));
+        }
+
+        private string GetClockOverlayText()
+        {
+            DateTimeOffset now = DateTimeOffset.Now;
+            string dayName = JapaneseCulture.DateTimeFormat.GetDayName(now.DayOfWeek);
+            if (dayName.EndsWith("曜日", StringComparison.Ordinal))
+            {
+                int trimmedLength = Math.Max(0, dayName.Length - 2);
+                dayName = trimmedLength > 0 ? dayName.Substring(0, trimmedLength) : dayName;
+            }
+
+            if (string.IsNullOrEmpty(dayName))
+            {
+                dayName = JapaneseCulture.DateTimeFormat.GetAbbreviatedDayName(now.DayOfWeek);
+            }
+
+            return $"{now:yyyy}年{now:MM}月{now:dd}日({dayName}) {now:HH}時{now:mm}分{now:ss}秒";
+        }
+
+        private string GetInstanceTimerDisplayText()
+        {
+            string instanceId;
+            DateTimeOffset enteredAt;
+
+            lock (instanceTimerSync)
+            {
+                instanceId = currentInstanceId;
+                enteredAt = currentInstanceEnteredAt;
+            }
+
+            if (string.IsNullOrEmpty(instanceId))
+            {
+                return "00時間00分00秒";
+            }
+
+            TimeSpan elapsed = DateTimeOffset.Now - enteredAt;
+            if (elapsed < TimeSpan.Zero)
+            {
+                elapsed = TimeSpan.Zero;
+            }
+
+            int totalHours = (int)Math.Floor(elapsed.TotalHours);
+            return $"{totalHours:D2}時間{elapsed.Minutes:D2}分{elapsed.Seconds:D2}秒";
+        }
+
         private void CaptureOverlayPositions()
         {
             if (overlayForms.Count == 0)
@@ -548,6 +661,7 @@ namespace ToNRoundCounter.UI
 
             _settings.OverlayPositions ??= new Dictionary<string, Point>();
             _settings.OverlayScaleFactors ??= new Dictionary<string, float>();
+            _settings.OverlaySizes ??= new Dictionary<string, Size>();
 
             foreach (var kvp in overlayForms)
             {
@@ -561,6 +675,7 @@ namespace ToNRoundCounter.UI
                 string key = GetOverlaySectionKey(section);
                 _settings.OverlayPositions[key] = form.Location;
                 _settings.OverlayScaleFactors[key] = form.ScaleFactor;
+                _settings.OverlaySizes[key] = form.Size;
             }
         }
 
@@ -577,6 +692,8 @@ namespace ToNRoundCounter.UI
                 OverlaySection.RoundHistory => _settings.OverlayShowRoundHistory,
                 OverlaySection.TerrorInfo => _settings.OverlayShowTerrorInfo,
                 OverlaySection.Shortcuts => _settings.OverlayShowShortcuts,
+                OverlaySection.Clock => _settings.OverlayShowClock,
+                OverlaySection.InstanceTimer => _settings.OverlayShowInstanceTimer,
                 _ => false
             };
         }
@@ -833,6 +950,9 @@ namespace ToNRoundCounter.UI
                 settingsForm.SettingsPanel.OverlayRoundHistoryCheckBox.Checked = _settings.OverlayShowRoundHistory;
                 settingsForm.SettingsPanel.OverlayTerrorInfoCheckBox.Checked = _settings.OverlayShowTerrorInfo;
                 settingsForm.SettingsPanel.OverlayShortcutsCheckBox.Checked = _settings.OverlayShowShortcuts;
+                settingsForm.SettingsPanel.OverlayClockCheckBox.Checked = _settings.OverlayShowClock;
+                settingsForm.SettingsPanel.OverlayInstanceTimerCheckBox.Checked = _settings.OverlayShowInstanceTimer;
+                settingsForm.SettingsPanel.SetOverlayOpacity(_settings.OverlayOpacity);
                 int historyLength = _settings.OverlayRoundHistoryLength <= 0 ? 3 : _settings.OverlayRoundHistoryLength;
                 historyLength = Math.Max((int)settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Minimum, Math.Min((int)settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Maximum, historyLength));
                 settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Value = historyLength;
@@ -894,6 +1014,9 @@ namespace ToNRoundCounter.UI
                     _settings.OverlayShowRoundHistory = settingsForm.SettingsPanel.OverlayRoundHistoryCheckBox.Checked;
                     _settings.OverlayShowTerrorInfo = settingsForm.SettingsPanel.OverlayTerrorInfoCheckBox.Checked;
                     _settings.OverlayShowShortcuts = settingsForm.SettingsPanel.OverlayShortcutsCheckBox.Checked;
+                    _settings.OverlayShowClock = settingsForm.SettingsPanel.OverlayClockCheckBox.Checked;
+                    _settings.OverlayShowInstanceTimer = settingsForm.SettingsPanel.OverlayInstanceTimerCheckBox.Checked;
+                    _settings.OverlayOpacity = settingsForm.SettingsPanel.GetOverlayOpacity();
                     _settings.OverlayRoundHistoryLength = (int)settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Value;
                     _settings.BackgroundColor_InfoPanel = settingsForm.SettingsPanel.InfoPanelBgLabel.BackColor;
                     _settings.BackgroundColor_Stats = settingsForm.SettingsPanel.StatsBgLabel.BackColor;
@@ -955,6 +1078,7 @@ namespace ToNRoundCounter.UI
                     InfoPanel.TerrorValue.ForeColor = _settings.FixedTerrorColor;
                     UpdateAggregateStatsDisplay();
                     UpdateDisplayVisibility();
+                    ApplyOverlayOpacityToForms();
                     UpdateOverlayVisibility();
                     UpdateShortcutOverlayState();
                     ApplyOverlayRoundHistorySettings();
@@ -1529,11 +1653,44 @@ namespace ToNRoundCounter.UI
                 else if (eventType == "INSTANCE")
                 {
                     // "INSTANCE" タイプの接続を受けたら、メッセージ内の "Value" フィールドを使ってインスタンス接続を開始する
-                    string instanceValue = json.Value<string>("Value") ?? "";
+                    string instanceValue = json.Value<string>("Value") ?? string.Empty;
                     if (!string.IsNullOrEmpty(instanceValue))
                     {
+                        bool instanceChanged;
+                        DateTimeOffset now = DateTimeOffset.Now;
+                        lock (instanceTimerSync)
+                        {
+                            instanceChanged = !string.Equals(instanceValue, currentInstanceId, StringComparison.Ordinal);
+                            if (instanceChanged)
+                            {
+                                currentInstanceId = instanceValue;
+                                currentInstanceEnteredAt = now;
+                            }
+                        }
+
+                        if (instanceChanged)
+                        {
+                            UpdateInstanceTimerOverlay();
+                        }
+
                         _ = Task.Run(() => ConnectToInstance(instanceValue));
-                        isNotifyActivated = false; ;
+                        isNotifyActivated = false;
+                    }
+                    else
+                    {
+                        bool hadInstance;
+                        DateTimeOffset now = DateTimeOffset.Now;
+                        lock (instanceTimerSync)
+                        {
+                            hadInstance = !string.IsNullOrEmpty(currentInstanceId);
+                            currentInstanceId = string.Empty;
+                            currentInstanceEnteredAt = now;
+                        }
+
+                        if (hadInstance)
+                        {
+                            UpdateInstanceTimerOverlay();
+                        }
                     }
                     followAutoSelfKill = false;
                     _dispatcher.Invoke(async () =>

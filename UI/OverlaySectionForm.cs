@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using ToNRoundCounter.Infrastructure.Interop;
@@ -13,7 +14,7 @@ namespace ToNRoundCounter.UI
         private readonly Label? valueLabel;
         private readonly TableLayoutPanel layout;
         private Size baseContentSize;
-        private double aspectRatio;
+        private Size pendingBaseContentSize;
         private float currentScaleFactor = 1f;
         private float pendingScaleFactor = 1f;
         private bool isUserResizing;
@@ -97,7 +98,7 @@ namespace ToNRoundCounter.UI
             RegisterDragEvents(layout);
             AdjustSizeToContent();
             baseContentSize = Size;
-            aspectRatio = Size.Height == 0 ? 1d : (double)Size.Width / Size.Height;
+            pendingBaseContentSize = baseContentSize;
         }
 
         public virtual void SetValue(string value)
@@ -133,12 +134,30 @@ namespace ToNRoundCounter.UI
             }
         }
 
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            UpdateRoundedCorners();
+        }
+
+        protected override void OnSizeChanged(EventArgs e)
+        {
+            base.OnSizeChanged(e);
+            UpdateRoundedCorners();
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
             using var pen = new Pen(Color.FromArgb(200, 255, 255, 255), 1);
-            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
-            e.Graphics.DrawRectangle(pen, rect);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+
+            if (Width > 1 && Height > 1)
+            {
+                using GraphicsPath borderPath = CreateRoundedRectanglePath(new Rectangle(0, 0, Width - 1, Height - 1), CornerRadius);
+                e.Graphics.DrawPath(pen, borderPath);
+            }
+
             var gripRect = new Rectangle(Width - ResizeGripSize - 2, Height - ResizeGripSize - 2, ResizeGripSize, ResizeGripSize);
             ControlPaint.DrawSizeGrip(e.Graphics, Color.Transparent, gripRect);
         }
@@ -164,6 +183,23 @@ namespace ToNRoundCounter.UI
             Size scaledSize = new Size(contentWidth + Padding.Horizontal, contentHeight + Padding.Vertical);
             UpdateBaseContentSize(scaledSize);
             ApplyScaledSize();
+        }
+
+        private void UpdateRoundedCorners()
+        {
+            if (!IsHandleCreated)
+            {
+                return;
+            }
+
+            if (Width <= 0 || Height <= 0)
+            {
+                return;
+            }
+
+            using GraphicsPath regionPath = CreateRoundedRectanglePath(new Rectangle(0, 0, Width, Height), CornerRadius);
+            Region?.Dispose();
+            Region = new Region(regionPath);
         }
 
         protected void RegisterDragEvents(Control control)
@@ -197,11 +233,13 @@ namespace ToNRoundCounter.UI
                 case WM_ENTERSIZEMOVE:
                     isUserResizing = true;
                     pendingScaleFactor = currentScaleFactor;
+                    pendingBaseContentSize = baseContentSize;
                     break;
                 case WM_EXITSIZEMOVE:
                     if (isUserResizing)
                     {
                         isUserResizing = false;
+                        baseContentSize = pendingBaseContentSize;
                         SetScaleFactor(pendingScaleFactor);
                         WindowUtilities.TryFocusProcessWindowIfAltNotPressed("VRChat");
                     }
@@ -223,38 +261,68 @@ namespace ToNRoundCounter.UI
 
         private void AdjustSizingRectangle(ref RECT rect)
         {
-            if (baseContentSize.Width <= 0 || baseContentSize.Height <= 0)
-            {
-                baseContentSize = new Size(Math.Max(Width, MinimumSize.Width), Math.Max(Height, MinimumSize.Height));
-                aspectRatio = baseContentSize.Height == 0 ? 1d : (double)baseContentSize.Width / baseContentSize.Height;
-            }
+            EnsureBaseContentSize();
 
-            double ratio = aspectRatio <= 0 ? 1d : aspectRatio;
             int width = rect.Right - rect.Left;
-            int clampedWidth = ClampWidthToScale(width);
-            int height = (int)Math.Round(clampedWidth / ratio);
-            rect.Right = rect.Left + clampedWidth;
-            rect.Bottom = rect.Top + height;
+            int height = rect.Bottom - rect.Top;
 
-            if (baseContentSize.Width > 0)
+            int clampedWidth = ClampDimensionToScale(width, baseContentSize.Width, MinimumSize.Width);
+            int clampedHeight = ClampDimensionToScale(height, baseContentSize.Height, MinimumSize.Height);
+
+            rect.Right = rect.Left + clampedWidth;
+            rect.Bottom = rect.Top + clampedHeight;
+
+            float scaleFromWidth = baseContentSize.Width <= 0 ? currentScaleFactor : clampedWidth / (float)baseContentSize.Width;
+            float scaleFromHeight = baseContentSize.Height <= 0 ? currentScaleFactor : clampedHeight / (float)baseContentSize.Height;
+
+            float scale = currentScaleFactor;
+            if (baseContentSize.Width > 0 && baseContentSize.Height > 0)
             {
-                pendingScaleFactor = Math.Max(MinScaleFactor, Math.Min(MaxScaleFactor, clampedWidth / (float)baseContentSize.Width));
+                scale = Math.Min(scaleFromWidth, scaleFromHeight);
+                scale = Math.Max(MinScaleFactor, Math.Min(MaxScaleFactor, scale));
             }
+
+            pendingScaleFactor = scale;
+
+            if (scale <= 0f)
+            {
+                pendingBaseContentSize = new Size(Math.Max(clampedWidth, MinimumSize.Width), Math.Max(clampedHeight, MinimumSize.Height));
+                return;
+            }
+
+            int pendingBaseWidth = (int)Math.Round(clampedWidth / scale);
+            int pendingBaseHeight = (int)Math.Round(clampedHeight / scale);
+
+            pendingBaseWidth = Math.Max(pendingBaseWidth, MinimumSize.Width);
+            pendingBaseHeight = Math.Max(pendingBaseHeight, MinimumSize.Height);
+
+            pendingBaseContentSize = new Size(pendingBaseWidth, pendingBaseHeight);
         }
 
-        private int ClampWidthToScale(int width)
+        private int ClampDimensionToScale(int value, int baseDimension, int minimumDimension)
         {
-            int minWidth = (int)Math.Round(baseContentSize.Width * MinScaleFactor);
-            int maxWidth = (int)Math.Round(baseContentSize.Width * MaxScaleFactor);
-            if (minWidth <= 0)
+            if (baseDimension <= 0)
             {
-                minWidth = baseContentSize.Width;
+                baseDimension = minimumDimension > 0 ? minimumDimension : value;
             }
-            if (maxWidth <= 0)
+
+            int min = (int)Math.Round(baseDimension * MinScaleFactor);
+            int max = (int)Math.Round(baseDimension * MaxScaleFactor);
+
+            if (min <= 0)
             {
-                maxWidth = baseContentSize.Width;
+                min = baseDimension;
             }
-            return Math.Max(minWidth, Math.Min(width, maxWidth));
+
+            if (max <= 0)
+            {
+                max = baseDimension;
+            }
+
+            min = Math.Max(min, minimumDimension);
+            max = Math.Max(max, min);
+
+            return Math.Max(min, Math.Min(value, max));
         }
 
         private void UpdateBaseContentSize(Size scaledSize)
@@ -269,7 +337,7 @@ namespace ToNRoundCounter.UI
             baseWidth = Math.Max(baseWidth, MinimumSize.Width);
             baseHeight = Math.Max(baseHeight, MinimumSize.Height);
             baseContentSize = new Size(baseWidth, baseHeight);
-            aspectRatio = baseHeight == 0 ? 1d : (double)baseWidth / baseHeight;
+            pendingBaseContentSize = baseContentSize;
         }
 
         private void ApplyScaledSize()
@@ -318,6 +386,99 @@ namespace ToNRoundCounter.UI
             ApplyScaledSize();
         }
 
+        public void ApplySavedSize(Size savedSize)
+        {
+            savedSize = EnsureMinimumSize(savedSize);
+            if (savedSize == Size)
+            {
+                UpdateBaseContentSizeFromCurrentSize();
+                return;
+            }
+
+            Size = savedSize;
+            UpdateBaseContentSizeFromCurrentSize();
+        }
+
+        private Size EnsureMinimumSize(Size size)
+        {
+            int width = Math.Max(size.Width, MinimumSize.Width);
+            int height = Math.Max(size.Height, MinimumSize.Height);
+            return new Size(width, height);
+        }
+
+        private void UpdateBaseContentSizeFromCurrentSize()
+        {
+            EnsureBaseContentSize();
+
+            if (currentScaleFactor <= 0f)
+            {
+                currentScaleFactor = 1f;
+            }
+
+            int baseWidth = (int)Math.Round(Size.Width / currentScaleFactor);
+            int baseHeight = (int)Math.Round(Size.Height / currentScaleFactor);
+
+            baseWidth = Math.Max(baseWidth, MinimumSize.Width);
+            baseHeight = Math.Max(baseHeight, MinimumSize.Height);
+
+            baseContentSize = new Size(baseWidth, baseHeight);
+            pendingBaseContentSize = baseContentSize;
+        }
+
+        private void EnsureBaseContentSize()
+        {
+            if (baseContentSize.Width > 0 && baseContentSize.Height > 0)
+            {
+                return;
+            }
+
+            int width = Math.Max(Width, MinimumSize.Width);
+            int height = Math.Max(Height, MinimumSize.Height);
+            baseContentSize = new Size(width, height);
+            pendingBaseContentSize = baseContentSize;
+        }
+
+        private static GraphicsPath CreateRoundedRectanglePath(Rectangle bounds, int radius)
+        {
+            var path = new GraphicsPath();
+
+            if (bounds.Width <= 0 || bounds.Height <= 0)
+            {
+                return path;
+            }
+
+            if (radius <= 0)
+            {
+                path.AddRectangle(bounds);
+                return path;
+            }
+
+            int diameter = Math.Min(radius * 2, Math.Min(bounds.Width, bounds.Height));
+            if (diameter <= 0)
+            {
+                path.AddRectangle(bounds);
+            }
+            else
+            {
+                var arcRect = new Rectangle(bounds.Location, new Size(diameter, diameter));
+
+                path.AddArc(arcRect, 180, 90);
+
+                arcRect.X = bounds.Right - diameter;
+                path.AddArc(arcRect, 270, 90);
+
+                arcRect.Y = bounds.Bottom - diameter;
+                path.AddArc(arcRect, 0, 90);
+
+                arcRect.X = bounds.Left;
+                path.AddArc(arcRect, 90, 90);
+
+                path.CloseFigure();
+            }
+
+            return path;
+        }
+
         private bool IsInResizeGrip(Control control, Point location)
         {
             if (control == null)
@@ -339,6 +500,7 @@ namespace ToNRoundCounter.UI
         private const int HTCLIENT = 1;
         private const int HTBOTTOMRIGHT = 17;
         private const int ResizeGripSize = 16;
+        private const int CornerRadius = 14;
         private const float MinScaleFactor = 0.6f;
         private const float MaxScaleFactor = 2.5f;
 

@@ -354,13 +354,10 @@ namespace ToNRoundCounter.UI
             float planarMagnitudeSquared = (currentVelocityX * currentVelocityX) + (currentVelocityZ * currentVelocityZ);
             if (planarMagnitudeSquared > 0.0001f)
             {
-                float computedAngle = (float)(Math.Atan2(currentVelocityX, currentVelocityZ) * (180.0 / Math.PI));
-                if (computedAngle < 0)
-                {
-                    computedAngle += 360f;
-                }
+                double rawAngle = Math.Atan2(currentVelocityX, currentVelocityZ) * (180.0 / Math.PI);
+                double normalizedAngle = (rawAngle + 360.0) % 360.0;
 
-                lastKnownFacingAngle = computedAngle;
+                lastKnownFacingAngle = (float)normalizedAngle;
                 hasFacingAngleMeasurement = true;
             }
 
