@@ -122,7 +122,7 @@ namespace ToNRoundCounter.UI
         private int terrorCountdownLastDisplayedSeconds = -1;
         private readonly Dictionary<OverlaySection, OverlaySectionForm> overlayForms = new();
         private readonly List<(string Label, string Status)> overlayRoundHistory = new();
-        private Timer? overlayVisibilityTimer;
+        private System.Windows.Forms.Timer? overlayVisibilityTimer;
         private OverlayShortcutForm? shortcutOverlayForm;
         private bool overlayTemporarilyHidden;
 
@@ -346,7 +346,7 @@ namespace ToNRoundCounter.UI
 
             ApplyOverlayRoundHistorySettings();
 
-            overlayVisibilityTimer = new Timer
+            overlayVisibilityTimer = new System.Windows.Forms.Timer
             {
                 Interval = 500
             };
