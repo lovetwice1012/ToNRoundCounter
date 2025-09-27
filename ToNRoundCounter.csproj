@@ -138,6 +138,9 @@
     <Compile Include="UI\OverlayAngleForm.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="UI\OverlayRoundHistoryForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="UI\OverlayShortcutForm.cs">
       <SubType>Form</SubType>
     </Compile>

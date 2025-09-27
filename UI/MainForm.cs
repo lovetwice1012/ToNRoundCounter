@@ -369,8 +369,10 @@ namespace ToNRoundCounter.UI
 
             bool isVrChatForeground = WindowUtilities.IsProcessInForeground("VRChat");
 
-            foreach (var (section, form) in overlayForms.ToList())
+            foreach (var kvp in overlayForms.ToList())
             {
+                var section = kvp.Key;
+                var form = kvp.Value;
                 if (form.IsDisposed)
                 {
                     overlayForms.Remove(section);
@@ -546,8 +548,10 @@ namespace ToNRoundCounter.UI
             _settings.OverlayPositions ??= new Dictionary<string, Point>();
             _settings.OverlayScaleFactors ??= new Dictionary<string, float>();
 
-            foreach (var (section, form) in overlayForms)
+            foreach (var kvp in overlayForms)
             {
+                var section = kvp.Key;
+                var form = kvp.Value;
                 if (form.IsDisposed)
                 {
                     continue;
@@ -1912,7 +1916,7 @@ namespace ToNRoundCounter.UI
 
             if (overlayRoundHistory.Count > 0)
             {
-                var last = overlayRoundHistory[^1];
+                var last = overlayRoundHistory[overlayRoundHistory.Count - 1];
                 if (last.Label == label && last.Status == status)
                 {
                     return;
