@@ -4,6 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Serilog.Events;
 using ToNRoundCounter.Application;
 
+#nullable enable
+
 namespace ToNRoundCounter.Modules.OscRepeaterDisabler
 {
     public sealed class OscRepeaterDisablerModule : IModule
