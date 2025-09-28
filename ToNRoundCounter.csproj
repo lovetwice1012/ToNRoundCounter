@@ -157,7 +157,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="UI\DirectX\DirectXDeviceManager.cs" />
-    <Compile Include="UI\DirectX\DirectXOverlaySurface.cs" />
+    <Compile Include="UI\DirectX\DirectXOverlaySurface.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="UI\DirectX\DirectXSegmentRenderer.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="IsExternalInit.cs" />

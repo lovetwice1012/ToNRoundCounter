@@ -46,9 +46,9 @@ namespace ToNRoundCounter.UI
                 AddButton(layout, ShortcutButton.AutoSuicideDelay, "自動自殺\n遅延化");
                 AddButton(layout, ShortcutButton.ManualSuicide, "手動自殺");
                 AddButton(layout, ShortcutButton.AllRoundsModeToggle, "全ラウンド\n自殺モード");
-                AddButton(layout, ShortcutButton.CoordinatedBrainToggle, "統率された\n自爆脳");
+                AddButton(layout, ShortcutButton.CoordinatedBrainToggle, "統率された\n自動自殺\n(開発中)");
                 AddButton(layout, ShortcutButton.AfkDetectionToggle, "AFK検知");
-                AddButton(layout, ShortcutButton.HideUntilRoundEnd, "ラウンド終わる\nまで隠す");
+                AddButton(layout, ShortcutButton.HideUntilRoundEnd, "ラウンド終了\nまで隠す");
             }
 
             MinimumSize = new Size(520, 260);
