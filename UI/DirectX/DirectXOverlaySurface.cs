@@ -18,10 +18,8 @@ namespace ToNRoundCounter.UI.DirectX
     {
         private WindowRenderTarget? renderTarget;
         private SolidColorBrush? backgroundBrush;
-        private SolidColorBrush? borderBrush;
         private SolidColorBrush? gripBrush;
         private RawColor4 backgroundColor = new RawColor4(0f, 0f, 0f, 0.6f);
-        private RawColor4 borderColor = new RawColor4(1f, 1f, 1f, 0.62f);
         private Size preferredSize = new Size(220, 120);
         private bool deviceResourcesLost;
 
@@ -56,8 +54,6 @@ namespace ToNRoundCounter.UI.DirectX
         }
 
         protected virtual float CornerRadius => 14f;
-
-        protected virtual float BorderThickness => 1f;
 
         protected override void OnHandleCreated(EventArgs e)
         {
@@ -118,12 +114,6 @@ namespace ToNRoundCounter.UI.DirectX
         public void SetBackgroundColor(DrawingColor color)
         {
             backgroundColor = ToRawColor(color);
-            Invalidate();
-        }
-
-        protected void SetBorderColor(DrawingColor color)
-        {
-            borderColor = ToRawColor(color);
             Invalidate();
         }
 
@@ -193,9 +183,6 @@ namespace ToNRoundCounter.UI.DirectX
                 renderTarget.FillRoundedRectangle(rounded, background);
 
                 RenderOverlay(renderTarget);
-
-                SolidColorBrush border = GetBrush(ref borderBrush, borderColor);
-                renderTarget.DrawRoundedRectangle(rounded, border, BorderThickness);
 
                 DrawResizeGrip(renderTarget);
 
@@ -299,9 +286,6 @@ namespace ToNRoundCounter.UI.DirectX
         {
             gripBrush?.Dispose();
             gripBrush = null;
-
-            borderBrush?.Dispose();
-            borderBrush = null;
 
             backgroundBrush?.Dispose();
             backgroundBrush = null;

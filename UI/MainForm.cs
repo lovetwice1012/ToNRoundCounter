@@ -269,8 +269,7 @@ namespace ToNRoundCounter.UI
 
             var sections = new (OverlaySection Section, string Title, string InitialValue)[]
             {
-                (OverlaySection.Velocity, "速度", $"{currentVelocity:F2}"),
-                (OverlaySection.Angle, "角度", GetOverlayAngleDisplayText()),
+                (OverlaySection.Velocity, "速度", currentVelocity.ToString("00.00", CultureInfo.InvariantCulture)),
                 (OverlaySection.Terror, "テラー", GetOverlayTerrorDisplayText()),
                 (OverlaySection.Damage, "ダメージ", InfoPanel?.DamageValue?.Text ?? string.Empty),
                 (OverlaySection.NextRound, "次ラウンド予測", InfoPanel?.NextRoundType?.Text ?? string.Empty),
@@ -305,10 +304,6 @@ namespace ToNRoundCounter.UI
                     {
                         StartPosition = FormStartPosition.Manual,
                     },
-                    OverlaySection.Angle => new OverlayAngleForm(title)
-                    {
-                        StartPosition = FormStartPosition.Manual,
-                    },
                     _ => new OverlaySectionForm(title)
                     {
                         StartPosition = FormStartPosition.Manual,
@@ -339,11 +334,6 @@ namespace ToNRoundCounter.UI
                 else
                 {
                     form.SetValue(initialValue);
-                }
-
-                if (section == OverlaySection.Angle && form is OverlayAngleForm angleForm)
-                {
-                    angleForm.SetAngle(lastKnownFacingAngle);
                 }
 
                 if (_settings.OverlayScaleFactors.TryGetValue(key, out var savedScale) && savedScale > 0f)
@@ -662,7 +652,7 @@ namespace ToNRoundCounter.UI
 
         private void UpdateVelocityOverlay()
         {
-            string fallback = $"{currentVelocity:F2}\nAFK: {lastIdleSeconds:F1}秒";
+            string fallback = $"{currentVelocity.ToString("00.00", CultureInfo.InvariantCulture)}\nAFK: {lastIdleSeconds:F1}秒";
 
             UpdateOverlay(OverlaySection.Velocity, form =>
             {
@@ -768,7 +758,7 @@ namespace ToNRoundCounter.UI
             return section switch
             {
                 OverlaySection.Velocity => _settings.OverlayShowVelocity,
-                OverlaySection.Angle => _settings.OverlayShowAngle,
+                OverlaySection.Angle => false,
                 OverlaySection.Terror => _settings.OverlayShowTerror,
                 OverlaySection.Damage => _settings.OverlayShowDamage,
                 OverlaySection.NextRound => _settings.OverlayShowNextRound,
@@ -1025,7 +1015,8 @@ namespace ToNRoundCounter.UI
                 settingsForm.SettingsPanel.DeathCountCheckBox.Checked = _settings.Filter_Death;
                 settingsForm.SettingsPanel.SurvivalRateCheckBox.Checked = _settings.Filter_SurvivalRate;
                 settingsForm.SettingsPanel.OverlayVelocityCheckBox.Checked = _settings.OverlayShowVelocity;
-                settingsForm.SettingsPanel.OverlayAngleCheckBox.Checked = _settings.OverlayShowAngle;
+                settingsForm.SettingsPanel.OverlayAngleCheckBox.Checked = false;
+                settingsForm.SettingsPanel.OverlayAngleCheckBox.Enabled = false;
                 settingsForm.SettingsPanel.OverlayTerrorCheckBox.Checked = _settings.OverlayShowTerror;
                 settingsForm.SettingsPanel.OverlayUnboundTerrorDetailsCheckBox.Checked = _settings.OverlayShowUnboundTerrorDetails;
                 settingsForm.SettingsPanel.OverlayDamageCheckBox.Checked = _settings.OverlayShowDamage;
@@ -1089,7 +1080,7 @@ namespace ToNRoundCounter.UI
                     _settings.Filter_Death = settingsForm.SettingsPanel.DeathCountCheckBox.Checked;
                     _settings.Filter_SurvivalRate = settingsForm.SettingsPanel.SurvivalRateCheckBox.Checked;
                     _settings.OverlayShowVelocity = settingsForm.SettingsPanel.OverlayVelocityCheckBox.Checked;
-                    _settings.OverlayShowAngle = settingsForm.SettingsPanel.OverlayAngleCheckBox.Checked;
+                    _settings.OverlayShowAngle = false;
                     _settings.OverlayShowTerror = settingsForm.SettingsPanel.OverlayTerrorCheckBox.Checked;
                     _settings.OverlayShowUnboundTerrorDetails = settingsForm.SettingsPanel.OverlayUnboundTerrorDetailsCheckBox.Checked;
                     _settings.OverlayShowDamage = settingsForm.SettingsPanel.OverlayDamageCheckBox.Checked;

@@ -352,34 +352,12 @@ namespace ToNRoundCounter.UI
             }
 
             currentVelocity = Math.Abs(receivedVelocityMagnitude);
-            float planarMagnitudeSquared = (currentVelocityX * currentVelocityX) + (currentVelocityZ * currentVelocityZ);
-            if (planarMagnitudeSquared > 0.0001f)
-            {
-                double rawAngle = Math.Atan2(currentVelocityX, currentVelocityZ) * (180.0 / Math.PI);
-                double normalizedAngle = (rawAngle + 360.0) % 360.0;
-
-                lastKnownFacingAngle = (float)normalizedAngle;
-                hasFacingAngleMeasurement = true;
-            }
-
             _logger.LogEvent("Receive: ", $"{message.Address} => Computed Velocity: {currentVelocity:F2}");
             _dispatcher.Invoke(() =>
             {
-                string angleText = GetOverlayAngleDisplayText();
-                lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2} (Angle: {angleText})  Members: {connected}";
+                hasFacingAngleMeasurement = false;
+                lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2}  Members: {connected}";
                 UpdateVelocityOverlay();
-                UpdateOverlay(OverlaySection.Angle, form =>
-                {
-                    if (form is OverlayAngleForm angleForm)
-                    {
-                        angleForm.SetAngle(lastKnownFacingAngle);
-                        angleForm.SetValue(angleText);
-                    }
-                    else
-                    {
-                        form.SetValue(angleText);
-                    }
-                });
             });
         }
 
