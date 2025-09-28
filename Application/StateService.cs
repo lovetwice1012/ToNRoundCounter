@@ -187,8 +187,35 @@ namespace ToNRoundCounter.Application
             return snapshot;
         }
 
+        public string? GetRoundMapName(string roundType)
+        {
+            if (string.IsNullOrWhiteSpace(roundType))
+            {
+                _logger?.LogEvent("StateService", $"Cannot resolve round map name for empty round type '{roundType}'.", LogEventLevel.Debug);
+                return null;
+            }
+
+            lock (_sync)
+            {
+                if (_roundMapNames.TryGetValue(roundType, out var storedName) && !string.IsNullOrWhiteSpace(storedName))
+                {
+                    _logger?.LogEvent("StateService", $"Resolved round map name '{storedName}' for round '{roundType}'.", LogEventLevel.Debug);
+                    return storedName;
+                }
+            }
+
+            _logger?.LogEvent("StateService", $"No stored map name found for round '{roundType}'.", LogEventLevel.Debug);
+            return null;
+        }
+
         public void SetRoundMapName(string roundType, string? mapName)
         {
+            if (string.IsNullOrWhiteSpace(roundType) || string.IsNullOrWhiteSpace(mapName))
+            {
+                _logger?.LogEvent("StateService", $"Ignoring empty round or map name assignment. Round: '{roundType}', Map: '{mapName}'.", LogEventLevel.Debug);
+                return;
+            }
+
             _logger?.LogEvent("StateService", $"Associating map '{mapName}' with round '{roundType}'.");
             lock (_sync)
             {
@@ -199,12 +226,42 @@ namespace ToNRoundCounter.Application
 
         public void SetTerrorMapName(string round, string terror, string? mapName)
         {
+            if (string.IsNullOrWhiteSpace(round) || string.IsNullOrWhiteSpace(terror) || string.IsNullOrWhiteSpace(mapName))
+            {
+                _logger?.LogEvent("StateService", $"Ignoring empty terror map assignment. Round: '{round}', Terror: '{terror}', Map: '{mapName}'.", LogEventLevel.Debug);
+                return;
+            }
+
             _logger?.LogEvent("StateService", $"Associating terror map '{mapName}' with round '{round}' / terror '{terror}'.");
             lock (_sync)
             {
                 _terrorMapNames.Set(round, terror, mapName);
             }
             NotifyStateChanged(nameof(SetTerrorMapName));
+        }
+
+        public string? GetTerrorMapName(string round, string terror)
+        {
+            if (string.IsNullOrWhiteSpace(round) || string.IsNullOrWhiteSpace(terror))
+            {
+                _logger?.LogEvent("StateService", $"Cannot retrieve terror map name with empty identifiers. Round: '{round}', Terror: '{terror}'.", LogEventLevel.Debug);
+                return null;
+            }
+
+            lock (_sync)
+            {
+                if (_terrorMapNames.TryGetRound(round, out var terrorDict) &&
+                    terrorDict != null &&
+                    terrorDict.TryGetValue(terror, out var storedName) &&
+                    !string.IsNullOrWhiteSpace(storedName))
+                {
+                    _logger?.LogEvent("StateService", $"Resolved terror map name '{storedName}' for round '{round}' and terror '{terror}'.", LogEventLevel.Debug);
+                    return storedName;
+                }
+            }
+
+            _logger?.LogEvent("StateService", $"No terror map name found for round '{round}' and terror '{terror}'.", LogEventLevel.Debug);
+            return null;
         }
 
         public IReadOnlyList<Tuple<Round, string>> GetRoundLogHistory()
