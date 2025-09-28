@@ -153,12 +153,27 @@ namespace ToNRoundCounter.UI
 
         public void SetTopMostState(bool shouldBeTopMost)
         {
-            if (TopMost == shouldBeTopMost)
+            bool stateChanged = TopMost != shouldBeTopMost;
+
+            if (stateChanged)
             {
-                return;
+                TopMost = shouldBeTopMost;
             }
 
-            TopMost = shouldBeTopMost;
+            if (IsHandleCreated)
+            {
+                NativeMethods.SetWindowPos(
+                    Handle,
+                    shouldBeTopMost ? NativeMethods.HWND_TOPMOST : NativeMethods.HWND_NOTOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    NativeMethods.SWP_NOMOVE |
+                    NativeMethods.SWP_NOSIZE |
+                    NativeMethods.SWP_NOACTIVATE |
+                    NativeMethods.SWP_NOOWNERZORDER);
+            }
 
             if (shouldBeTopMost && Visible)
             {
@@ -680,6 +695,27 @@ namespace ToNRoundCounter.UI
             public int Top;
             public int Right;
             public int Bottom;
+        }
+
+        private static class NativeMethods
+        {
+            public static readonly IntPtr HWND_TOPMOST = new(-1);
+            public static readonly IntPtr HWND_NOTOPMOST = new(-2);
+
+            public const uint SWP_NOSIZE = 0x0001;
+            public const uint SWP_NOMOVE = 0x0002;
+            public const uint SWP_NOACTIVATE = 0x0010;
+            public const uint SWP_NOOWNERZORDER = 0x0200;
+
+            [DllImport("user32.dll")]
+            public static extern bool SetWindowPos(
+                IntPtr hWnd,
+                IntPtr hWndInsertAfter,
+                int X,
+                int Y,
+                int cx,
+                int cy,
+                uint uFlags);
         }
     }
 }
