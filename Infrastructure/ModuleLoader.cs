@@ -15,17 +15,19 @@ namespace ToNRoundCounter.Infrastructure
     {
         public static void LoadModules(IServiceCollection services, ModuleHost host, IEventLogger logger, IEventBus bus, string path = "Modules")
         {
-            logger.LogEvent("ModuleLoader", $"Starting module discovery in '{Path.GetFullPath(path)}'.");
-            host.NotifyDiscoveryStarted(path);
+            var modulesDirectory = ResolveModulesDirectory(path);
 
-            if (!Directory.Exists(path))
+            logger.LogEvent("ModuleLoader", $"Starting module discovery in '{modulesDirectory}'.");
+            host.NotifyDiscoveryStarted(modulesDirectory);
+
+            if (!Directory.Exists(modulesDirectory))
             {
-                logger.LogEvent("ModuleLoader", $"Module directory '{Path.GetFullPath(path)}' does not exist. Skipping discovery.");
+                logger.LogEvent("ModuleLoader", $"Module directory '{modulesDirectory}' does not exist. Skipping discovery.");
                 host.NotifyDiscoveryCompleted();
                 return;
             }
 
-            var discoveredFiles = Directory.GetFiles(path, "*.dll");
+            var discoveredFiles = Directory.GetFiles(modulesDirectory, "*.dll", SearchOption.AllDirectories);
             logger.LogEvent("ModuleLoader", $"Found {discoveredFiles.Length} candidate assembly file(s).");
 
             foreach (var file in discoveredFiles)
@@ -151,6 +153,27 @@ namespace ToNRoundCounter.Infrastructure
             }
 
             return false;
+        }
+
+        private static string ResolveModulesDirectory(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return AppDomain.CurrentDomain.BaseDirectory ?? Directory.GetCurrentDirectory();
+            }
+
+            if (Path.IsPathRooted(path))
+            {
+                return Path.GetFullPath(path);
+            }
+
+            var baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
+            if (!string.IsNullOrEmpty(baseDirectory))
+            {
+                return Path.GetFullPath(Path.Combine(baseDirectory, path));
+            }
+
+            return Path.GetFullPath(path);
         }
 
         private static bool IsWindows() => Environment.OSVersion.Platform == PlatformID.Win32NT;
