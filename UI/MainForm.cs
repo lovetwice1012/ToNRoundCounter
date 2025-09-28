@@ -1999,6 +1999,17 @@ namespace ToNRoundCounter.UI
             if (stateService.CurrentRound != null)
             {
                 string roundType = stateService.CurrentRound.RoundType ?? string.Empty;
+
+                if (string.IsNullOrWhiteSpace(stateService.CurrentRound.MapName))
+                {
+                    string latestMapName = string.Empty;
+                    _dispatcher.Invoke(() => latestMapName = InfoPanel.MapValue.Text);
+                    if (!string.IsNullOrWhiteSpace(latestMapName))
+                    {
+                        stateService.CurrentRound.MapName = latestMapName;
+                    }
+                }
+
                 stateService.SetRoundMapName(roundType, stateService.CurrentRound.MapName ?? "");
                 if (!string.IsNullOrEmpty(stateService.CurrentRound.TerrorKey))
                 {
