@@ -145,6 +145,7 @@ namespace ToNRoundCounter.UI
             NextRound,
             RoundStatus,
             RoundHistory,
+            RoundStats,
             TerrorInfo,
             Shortcuts,
             Clock,
@@ -279,6 +280,7 @@ namespace ToNRoundCounter.UI
                 (OverlaySection.NextRound, "次ラウンド予測", GetNextRoundOverlayValue()),
                 (OverlaySection.RoundStatus, "ラウンド状況", InfoPanel?.RoundTypeValue?.Text ?? string.Empty),
                 (OverlaySection.RoundHistory, "ラウンドタイプ推移", string.Empty),
+                (OverlaySection.RoundStats, "ラウンド統計", string.Empty),
                 (OverlaySection.TerrorInfo, "テラー詳細", BuildTerrorInfoOverlayText()),
                 (OverlaySection.Shortcuts, "ショートカット", string.Empty),
                 (OverlaySection.Clock, "時計", GetClockOverlayText()),
@@ -297,6 +299,10 @@ namespace ToNRoundCounter.UI
                         StartPosition = FormStartPosition.Manual,
                     },
                     OverlaySection.Clock => new OverlayClockForm(title)
+                    {
+                        StartPosition = FormStartPosition.Manual,
+                    },
+                    OverlaySection.RoundStats => new OverlayRoundStatsForm(title)
                     {
                         StartPosition = FormStartPosition.Manual,
                     },
@@ -377,6 +383,7 @@ namespace ToNRoundCounter.UI
             }
 
             ApplyOverlayRoundHistorySettings();
+            RefreshRoundStatsOverlay();
 
             overlayVisibilityTimer = new System.Windows.Forms.Timer
             {
@@ -853,6 +860,7 @@ namespace ToNRoundCounter.UI
                 OverlaySection.NextRound => _settings.OverlayShowNextRound,
                 OverlaySection.RoundStatus => _settings.OverlayShowRoundStatus,
                 OverlaySection.RoundHistory => _settings.OverlayShowRoundHistory,
+                OverlaySection.RoundStats => _settings.OverlayShowRoundStats,
                 OverlaySection.TerrorInfo => _settings.OverlayShowTerrorInfo,
                 OverlaySection.Shortcuts => _settings.OverlayShowShortcuts,
                 OverlaySection.Clock => _settings.OverlayShowClock,
@@ -1128,6 +1136,7 @@ namespace ToNRoundCounter.UI
                 settingsForm.SettingsPanel.OverlayNextRoundCheckBox.Checked = _settings.OverlayShowNextRound;
                 settingsForm.SettingsPanel.OverlayRoundStatusCheckBox.Checked = _settings.OverlayShowRoundStatus;
                 settingsForm.SettingsPanel.OverlayRoundHistoryCheckBox.Checked = _settings.OverlayShowRoundHistory;
+                settingsForm.SettingsPanel.OverlayRoundStatsCheckBox.Checked = _settings.OverlayShowRoundStats;
                 settingsForm.SettingsPanel.OverlayTerrorInfoCheckBox.Checked = _settings.OverlayShowTerrorInfo;
                 settingsForm.SettingsPanel.OverlayShortcutsCheckBox.Checked = _settings.OverlayShowShortcuts;
                 settingsForm.SettingsPanel.OverlayClockCheckBox.Checked = _settings.OverlayShowClock;
@@ -1192,6 +1201,7 @@ namespace ToNRoundCounter.UI
                     _settings.OverlayShowNextRound = settingsForm.SettingsPanel.OverlayNextRoundCheckBox.Checked;
                     _settings.OverlayShowRoundStatus = settingsForm.SettingsPanel.OverlayRoundStatusCheckBox.Checked;
                     _settings.OverlayShowRoundHistory = settingsForm.SettingsPanel.OverlayRoundHistoryCheckBox.Checked;
+                    _settings.OverlayShowRoundStats = settingsForm.SettingsPanel.OverlayRoundStatsCheckBox.Checked;
                     _settings.OverlayShowTerrorInfo = settingsForm.SettingsPanel.OverlayTerrorInfoCheckBox.Checked;
                     _settings.OverlayShowShortcuts = settingsForm.SettingsPanel.OverlayShortcutsCheckBox.Checked;
                     _settings.OverlayShowClock = settingsForm.SettingsPanel.OverlayClockCheckBox.Checked;
@@ -2351,6 +2361,49 @@ namespace ToNRoundCounter.UI
             });
         }
 
+        private (List<OverlayRoundStatsForm.RoundStatEntry> Entries, int TotalRounds) BuildRoundStatsEntries()
+        {
+            var aggregates = stateService.GetRoundAggregates();
+            int totalRounds = aggregates.Values.Sum(r => r.Total);
+
+            bool hasRoundFilter = _settings.RoundTypeStats != null && _settings.RoundTypeStats.Count > 0;
+            HashSet<string>? filterSet = null;
+            if (hasRoundFilter)
+            {
+                filterSet = new HashSet<string>(_settings.RoundTypeStats, StringComparer.OrdinalIgnoreCase);
+            }
+            var entries = aggregates
+                .Where(kvp => !hasRoundFilter || (filterSet != null && filterSet.Contains(kvp.Key)))
+                .Select(kvp => new OverlayRoundStatsForm.RoundStatEntry(kvp.Key, kvp.Value.Total, kvp.Value.Survival, kvp.Value.Death))
+                .OrderByDescending(entry => entry.Total)
+                .ToList();
+
+            return (entries, totalRounds);
+        }
+
+        private void RefreshRoundStatsOverlay()
+        {
+            var (entries, totalRounds) = BuildRoundStatsEntries();
+
+            UpdateOverlay(OverlaySection.RoundStats, form =>
+            {
+                if (form is OverlayRoundStatsForm statsForm)
+                {
+                    statsForm.SetStats(entries, totalRounds);
+                }
+                else
+                {
+                    var builder = new StringBuilder();
+                    foreach (var entry in entries)
+                    {
+                        builder.AppendLine($"{entry.RoundName}: {entry.Total} (生存 {entry.Survival}, 死亡 {entry.Death}, {entry.SurvivalRate:F1}% )");
+                    }
+
+                    form.SetValue(builder.ToString().Trim());
+                }
+            });
+        }
+
         private void UpdateAggregateStatsDisplay()
         {
             static string TranslateSafe(string key)
@@ -2423,6 +2476,8 @@ namespace ToNRoundCounter.UI
                     AppendLine(rtbStatsDisplay, "Idle Time: " + idleSeconds.ToString("F2") + " sec", Color.Blue);
                 }
             }
+
+            RefreshRoundStatsOverlay();
         }
 
         private void AppendLine(RichTextBox rtb, string text, Color color)

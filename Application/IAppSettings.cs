@@ -29,6 +29,7 @@ namespace ToNRoundCounter.Application
         bool OverlayShowNextRound { get; set; }
         bool OverlayShowRoundStatus { get; set; }
         bool OverlayShowRoundHistory { get; set; }
+        bool OverlayShowRoundStats { get; set; }
         bool OverlayShowTerrorInfo { get; set; }
         bool OverlayShowShortcuts { get; set; }
         bool OverlayShowAngle { get; set; }

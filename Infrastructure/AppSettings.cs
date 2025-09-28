@@ -45,6 +45,7 @@ namespace ToNRoundCounter.Infrastructure
         public bool OverlayShowNextRound { get; set; } = true;
         public bool OverlayShowRoundStatus { get; set; } = true;
         public bool OverlayShowRoundHistory { get; set; } = true;
+        public bool OverlayShowRoundStats { get; set; } = true;
         public bool OverlayShowTerrorInfo { get; set; } = true;
         public bool OverlayShowShortcuts { get; set; } = true;
         public bool OverlayShowAngle { get; set; } = true;
