@@ -13,6 +13,8 @@ namespace ToNRoundCounter.UI
         private readonly Color overlayTextColor = Color.White;
         private readonly Color activeBackgroundColor = Color.White;
         private readonly Dictionary<ShortcutButton, bool> toggleStates = new();
+        private readonly HashSet<ShortcutButton> pulsingButtons = new();
+        private readonly Dictionary<ShortcutButton, Timer> pulseTimers = new();
 
         public OverlayShortcutForm(string title)
             : base(title, CreateLayout())
@@ -69,6 +71,40 @@ namespace ToNRoundCounter.UI
 
             btn.Enabled = enabled;
             ApplyButtonVisuals(button);
+        }
+
+        public void PulseButton(ShortcutButton button, TimeSpan? duration = null)
+        {
+            if (!buttons.ContainsKey(button))
+            {
+                return;
+            }
+
+            duration ??= TimeSpan.FromMilliseconds(280);
+            if (duration <= TimeSpan.Zero)
+            {
+                return;
+            }
+
+            if (pulseTimers.TryGetValue(button, out var existing))
+            {
+                existing.Stop();
+                existing.Tick -= PulseTimer_Tick;
+                existing.Dispose();
+                pulseTimers.Remove(button);
+            }
+
+            pulsingButtons.Add(button);
+            ApplyButtonVisuals(button);
+
+            var timer = new Timer
+            {
+                Interval = Math.Max(50, (int)Math.Round(duration.Value.TotalMilliseconds)),
+                Tag = button
+            };
+            timer.Tick += PulseTimer_Tick;
+            pulseTimers[button] = timer;
+            timer.Start();
         }
 
         private static TableLayoutPanel CreateLayout()
@@ -144,7 +180,7 @@ namespace ToNRoundCounter.UI
                 return;
             }
 
-            bool isActive = toggleStates.TryGetValue(id, out var active) && active;
+            bool isActive = pulsingButtons.Contains(id) || (toggleStates.TryGetValue(id, out var active) && active);
             Color backgroundColor = isActive ? activeBackgroundColor : overlayBaseColor;
             Color textColor = isActive ? overlayBaseColor : overlayTextColor;
 
@@ -172,8 +208,31 @@ namespace ToNRoundCounter.UI
                 }
 
                 toggleStates[buttonId] = false;
+                if (pulseTimers.TryGetValue(buttonId, out var timer))
+                {
+                    timer.Stop();
+                    timer.Tick -= PulseTimer_Tick;
+                    timer.Dispose();
+                    pulseTimers.Remove(buttonId);
+                }
+                pulsingButtons.Remove(buttonId);
                 ApplyButtonVisuals(buttonId);
             }
+        }
+
+        private void PulseTimer_Tick(object? sender, EventArgs e)
+        {
+            if (sender is not Timer timer || timer.Tag is not ShortcutButton id)
+            {
+                return;
+            }
+
+            timer.Stop();
+            timer.Tick -= PulseTimer_Tick;
+            timer.Dispose();
+            pulseTimers.Remove(id);
+            pulsingButtons.Remove(id);
+            ApplyButtonVisuals(id);
         }
 
         private static Color Blend(Color from, Color to, float amount)
@@ -200,6 +259,23 @@ namespace ToNRoundCounter.UI
             CoordinatedBrainToggle,
             AfkDetectionToggle,
             HideUntilRoundEnd,
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                foreach (var timer in pulseTimers.Values)
+                {
+                    timer.Stop();
+                    timer.Tick -= PulseTimer_Tick;
+                    timer.Dispose();
+                }
+                pulseTimers.Clear();
+                pulsingButtons.Clear();
+            }
+
+            base.Dispose(disposing);
         }
 
         public sealed class ShortcutButtonEventArgs : EventArgs

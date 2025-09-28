@@ -38,7 +38,7 @@ namespace ToNRoundCounter.UI
             historyLayout.SuspendLayout();
             historyLayout.Controls.Clear();
             historyLayout.ColumnStyles.Clear();
-            historyLayout.ColumnCount = Math.Max(entries.Count, 1);
+            historyLayout.ColumnCount = entries.Count == 0 ? 1 : Math.Max(1, entries.Count * 2 - 1);
 
             if (entries.Count == 0)
             {
@@ -50,17 +50,30 @@ namespace ToNRoundCounter.UI
             }
             else
             {
+                int columnIndex = 0;
                 for (int i = 0; i < entries.Count; i++)
                 {
                     historyLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
                     var (label, status) = entries[i];
                     var typeLabel = CreateTypeLabel(label);
-                    historyLayout.Controls.Add(typeLabel, i, 0);
+                    historyLayout.Controls.Add(typeLabel, columnIndex, 0);
                     RegisterDragEventsRecursive(typeLabel);
 
                     var statusLabel = CreateStatusLabel(status);
-                    historyLayout.Controls.Add(statusLabel, i, 1);
+                    historyLayout.Controls.Add(statusLabel, columnIndex, 1);
                     RegisterDragEventsRecursive(statusLabel);
+
+                    if (i < entries.Count - 1)
+                    {
+                        columnIndex++;
+                        historyLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+                        var separatorLabel = CreateSeparatorLabel();
+                        historyLayout.Controls.Add(separatorLabel, columnIndex, 0);
+                        historyLayout.SetRowSpan(separatorLabel, 2);
+                        RegisterDragEventsRecursive(separatorLabel);
+                    }
+
+                    columnIndex++;
                 }
             }
 
@@ -95,6 +108,21 @@ namespace ToNRoundCounter.UI
                 Margin = new Padding(4, 6, 4, 0),
                 AutoSize = true,
                 Font = new Font(SystemFonts.DefaultFont.FontFamily, 12f, FontStyle.Bold),
+            };
+        }
+
+        private static Label CreateSeparatorLabel()
+        {
+            return new Label
+            {
+                Text = ">",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                ForeColor = Color.White,
+                BackColor = Color.Transparent,
+                AutoSize = true,
+                Margin = new Padding(2, 0, 2, 0),
+                Font = new Font(SystemFonts.DefaultFont.FontFamily, 14f, FontStyle.Bold),
             };
         }
 
