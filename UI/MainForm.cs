@@ -103,7 +103,7 @@ namespace ToNRoundCounter.UI
 
         private string _lastSaveCode = string.Empty;
 
-        private string version = "1.12.2";
+        private string version = "1.13.0";
 
         private readonly AutoSuicideService autoSuicideService;
 
