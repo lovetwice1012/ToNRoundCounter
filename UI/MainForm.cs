@@ -397,6 +397,12 @@ namespace ToNRoundCounter.UI
 
         private void UpdateOverlayVisibility()
         {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(UpdateOverlayVisibility));
+                return;
+            }
+
             if (overlayForms.Count == 0)
             {
                 return;
@@ -604,6 +610,12 @@ namespace ToNRoundCounter.UI
 
         private void SetOverlayTemporarilyHidden(bool hidden)
         {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => SetOverlayTemporarilyHidden(hidden)));
+                return;
+            }
+
             overlayTemporarilyHidden = hidden;
             UpdateOverlayVisibility();
             UpdateShortcutOverlayState();
