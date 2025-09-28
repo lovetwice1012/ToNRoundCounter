@@ -1641,14 +1641,23 @@ namespace ToNRoundCounter.UI
                 }
                 else if (eventType == "LOCATION" && command == 1)
                 {
+                    string updatedMapName = json.Value<string>("Name") ?? string.Empty;
                     _dispatcher.Invoke(() =>
                     {
-                        InfoPanel.MapValue.Text = json.Value<string>("Name") ?? "";
+                        InfoPanel.MapValue.Text = updatedMapName;
                     });
                     var existingRound = stateService.CurrentRound;
                     if (existingRound != null)
                     {
-                        existingRound.MapName = json.Value<string>("Name") ?? string.Empty;
+                        existingRound.MapName = updatedMapName;
+                        if (!string.IsNullOrWhiteSpace(updatedMapName) && !string.IsNullOrWhiteSpace(existingRound.RoundType))
+                        {
+                            stateService.SetRoundMapName(existingRound.RoundType!, updatedMapName);
+                            if (!string.IsNullOrWhiteSpace(existingRound.TerrorKey))
+                            {
+                                stateService.SetTerrorMapName(existingRound.RoundType!, existingRound.TerrorKey!, updatedMapName);
+                            }
+                        }
                     }
                 }
                 else if (eventType == "TERRORS" && (command == 0 || command == 1))
@@ -2010,20 +2019,24 @@ namespace ToNRoundCounter.UI
                     }
                 }
 
-                stateService.SetRoundMapName(roundType, stateService.CurrentRound.MapName ?? "");
+                if (!string.IsNullOrWhiteSpace(stateService.CurrentRound.MapName))
+                {
+                    stateService.SetRoundMapName(roundType, stateService.CurrentRound.MapName);
+                }
                 if (!string.IsNullOrEmpty(stateService.CurrentRound.TerrorKey))
                 {
                     string terrorKey = stateService.CurrentRound.TerrorKey!;
                     bool survived = lastOptedIn && !stateService.CurrentRound.IsDeath;
                     stateService.RecordRoundResult(roundType, terrorKey, survived);
-                    stateService.SetTerrorMapName(roundType, terrorKey, stateService.CurrentRound.MapName ?? "");
+                    if (!string.IsNullOrWhiteSpace(stateService.CurrentRound.MapName))
+                    {
+                        stateService.SetTerrorMapName(roundType, terrorKey, stateService.CurrentRound.MapName);
+                    }
                 }
                 else
                 {
                     stateService.RecordRoundResult(roundType, null, !stateService.CurrentRound.IsDeath);
                 }
-                if (!string.IsNullOrEmpty(stateService.CurrentRound.MapName))
-                    stateService.SetRoundMapName(stateService.CurrentRound.RoundType ?? string.Empty, stateService.CurrentRound.MapName);
 
                 // 次ラウンド予測ロジック
                 var normalTypes = new[] { "クラシック", "Classic", "RUN", "走れ！" };
