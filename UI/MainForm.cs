@@ -1646,17 +1646,34 @@ namespace ToNRoundCounter.UI
                     {
                         InfoPanel.MapValue.Text = updatedMapName;
                     });
+
                     var existingRound = stateService.CurrentRound;
+                    string? roundTypeForStorage = existingRound?.RoundType;
+                    string? terrorKeyForStorage = existingRound?.TerrorKey;
+
                     if (existingRound != null)
                     {
                         existingRound.MapName = updatedMapName;
-                        if (!string.IsNullOrWhiteSpace(updatedMapName) && !string.IsNullOrWhiteSpace(existingRound.RoundType))
+                    }
+
+                    if (string.IsNullOrWhiteSpace(roundTypeForStorage))
+                    {
+                        _dispatcher.Invoke(() =>
                         {
-                            stateService.SetRoundMapName(existingRound.RoundType!, updatedMapName);
-                            if (!string.IsNullOrWhiteSpace(existingRound.TerrorKey))
+                            var currentRoundType = InfoPanel.RoundTypeValue.Text;
+                            if (!string.IsNullOrWhiteSpace(currentRoundType))
                             {
-                                stateService.SetTerrorMapName(existingRound.RoundType!, existingRound.TerrorKey!, updatedMapName);
+                                roundTypeForStorage = currentRoundType;
                             }
+                        });
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(updatedMapName) && !string.IsNullOrWhiteSpace(roundTypeForStorage))
+                    {
+                        stateService.SetRoundMapName(roundTypeForStorage!, updatedMapName);
+                        if (!string.IsNullOrWhiteSpace(terrorKeyForStorage))
+                        {
+                            stateService.SetTerrorMapName(roundTypeForStorage!, terrorKeyForStorage!, updatedMapName);
                         }
                     }
                 }
