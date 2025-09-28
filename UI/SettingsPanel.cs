@@ -42,6 +42,7 @@ namespace ToNRoundCounter.UI
         public CheckBox OverlayNextRoundCheckBox { get; private set; } = null!;
         public CheckBox OverlayRoundStatusCheckBox { get; private set; } = null!;
         public CheckBox OverlayRoundHistoryCheckBox { get; private set; } = null!;
+        public CheckBox OverlayRoundStatsCheckBox { get; private set; } = null!;
         public NumericUpDown OverlayRoundHistoryCountNumeric { get; private set; } = null!;
         public CheckBox OverlayTerrorInfoCheckBox { get; private set; } = null!;
         public CheckBox OverlayShortcutsCheckBox { get; private set; } = null!;
@@ -794,6 +795,14 @@ namespace ToNRoundCounter.UI
             grpOverlay.Controls.Add(OverlayRoundHistoryCheckBox);
 
             overlayInnerY = OverlayRoundHistoryCheckBox.Bottom + 8;
+
+            OverlayRoundStatsCheckBox = new CheckBox();
+            OverlayRoundStatsCheckBox.Text = LanguageManager.Translate("ラウンド統計を表示");
+            OverlayRoundStatsCheckBox.AutoSize = true;
+            OverlayRoundStatsCheckBox.Location = new Point(overlayInnerMargin, overlayInnerY);
+            grpOverlay.Controls.Add(OverlayRoundStatsCheckBox);
+
+            overlayInnerY = OverlayRoundStatsCheckBox.Bottom + 8;
 
             var overlayHistoryCountLabel = new Label();
             overlayHistoryCountLabel.Text = LanguageManager.Translate("履歴表示数:");
