@@ -26,6 +26,31 @@ namespace ToNRoundCounter.Domain
         public int PageCount { get; set; }
         public int InstancePlayersCount { get; internal set; }
         public int? RoundColor { get; set; }
+
+        /// <summary>
+        /// Creates a deep copy of the round so that snapshots can be stored safely.
+        /// </summary>
+        public Round Clone()
+        {
+            var clone = new Round(Id)
+            {
+                RoundType = RoundType,
+                IsDeath = IsDeath,
+                TerrorKey = TerrorKey,
+                MapName = MapName,
+                Damage = Damage,
+                PageCount = PageCount,
+                InstancePlayersCount = InstancePlayersCount,
+                RoundColor = RoundColor
+            };
+
+            if (ItemNames != null && ItemNames.Count > 0)
+            {
+                clone.ItemNames.AddRange(ItemNames);
+            }
+
+            return clone;
+        }
     }
 }
 

@@ -14,6 +14,7 @@ namespace ToNRoundCounter.Application
 
         public string PlayerDisplayName { get; set; } = string.Empty;
         public Round? CurrentRound { get; private set; }
+        public Round? PreviousRound { get; private set; }
         private readonly Dictionary<string, RoundAggregate> _roundAggregates = new();
         private readonly TerrorAggregateCollection _terrorAggregates = new();
         private readonly Dictionary<string, string?> _roundMapNames = new();
@@ -56,9 +57,21 @@ namespace ToNRoundCounter.Application
         public void UpdateCurrentRound(Round? round)
         {
             _logger?.LogEvent("StateService", $"Updating current round to {DescribeRound(round)}.");
+            Round? archivedRound = null;
             lock (_sync)
             {
+                if (!ReferenceEquals(CurrentRound, round) && CurrentRound != null)
+                {
+                    archivedRound = CurrentRound.Clone();
+                    PreviousRound = archivedRound;
+                }
+
                 CurrentRound = round;
+            }
+
+            if (archivedRound != null)
+            {
+                _logger?.LogEvent("StateService", $"Archived previous round as {DescribeRound(archivedRound)}.", LogEventLevel.Debug);
             }
             NotifyStateChanged(nameof(UpdateCurrentRound));
         }
@@ -136,6 +149,7 @@ namespace ToNRoundCounter.Application
             lock (_sync)
             {
                 CurrentRound = null;
+                PreviousRound = null;
                 _roundAggregates.Clear();
                 _terrorAggregates.Clear();
                 _roundMapNames.Clear();
