@@ -2061,6 +2061,7 @@ namespace ToNRoundCounter.UI
                 var normalTypes = new[] { "クラシック", "Classic", "RUN", "走れ！" };
                 var overrideTypes = new HashSet<string> { "アンバウンド", "8ページ", "ゴースト", "オルタネイト" };
                 string current = round.RoundType ?? string.Empty;
+                int roundCycleForHistory = stateService.RoundCycle;
 
                 string? historyStatusOverride = null;
                 bool isNormalRound = normalTypes.Any(type => current.Contains(type));
@@ -2099,7 +2100,7 @@ namespace ToNRoundCounter.UI
 
                 _dispatcher.Invoke(() =>
                 {
-                    UpdateNextRoundPrediction(historyStatusOverride);
+                    UpdateNextRoundPrediction(historyStatusOverride, roundCycleForHistory);
                     UpdateAggregateStatsDisplay();
                     _presenter.AppendRoundLog(roundForHistory, status);
                     ClearEventDisplays();
@@ -2293,7 +2294,7 @@ namespace ToNRoundCounter.UI
             base.OnHandleCreated(e);
         }
 
-        private void UpdateNextRoundPrediction(string? historyStatusOverride = null)
+        private void UpdateNextRoundPrediction(string? historyStatusOverride = null, int? roundCycleForHistory = null)
         {
             if (!hasObservedSpecialRound)
             {
@@ -2329,10 +2330,10 @@ namespace ToNRoundCounter.UI
             }
 
             UpdateOverlay(OverlaySection.NextRound, form => form.SetValue(GetNextRoundOverlayValue()));
-            RecordRoundHistory(historyStatusOverride);
+            RecordRoundHistory(historyStatusOverride, roundCycleForHistory);
         }
 
-        private void RecordRoundHistory(string? statusOverride)
+        private void RecordRoundHistory(string? statusOverride, int? roundCycleForHistory = null)
         {
             string label = !string.IsNullOrWhiteSpace(lastRoundTypeForHistory)
                 ? lastRoundTypeForHistory
@@ -2342,7 +2343,7 @@ namespace ToNRoundCounter.UI
                 return;
             }
 
-            string status = statusOverride ?? GetDefaultRoundHistoryStatus();
+            string status = statusOverride ?? GetDefaultRoundHistoryStatus(roundCycleForHistory ?? stateService.RoundCycle);
 
             if (overlayRoundHistory.Count > 0)
             {
@@ -2369,14 +2370,14 @@ namespace ToNRoundCounter.UI
             RefreshRoundHistoryOverlay();
         }
 
-        private string GetDefaultRoundHistoryStatus()
+        private string GetDefaultRoundHistoryStatus(int roundCycle)
         {
-            if (stateService.RoundCycle <= 0)
+            if (roundCycle <= 0)
             {
                 return "クラシック確定";
             }
 
-            if (stateService.RoundCycle == 1)
+            if (roundCycle == 1)
             {
                 return "50/50";
             }
