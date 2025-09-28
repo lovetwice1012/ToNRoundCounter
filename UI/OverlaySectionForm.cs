@@ -48,8 +48,8 @@ namespace ToNRoundCounter.UI
             ShowInTaskbar = false;
             TopMost = false;
             DoubleBuffered = true;
-            baseBackgroundColor = Color.FromArgb(30, 30, 30);
-            BackColor = Color.Transparent;
+            baseBackgroundColor = Color.Black;
+            BackColor = baseBackgroundColor;
             ForeColor = Color.White;
             Padding = new Padding(12);
             MinimumSize = new Size(180, 100);
@@ -61,29 +61,14 @@ namespace ToNRoundCounter.UI
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
-                RowCount = 2,
+                RowCount = 1,
                 BackColor = Color.Transparent,
                 Margin = new Padding(0),
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
             };
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             Controls.Add(layout);
-
-            var titleLabel = new Label
-            {
-                Text = title,
-                Dock = DockStyle.Top,
-                Font = new Font(Font.FontFamily, 11f, FontStyle.Bold),
-                ForeColor = Color.White,
-                AutoSize = true,
-                TextAlign = ContentAlignment.MiddleLeft,
-                BackColor = Color.Transparent,
-                Margin = new Padding(0, 0, 0, 6),
-            };
-            RegisterDragEvents(titleLabel);
-            layout.Controls.Add(titleLabel, 0, 0);
 
             if (content == null)
             {
@@ -104,7 +89,7 @@ namespace ToNRoundCounter.UI
             ContentControl = content;
             RegisterDragEvents(ContentControl);
             ConfigureContentControl();
-            layout.Controls.Add(ContentControl, 0, 1);
+            layout.Controls.Add(ContentControl, 0, 0);
 
             RegisterDragEvents(this);
             RegisterDragEvents(layout);
@@ -154,9 +139,8 @@ namespace ToNRoundCounter.UI
             }
 
             backgroundOpacity = clamped;
-            int alpha = (int)Math.Round(backgroundOpacity * 255d);
-            alpha = Math.Max(0, Math.Min(255, alpha));
-            Color overlayColor = Color.FromArgb(alpha, baseBackgroundColor);
+            Opacity = clamped;
+            Color overlayColor = baseBackgroundColor;
             BackColor = overlayColor;
 
             if (ContentControl is IDirectXOverlaySurface directXSurface)
@@ -200,15 +184,6 @@ namespace ToNRoundCounter.UI
             if (ContentControl is IDirectXOverlaySurface directXSurface && directXSurface.HandlesChrome)
             {
                 return;
-            }
-
-            using var pen = new Pen(Color.FromArgb(160, 255, 255, 255), 1);
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-
-            if (Width > 1 && Height > 1)
-            {
-                using GraphicsPath borderPath = CreateRoundedRectanglePath(new Rectangle(0, 0, Width - 1, Height - 1), CornerRadius);
-                e.Graphics.DrawPath(pen, borderPath);
             }
 
             DrawResizeGrip(e.Graphics);

@@ -24,7 +24,7 @@ namespace ToNRoundCounter.UI
         public void UpdateReadings(double velocity, double idleSeconds)
         {
             double clampedIdle = idleSeconds < 0 ? 0 : idleSeconds;
-            string speedText = velocity.ToString("F2", CultureInfo.InvariantCulture);
+            string speedText = velocity.ToString("00.00", CultureInfo.InvariantCulture);
             string afkText = $"AFK: {clampedIdle:F1}秒";
             velocitySurface.SetVelocityText(speedText, afkText);
         }
@@ -40,7 +40,7 @@ namespace ToNRoundCounter.UI
             private readonly float rowSpacing = 6f;
             private readonly float afkFontSize = 10.5f;
 
-            private string speedText = "0.00";
+            private string speedText = "00.00";
             private string afkText = string.Empty;
             private float afkTextWidth;
             private float afkTextHeight;
