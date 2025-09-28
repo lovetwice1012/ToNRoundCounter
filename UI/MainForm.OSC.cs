@@ -214,7 +214,7 @@ namespace ToNRoundCounter.UI
                 if (abortFlag)
                 {
                     LogUi("Abort auto suicide requested via OSC.");
-                    CancelAutoSuicide();
+                    CancelAutoSuicide(manualOverride: true);
                 }
             }
             else if (message.Address == "/avatar/parameters/delayAutoSuside")
@@ -233,11 +233,10 @@ namespace ToNRoundCounter.UI
                 }
                 if (delayFlag && autoSuicideService.HasScheduled)
                 {
-                    TimeSpan remaining = TimeSpan.FromSeconds(40) - (DateTime.UtcNow - autoSuicideService.RoundStartTime);
-                    if (remaining > TimeSpan.Zero)
+                    var remaining = DelayAutoSuicide(manualOverride: true);
+                    if (remaining.HasValue)
                     {
-                        LogUi($"Delaying auto suicide by {remaining}.", LogEventLevel.Debug);
-                        ScheduleAutoSuicide(remaining, false);
+                        LogUi($"Delaying auto suicide by {remaining.Value}.", LogEventLevel.Debug);
                     }
                 }
             }

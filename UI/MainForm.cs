@@ -98,6 +98,8 @@ namespace ToNRoundCounter.UI
 
         private bool issetAllSelfKillMode = false;
         private bool allRoundsForcedSchedule;
+        private bool autoSuicideManualCancelRequested;
+        private DateTime? autoSuicideManualDelayUntil;
 
         private string _lastSaveCode = string.Empty;
 
@@ -561,7 +563,7 @@ namespace ToNRoundCounter.UI
                     bool hadScheduled = autoSuicideService.HasScheduled;
                     if (hadScheduled)
                     {
-                        CancelAutoSuicide();
+                        CancelAutoSuicide(manualOverride: true);
                         shortcutOverlayForm?.PulseButton(OverlayShortcutForm.ShortcutButton.AutoSuicideCancel);
                     }
                     else
@@ -573,7 +575,7 @@ namespace ToNRoundCounter.UI
                     bool canDelay = autoSuicideService.HasScheduled;
                     if (canDelay)
                     {
-                        DelayAutoSuicide();
+                        DelayAutoSuicide(manualOverride: true);
                         shortcutOverlayForm?.PulseButton(OverlayShortcutForm.ShortcutButton.AutoSuicideDelay);
                     }
                     else
@@ -807,9 +809,15 @@ namespace ToNRoundCounter.UI
                 enteredAt = currentInstanceEnteredAt;
             }
 
+            string FormatElapsedText(TimeSpan elapsed)
+            {
+                int totalHours = (int)Math.Floor(elapsed.TotalHours);
+                return $"経過時間:\n{totalHours:D2}時間{elapsed.Minutes:D2}分{elapsed.Seconds:D2}秒";
+            }
+
             if (string.IsNullOrEmpty(instanceId))
             {
-                return "00時間00分00秒";
+                return FormatElapsedText(TimeSpan.Zero);
             }
 
             TimeSpan elapsed = DateTimeOffset.Now - enteredAt;
@@ -818,8 +826,7 @@ namespace ToNRoundCounter.UI
                 elapsed = TimeSpan.Zero;
             }
 
-            int totalHours = (int)Math.Floor(elapsed.TotalHours);
-            return $"{totalHours:D2}時間{elapsed.Minutes:D2}分{elapsed.Seconds:D2}秒";
+            return FormatElapsedText(elapsed);
         }
 
         private void CaptureOverlayPositions()
@@ -2695,29 +2702,83 @@ namespace ToNRoundCounter.UI
             UpdateShortcutOverlayState();
         }
 
-        private void ScheduleAutoSuicide(TimeSpan delay, bool resetStartTime, bool fromAllRoundsMode = false)
+        private void ScheduleAutoSuicide(TimeSpan delay, bool resetStartTime, bool fromAllRoundsMode = false, bool isManualAction = false)
         {
+            if (resetStartTime)
+            {
+                autoSuicideManualCancelRequested = false;
+                autoSuicideManualDelayUntil = null;
+            }
+
+            if (!isManualAction)
+            {
+                if (autoSuicideManualCancelRequested)
+                {
+                    UpdateShortcutOverlayState();
+                    return;
+                }
+
+                if (autoSuicideManualDelayUntil.HasValue)
+                {
+                    DateTime now = DateTime.UtcNow;
+                    if (autoSuicideManualDelayUntil.Value > now)
+                    {
+                        TimeSpan manualRemaining = autoSuicideManualDelayUntil.Value - now;
+                        if (manualRemaining > delay)
+                        {
+                            delay = manualRemaining;
+                        }
+                    }
+                    else
+                    {
+                        autoSuicideManualDelayUntil = null;
+                    }
+                }
+            }
+            else
+            {
+                if (delay < TimeSpan.Zero)
+                {
+                    delay = TimeSpan.Zero;
+                }
+
+                autoSuicideManualCancelRequested = false;
+                autoSuicideManualDelayUntil = DateTime.UtcNow + delay;
+            }
+
+            if (delay < TimeSpan.Zero)
+            {
+                delay = TimeSpan.Zero;
+            }
+
             autoSuicideService.Schedule(delay, resetStartTime, PerformAutoSuicide);
             allRoundsForcedSchedule = fromAllRoundsMode;
             UpdateShortcutOverlayState();
         }
 
-        private void CancelAutoSuicide()
+        private void CancelAutoSuicide(bool manualOverride = false)
         {
             if (autoSuicideService.HasScheduled)
             {
                 autoSuicideService.Cancel();
             }
+
+            if (manualOverride)
+            {
+                autoSuicideManualCancelRequested = true;
+            }
+
+            autoSuicideManualDelayUntil = null;
             allRoundsForcedSchedule = false;
             UpdateShortcutOverlayState();
         }
 
-        private void DelayAutoSuicide()
+        private TimeSpan? DelayAutoSuicide(bool manualOverride = false)
         {
             if (!autoSuicideService.HasScheduled)
             {
                 UpdateShortcutOverlayState();
-                return;
+                return null;
             }
 
             TimeSpan elapsed = DateTime.UtcNow - autoSuicideService.RoundStartTime;
@@ -2727,7 +2788,13 @@ namespace ToNRoundCounter.UI
                 remaining = TimeSpan.FromSeconds(40);
             }
 
-            ScheduleAutoSuicide(remaining, false, allRoundsForcedSchedule);
+            if (manualOverride)
+            {
+                autoSuicideManualCancelRequested = false;
+            }
+
+            ScheduleAutoSuicide(remaining, false, allRoundsForcedSchedule, manualOverride);
+            return remaining;
         }
 
         private void LoadAutoSuicideRules()
