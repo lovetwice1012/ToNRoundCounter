@@ -126,6 +126,7 @@ namespace ToNRoundCounter.UI
         private int terrorCountdownLastDisplayedSeconds = -1;
         private readonly Dictionary<OverlaySection, OverlaySectionForm> overlayForms = new();
         private readonly List<(string Label, string Status)> overlayRoundHistory = new();
+        private string lastRoundTypeForHistory = string.Empty;
         private System.Windows.Forms.Timer? overlayVisibilityTimer;
         private OverlayShortcutForm? shortcutOverlayForm;
         private bool overlayTemporarilyHidden;
@@ -2094,6 +2095,7 @@ namespace ToNRoundCounter.UI
 
                 stateService.UpdateCurrentRound(null);
                 var roundForHistory = stateService.PreviousRound ?? round;
+                lastRoundTypeForHistory = roundForHistory?.RoundType ?? string.Empty;
 
                 _dispatcher.Invoke(() =>
                 {
@@ -2302,6 +2304,7 @@ namespace ToNRoundCounter.UI
                 {
                     overlayRoundHistory.Clear();
                 }
+                lastRoundTypeForHistory = string.Empty;
                 RefreshRoundHistoryOverlay();
                 return;
             }
@@ -2331,7 +2334,9 @@ namespace ToNRoundCounter.UI
 
         private void RecordRoundHistory(string? statusOverride)
         {
-            string label = InfoPanel?.NextRoundType?.Text ?? string.Empty;
+            string label = !string.IsNullOrWhiteSpace(lastRoundTypeForHistory)
+                ? lastRoundTypeForHistory
+                : InfoPanel?.NextRoundType?.Text ?? string.Empty;
             if (string.IsNullOrWhiteSpace(label) && string.IsNullOrWhiteSpace(statusOverride))
             {
                 return;
