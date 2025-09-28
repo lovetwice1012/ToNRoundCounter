@@ -52,8 +52,8 @@ namespace ToNRoundCounter.UI
             BackColor = baseBackgroundColor;
             ForeColor = Color.White;
             Padding = new Padding(12);
-            MinimumSize = new Size(180, 100);
-            ClientSize = new Size(220, 120);
+            MinimumSize = new Size(150, 60);
+            ClientSize = new Size(220, 110);
             ResizeRedraw = true;
             SetBackgroundOpacity(DefaultBackgroundOpacity);
 
