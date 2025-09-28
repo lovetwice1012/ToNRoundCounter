@@ -2022,43 +2022,44 @@ namespace ToNRoundCounter.UI
         /// <param name="status">"☠" または "✅"</param>
         private void FinalizeCurrentRound(string status)
         {
-            if (stateService.CurrentRound != null)
+            var round = stateService.CurrentRound;
+            if (round != null)
             {
-                string roundType = stateService.CurrentRound.RoundType ?? string.Empty;
+                string roundType = round.RoundType ?? string.Empty;
 
-                if (string.IsNullOrWhiteSpace(stateService.CurrentRound.MapName))
+                if (string.IsNullOrWhiteSpace(round.MapName))
                 {
                     string latestMapName = string.Empty;
                     _dispatcher.Invoke(() => latestMapName = InfoPanel.MapValue.Text);
                     if (!string.IsNullOrWhiteSpace(latestMapName))
                     {
-                        stateService.CurrentRound.MapName = latestMapName;
+                        round.MapName = latestMapName;
                     }
                 }
 
-                if (!string.IsNullOrWhiteSpace(stateService.CurrentRound.MapName))
+                if (!string.IsNullOrWhiteSpace(round.MapName))
                 {
-                    stateService.SetRoundMapName(roundType, stateService.CurrentRound.MapName);
+                    stateService.SetRoundMapName(roundType, round.MapName);
                 }
-                if (!string.IsNullOrEmpty(stateService.CurrentRound.TerrorKey))
+                if (!string.IsNullOrEmpty(round.TerrorKey))
                 {
-                    string terrorKey = stateService.CurrentRound.TerrorKey!;
-                    bool survived = lastOptedIn && !stateService.CurrentRound.IsDeath;
+                    string terrorKey = round.TerrorKey!;
+                    bool survived = lastOptedIn && !round.IsDeath;
                     stateService.RecordRoundResult(roundType, terrorKey, survived);
-                    if (!string.IsNullOrWhiteSpace(stateService.CurrentRound.MapName))
+                    if (!string.IsNullOrWhiteSpace(round.MapName))
                     {
-                        stateService.SetTerrorMapName(roundType, terrorKey, stateService.CurrentRound.MapName);
+                        stateService.SetTerrorMapName(roundType, terrorKey, round.MapName);
                     }
                 }
                 else
                 {
-                    stateService.RecordRoundResult(roundType, null, !stateService.CurrentRound.IsDeath);
+                    stateService.RecordRoundResult(roundType, null, !round.IsDeath);
                 }
 
                 // 次ラウンド予測ロジック
                 var normalTypes = new[] { "クラシック", "Classic", "RUN", "走れ！" };
                 var overrideTypes = new HashSet<string> { "アンバウンド", "8ページ", "ゴースト", "オルタネイト" };
-                string current = stateService.CurrentRound.RoundType ?? string.Empty;
+                string current = round.RoundType ?? string.Empty;
 
                 string? historyStatusOverride = null;
                 bool isNormalRound = normalTypes.Any(type => current.Contains(type));
@@ -2091,18 +2092,19 @@ namespace ToNRoundCounter.UI
                     hasObservedSpecialRound = true;
                 }
 
-                var round = stateService.CurrentRound;
+                stateService.UpdateCurrentRound(null);
+                var roundForHistory = stateService.PreviousRound ?? round;
+
                 _dispatcher.Invoke(() =>
                 {
                     UpdateNextRoundPrediction(historyStatusOverride);
                     UpdateAggregateStatsDisplay();
-                    _presenter.AppendRoundLog(round, status);
+                    _presenter.AppendRoundLog(roundForHistory, status);
                     ClearEventDisplays();
                     ClearItemDisplay();
                     lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2}";
                 });
-                _ = _presenter.UploadRoundLogAsync(round, status);
-                stateService.UpdateCurrentRound(null);
+                _ = _presenter.UploadRoundLogAsync(roundForHistory, status);
                 ResetRoundScopedShortcutButtons();
             }
             SetOverlayTemporarilyHidden(false);

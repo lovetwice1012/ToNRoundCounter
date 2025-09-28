@@ -47,6 +47,15 @@ namespace ToNRoundCounter.Application
                 mapName = _stateService.GetRoundMapName(round.RoundType!);
             }
 
+            if (string.IsNullOrWhiteSpace(mapName))
+            {
+                var previousRound = _stateService.PreviousRound;
+                if (previousRound != null && !string.IsNullOrWhiteSpace(previousRound.MapName))
+                {
+                    mapName = previousRound.MapName;
+                }
+            }
+
             if (!string.IsNullOrWhiteSpace(mapName) && mapName != round.MapName)
             {
                 round.MapName = mapName;
