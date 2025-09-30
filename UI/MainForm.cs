@@ -76,6 +76,7 @@ namespace ToNRoundCounter.UI
         private Action<SettingsValidationFailed>? _settingsValidationFailedHandler;
 
         private Dictionary<string, Color> terrorColors = new();
+        private readonly object _terrorColorSync = new();
         private bool lastOptedIn = true;
 
         // 次ラウンド予測用：stateService.RoundCycle==0 → 通常ラウンド, ==1 → 「通常ラウンド or 特殊ラウンド」, >=2 → 特殊ラウンド
@@ -104,6 +105,11 @@ namespace ToNRoundCounter.UI
         private string _lastSaveCode = string.Empty;
 
         private string version = "1.13.0";
+
+        private int _statsUpdatePending;
+        private int _roundLogUpdatePending;
+        private readonly object _roundLogUpdateSync = new();
+        private IEnumerable<string>? _pendingRoundLogEntries;
 
         private readonly AutoSuicideService autoSuicideService;
 
@@ -185,7 +191,10 @@ namespace ToNRoundCounter.UI
             _presenter.AttachView(this);
             LogUi("Presenter attached to main form view.", LogEventLevel.Debug);
 
-            terrorColors = new Dictionary<string, Color>();
+            lock (_terrorColorSync)
+            {
+                terrorColors = new Dictionary<string, Color>();
+            }
             LoadTerrorInfo();
             _settings.Load();
             _lastSaveCode = _settings.LastSaveCode ?? string.Empty;
@@ -2440,7 +2449,11 @@ namespace ToNRoundCounter.UI
         private void RefreshRoundStatsOverlay()
         {
             var (entries, totalRounds) = BuildRoundStatsEntries();
+            ApplyRoundStatsOverlay(entries, totalRounds);
+        }
 
+        private void ApplyRoundStatsOverlay(IReadOnlyList<OverlayRoundStatsForm.RoundStatEntry> entries, int totalRounds)
+        {
             UpdateOverlay(OverlaySection.RoundStats, form =>
             {
                 if (form is OverlayRoundStatsForm statsForm)
@@ -2462,24 +2475,70 @@ namespace ToNRoundCounter.UI
 
         private void UpdateAggregateStatsDisplay()
         {
+            if (Interlocked.Increment(ref _statsUpdatePending) != 1)
+            {
+                return;
+            }
+
+            _ = Task.Run(() =>
+            {
+                do
+                {
+                    AggregateStatsDisplayModel? model = null;
+                    try
+                    {
+                        model = BuildAggregateStatsDisplayModel();
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUi($"Failed to build aggregate statistics display: {ex}", LogEventLevel.Error);
+                    }
+
+                    if (model != null)
+                    {
+                        try
+                        {
+                            _dispatcher.Invoke(() => RenderAggregateStatsDisplay(model));
+                        }
+                        catch (Exception ex)
+                        {
+                            LogUi($"Failed to render aggregate statistics display: {ex}", LogEventLevel.Error);
+                        }
+                    }
+                }
+                while (Interlocked.Decrement(ref _statsUpdatePending) > 0);
+            });
+        }
+
+        private sealed record StatsDisplayLine(string Text, Color Color, bool Indent);
+
+        private sealed record AggregateStatsDisplayModel(
+            List<StatsDisplayLine> Lines,
+            List<OverlayRoundStatsForm.RoundStatEntry> OverlayEntries,
+            int TotalRounds);
+
+        private AggregateStatsDisplayModel BuildAggregateStatsDisplayModel()
+        {
             static string TranslateSafe(string key)
             {
                 return LanguageManager.Translate(key) ?? key;
             }
 
-            rtbStatsDisplay.Clear();
+            var lines = new List<StatsDisplayLine>();
             var roundAggregates = stateService.GetRoundAggregates();
             int overallTotal = roundAggregates.Values.Sum(r => r.Total);
+            var defaultColor = Theme.Current.Foreground;
+
             foreach (var kvp in roundAggregates)
             {
                 string roundType = kvp.Key;
-                // ラウンドタイプごとのフィルターが有効なら対象のラウンドタイプのみ表示
                 if (_settings.RoundTypeStats != null && _settings.RoundTypeStats.Count > 0 && !_settings.RoundTypeStats.Contains(roundType))
+                {
                     continue;
+                }
 
                 RoundAggregate agg = kvp.Value;
-                var parts = new List<string>();
-                parts.Add(roundType);
+                var parts = new List<string> { roundType };
                 if (_settings.Filter_Appearance)
                     parts.Add(TranslateSafe("出現回数") + "=" + agg.Total);
                 if (_settings.Filter_Survival)
@@ -2493,18 +2552,17 @@ namespace ToNRoundCounter.UI
                     double occurrenceRate = agg.Total * 100.0 / overallTotal;
                     parts.Add(string.Format(TranslateSafe("出現率") + "={0:F1}%", occurrenceRate));
                 }
-                string roundLine = string.Join(" ", parts);
-                AppendLine(rtbStatsDisplay, roundLine, Theme.Current.Foreground);
 
-                // テラーのフィルター
+                string roundLine = string.Join(" ", parts);
+                lines.Add(new StatsDisplayLine(roundLine, defaultColor, false));
+
                 if (_settings.Filter_Terror && stateService.TryGetTerrorAggregates(roundType, out var terrorDict) && terrorDict != null)
                 {
                     foreach (var terrorKvp in terrorDict)
                     {
                         string terrorKey = terrorKvp.Key;
                         TerrorAggregate tAgg = terrorKvp.Value;
-                        var terrorParts = new List<string>();
-                        terrorParts.Add(terrorKey);
+                        var terrorParts = new List<string> { terrorKey };
                         if (_settings.Filter_Appearance)
                             terrorParts.Add(TranslateSafe("出現回数") + "=" + tAgg.Total);
                         if (_settings.Filter_Survival)
@@ -2513,16 +2571,45 @@ namespace ToNRoundCounter.UI
                             terrorParts.Add(TranslateSafe("死亡回数") + "=" + tAgg.Death);
                         if (_settings.Filter_SurvivalRate)
                             terrorParts.Add(string.Format(TranslateSafe("生存率") + "={0:F1}%", tAgg.SurvivalRate));
+
                         string terrorLine = string.Join(" ", terrorParts);
-                        Color rawColor = terrorColors.ContainsKey(terrorKey) ? terrorColors[terrorKey] : Color.Black;
+                        Color rawColor = GetTerrorColor(terrorKey);
                         Color terrorColor = (_settings.FixedTerrorColor != Color.Empty && _settings.FixedTerrorColor != Color.White)
                             ? _settings.FixedTerrorColor
                             : AdjustColorForVisibility(rawColor);
-                        AppendIndentedLine(rtbStatsDisplay, terrorLine, terrorColor);
+                        lines.Add(new StatsDisplayLine(terrorLine, terrorColor, true));
                     }
                 }
-                AppendLine(rtbStatsDisplay, "", Theme.Current.Foreground);
+
+                lines.Add(new StatsDisplayLine(string.Empty, defaultColor, false));
             }
+
+            var (entries, totalRounds) = BuildRoundStatsEntries();
+            return new AggregateStatsDisplayModel(lines, entries, totalRounds);
+        }
+
+        private void RenderAggregateStatsDisplay(AggregateStatsDisplayModel model)
+        {
+            if (rtbStatsDisplay == null)
+            {
+                return;
+            }
+
+            rtbStatsDisplay.SuspendLayout();
+            rtbStatsDisplay.Clear();
+
+            foreach (var line in model.Lines)
+            {
+                if (line.Indent)
+                {
+                    AppendIndentedLine(rtbStatsDisplay, line.Text, line.Color);
+                }
+                else
+                {
+                    AppendLine(rtbStatsDisplay, line.Text, line.Color);
+                }
+            }
+
             if (_settings.ShowDebug)
             {
                 AppendLine(rtbStatsDisplay, "VelocityMagnitude: " + currentVelocity.ToString("F2"), Color.Blue);
@@ -2533,7 +2620,9 @@ namespace ToNRoundCounter.UI
                 }
             }
 
-            RefreshRoundStatsOverlay();
+            rtbStatsDisplay.ResumeLayout();
+
+            ApplyRoundStatsOverlay(model.OverlayEntries, model.TotalRounds);
         }
 
         private void AppendLine(RichTextBox rtb, string text, Color color)
@@ -2568,13 +2657,70 @@ namespace ToNRoundCounter.UI
 
         public void UpdateRoundLog(IEnumerable<string> logEntries)
         {
-            _dispatcher.Invoke(() =>
+            lock (_roundLogUpdateSync)
             {
-                logPanel.RoundLogTextBox.Clear();
-                foreach (var entry in logEntries)
+                _pendingRoundLogEntries = logEntries ?? Array.Empty<string>();
+            }
+
+            if (Interlocked.Increment(ref _roundLogUpdatePending) != 1)
+            {
+                return;
+            }
+
+            _ = Task.Run(() =>
+            {
+                do
                 {
-                    logPanel.RoundLogTextBox.AppendText(entry + Environment.NewLine);
+                    IEnumerable<string>? entries;
+                    lock (_roundLogUpdateSync)
+                    {
+                        entries = _pendingRoundLogEntries;
+                        _pendingRoundLogEntries = null;
+                    }
+
+                    if (entries == null)
+                    {
+                        continue;
+                    }
+
+                    string text;
+                    try
+                    {
+                        var builder = new StringBuilder();
+                        foreach (var entry in entries)
+                        {
+                            builder.AppendLine(entry);
+                        }
+                        text = builder.ToString();
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUi($"Failed to build round log text: {ex}", LogEventLevel.Error);
+                        continue;
+                    }
+
+                    try
+                    {
+                        _dispatcher.Invoke(() =>
+                        {
+                            if (logPanel?.RoundLogTextBox == null)
+                            {
+                                return;
+                            }
+
+                            logPanel.RoundLogTextBox.SuspendLayout();
+                            logPanel.RoundLogTextBox.Text = text;
+                            logPanel.RoundLogTextBox.SelectionStart = logPanel.RoundLogTextBox.TextLength;
+                            logPanel.RoundLogTextBox.ScrollToCaret();
+                            logPanel.RoundLogTextBox.ResumeLayout();
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUi($"Failed to update round log view: {ex}", LogEventLevel.Error);
+                    }
                 }
+                while (Interlocked.Decrement(ref _roundLogUpdatePending) > 0);
             });
         }
 
@@ -2664,6 +2810,22 @@ namespace ToNRoundCounter.UI
             if (color.GetBrightness() > 0.8f)
                 return Color.Black;
             return color;
+        }
+
+        private Color GetTerrorColor(string terrorKey)
+        {
+            lock (_terrorColorSync)
+            {
+                return terrorColors.TryGetValue(terrorKey, out var color) ? color : Color.Black;
+            }
+        }
+
+        private void SetTerrorColor(string terrorKey, Color color)
+        {
+            lock (_terrorColorSync)
+            {
+                terrorColors[terrorKey] = color;
+            }
         }
         private void ProcessRoundActive(JObject json)
         {
@@ -3080,7 +3242,7 @@ namespace ToNRoundCounter.UI
                     var terrorKeyValue = currentRound?.TerrorKey;
                     if (!string.IsNullOrEmpty(terrorKeyValue))
                     {
-                        terrorColors[terrorKeyValue!] = color;
+                        SetTerrorColor(terrorKeyValue!, color);
                     }
                 }
                 else
@@ -3105,7 +3267,7 @@ namespace ToNRoundCounter.UI
 
                     if (!string.IsNullOrEmpty(joinedNames))
                     {
-                        terrorColors[joinedNames] = color;
+                        SetTerrorColor(joinedNames, color);
                     }
                 }
                 else
