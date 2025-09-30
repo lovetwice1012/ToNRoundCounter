@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Net.Http;
 using Newtonsoft.Json;
+using Serilog.Events;
 using ToNRoundCounter.Domain;
 
 namespace ToNRoundCounter.Application
@@ -37,28 +38,40 @@ namespace ToNRoundCounter.Application
         public void AppendRoundLog(Round round, string status)
         {
             string? mapName = round.MapName;
+            string? initialMapName = mapName;
+            string? terrorMapCandidate = null;
+            string? roundTypeMapCandidate = null;
+
             if (string.IsNullOrWhiteSpace(mapName) && !string.IsNullOrWhiteSpace(round.RoundType) && !string.IsNullOrWhiteSpace(round.TerrorKey))
             {
-                mapName = _stateService.GetTerrorMapName(round.RoundType!, round.TerrorKey!);
+                terrorMapCandidate = _stateService.GetTerrorMapName(round.RoundType!, round.TerrorKey!);
+                mapName = terrorMapCandidate;
             }
 
             if (string.IsNullOrWhiteSpace(mapName) && !string.IsNullOrWhiteSpace(round.RoundType))
             {
-                mapName = _stateService.GetRoundMapName(round.RoundType!);
+                roundTypeMapCandidate = _stateService.GetRoundMapName(round.RoundType!);
+                mapName = roundTypeMapCandidate;
             }
 
+            var previousRound = _stateService.PreviousRound;
+            string? previousRoundMapName = previousRound?.MapName;
             if (string.IsNullOrWhiteSpace(mapName))
             {
-                var previousRound = _stateService.PreviousRound;
-                if (previousRound != null && !string.IsNullOrWhiteSpace(previousRound.MapName))
+                if (!string.IsNullOrWhiteSpace(previousRoundMapName))
                 {
-                    mapName = previousRound.MapName;
+                    mapName = previousRoundMapName;
                 }
             }
 
             if (!string.IsNullOrWhiteSpace(mapName) && mapName != round.MapName)
             {
                 round.MapName = mapName;
+            }
+
+            if (string.IsNullOrWhiteSpace(mapName))
+            {
+                LogMapResolutionDebug(round, initialMapName, terrorMapCandidate, roundTypeMapCandidate, previousRoundMapName, mapName);
             }
 
             string items = round.ItemNames.Count > 0 ? string.Join("、", round.ItemNames) : "アイテム未使用";
@@ -188,6 +201,43 @@ namespace ToNRoundCounter.Application
             catch (Exception ex)
             {
                 _logger.LogEvent("DiscordWebhookError", $"Discord送信中にエラーが発生しました: {ex.Message}");
+            }
+        }
+
+        private void LogMapResolutionDebug(Round round, string? initialMapName, string? terrorMapCandidate, string? roundTypeMapCandidate, string? previousRoundMapName, string? finalMapName)
+        {
+            try
+            {
+                var builder = new StringBuilder();
+                builder.AppendLine("Map resolution debug information:");
+                builder.AppendLine($"- Round ID: {round.Id}");
+                builder.AppendLine($"- Round type: '{round.RoundType ?? "<null>"}'");
+                builder.AppendLine($"- Terror key: '{round.TerrorKey ?? "<null>"}'");
+                builder.AppendLine($"- Initial map name: '{initialMapName ?? "<null>"}'");
+                builder.AppendLine($"- Terror map candidate: '{terrorMapCandidate ?? "<null>"}'");
+                builder.AppendLine($"- Round type map candidate: '{roundTypeMapCandidate ?? "<null>"}'");
+                builder.AppendLine($"- Previous round map: '{previousRoundMapName ?? "<null>"}'");
+
+                var mapSnapshot = _stateService.GetRoundMapNames();
+                builder.AppendLine("- Stored round map snapshot:");
+                if (mapSnapshot.Count == 0)
+                {
+                    builder.AppendLine("  (empty)");
+                }
+                else
+                {
+                    foreach (var entry in mapSnapshot.OrderBy(e => e.Key))
+                    {
+                        builder.AppendLine($"  {entry.Key}: '{entry.Value ?? "<null>"}'");
+                    }
+                }
+
+                builder.AppendLine($"- Final resolved map name: '{finalMapName ?? "<null>"}'");
+                _logger.LogEvent("MainPresenter", builder.ToString(), LogEventLevel.Debug);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogEvent("MainPresenter", $"Failed to record map resolution debug information: {ex}", LogEventLevel.Debug);
             }
         }
     }
