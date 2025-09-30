@@ -139,6 +139,63 @@ namespace ToNRoundCounter.UI
         private const string NextRoundPredictionUnavailableMessage = "次のラウンドの予測は特殊ラウンドを一回発生させることで利用可能です";
         private bool hasObservedSpecialRound;
 
+        private readonly object aggregateStatsUpdateSync = new();
+        private CancellationTokenSource? aggregateStatsUpdateCts;
+        private readonly object roundLogUpdateSync = new();
+        private CancellationTokenSource? roundLogUpdateCts;
+
+        private readonly struct FormattedTextLine
+        {
+            public FormattedTextLine(string text, Color color, bool indent)
+            {
+                Text = text;
+                Color = color;
+                Indent = indent;
+            }
+
+            public string Text { get; }
+            public Color Color { get; }
+            public bool Indent { get; }
+        }
+
+        private sealed class AggregateStatsUpdate
+        {
+            public AggregateStatsUpdate(List<FormattedTextLine> lines, IReadOnlyList<OverlayRoundStatsForm.RoundStatEntry> entries, int totalRounds)
+            {
+                Lines = lines ?? throw new ArgumentNullException(nameof(lines));
+                Entries = entries ?? throw new ArgumentNullException(nameof(entries));
+                TotalRounds = totalRounds;
+            }
+
+            public List<FormattedTextLine> Lines { get; }
+            public IReadOnlyList<OverlayRoundStatsForm.RoundStatEntry> Entries { get; }
+            public int TotalRounds { get; }
+        }
+
+        private readonly struct StatsDisplayConfig
+        {
+            public StatsDisplayConfig(bool filterAppearance, bool filterSurvival, bool filterDeath, bool filterSurvivalRate, bool filterTerror, bool showDebug, Color fixedTerrorColor, HashSet<string>? roundTypeFilter)
+            {
+                FilterAppearance = filterAppearance;
+                FilterSurvival = filterSurvival;
+                FilterDeath = filterDeath;
+                FilterSurvivalRate = filterSurvivalRate;
+                FilterTerror = filterTerror;
+                ShowDebug = showDebug;
+                FixedTerrorColor = fixedTerrorColor;
+                RoundTypeFilter = roundTypeFilter;
+            }
+
+            public bool FilterAppearance { get; }
+            public bool FilterSurvival { get; }
+            public bool FilterDeath { get; }
+            public bool FilterSurvivalRate { get; }
+            public bool FilterTerror { get; }
+            public bool ShowDebug { get; }
+            public Color FixedTerrorColor { get; }
+            public HashSet<string>? RoundTypeFilter { get; }
+        }
+
         private enum OverlaySection
         {
             Velocity,
@@ -2440,7 +2497,11 @@ namespace ToNRoundCounter.UI
         private void RefreshRoundStatsOverlay()
         {
             var (entries, totalRounds) = BuildRoundStatsEntries();
+            RefreshRoundStatsOverlay(entries, totalRounds);
+        }
 
+        private void RefreshRoundStatsOverlay(IReadOnlyList<OverlayRoundStatsForm.RoundStatEntry> entries, int totalRounds)
+        {
             UpdateOverlay(OverlaySection.RoundStats, form =>
             {
                 if (form is OverlayRoundStatsForm statsForm)
@@ -2462,78 +2523,178 @@ namespace ToNRoundCounter.UI
 
         private void UpdateAggregateStatsDisplay()
         {
+            HashSet<string>? roundTypeFilter = null;
+            if (_settings.RoundTypeStats != null && _settings.RoundTypeStats.Count > 0)
+            {
+                roundTypeFilter = new HashSet<string>(_settings.RoundTypeStats, StringComparer.OrdinalIgnoreCase);
+            }
+
+            var config = new StatsDisplayConfig(
+                _settings.Filter_Appearance,
+                _settings.Filter_Survival,
+                _settings.Filter_Death,
+                _settings.Filter_SurvivalRate,
+                _settings.Filter_Terror,
+                _settings.ShowDebug,
+                _settings.FixedTerrorColor,
+                roundTypeFilter);
+
+            var cts = RenewTokenSource(ref aggregateStatsUpdateCts, aggregateStatsUpdateSync);
+            var token = cts.Token;
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    var update = BuildAggregateStatsUpdate(token, config);
+                    if (update == null || token.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
+                    _dispatcher.Invoke(() =>
+                    {
+                        if (token.IsCancellationRequested)
+                        {
+                            return;
+                        }
+
+                        ApplyAggregateStatsUpdate(update);
+                    });
+                }
+                finally
+                {
+                    cts.Dispose();
+                }
+            });
+        }
+
+        private AggregateStatsUpdate? BuildAggregateStatsUpdate(CancellationToken token, StatsDisplayConfig config)
+        {
             static string TranslateSafe(string key)
             {
                 return LanguageManager.Translate(key) ?? key;
             }
 
-            rtbStatsDisplay.Clear();
+            var lines = new List<FormattedTextLine>();
             var roundAggregates = stateService.GetRoundAggregates();
             int overallTotal = roundAggregates.Values.Sum(r => r.Total);
             foreach (var kvp in roundAggregates)
             {
+                if (token.IsCancellationRequested)
+                {
+                    return null;
+                }
+
                 string roundType = kvp.Key;
-                // ラウンドタイプごとのフィルターが有効なら対象のラウンドタイプのみ表示
-                if (_settings.RoundTypeStats != null && _settings.RoundTypeStats.Count > 0 && !_settings.RoundTypeStats.Contains(roundType))
+                if (config.RoundTypeFilter != null && config.RoundTypeFilter.Count > 0 && !config.RoundTypeFilter.Contains(roundType))
+                {
                     continue;
+                }
 
                 RoundAggregate agg = kvp.Value;
-                var parts = new List<string>();
-                parts.Add(roundType);
-                if (_settings.Filter_Appearance)
+                var parts = new List<string> { roundType };
+                if (config.FilterAppearance)
                     parts.Add(TranslateSafe("出現回数") + "=" + agg.Total);
-                if (_settings.Filter_Survival)
+                if (config.FilterSurvival)
                     parts.Add(TranslateSafe("生存回数") + "=" + agg.Survival);
-                if (_settings.Filter_Death)
+                if (config.FilterDeath)
                     parts.Add(TranslateSafe("死亡回数") + "=" + agg.Death);
-                if (_settings.Filter_SurvivalRate)
+                if (config.FilterSurvivalRate)
                     parts.Add(string.Format(TranslateSafe("生存率") + "={0:F1}%", agg.SurvivalRate));
-                if (overallTotal > 0 && _settings.Filter_Appearance)
+                if (overallTotal > 0 && config.FilterAppearance)
                 {
                     double occurrenceRate = agg.Total * 100.0 / overallTotal;
                     parts.Add(string.Format(TranslateSafe("出現率") + "={0:F1}%", occurrenceRate));
                 }
                 string roundLine = string.Join(" ", parts);
-                AppendLine(rtbStatsDisplay, roundLine, Theme.Current.Foreground);
+                lines.Add(new FormattedTextLine(roundLine, Theme.Current.Foreground, indent: false));
 
-                // テラーのフィルター
-                if (_settings.Filter_Terror && stateService.TryGetTerrorAggregates(roundType, out var terrorDict) && terrorDict != null)
+                if (config.FilterTerror && stateService.TryGetTerrorAggregates(roundType, out var terrorDict) && terrorDict != null)
                 {
                     foreach (var terrorKvp in terrorDict)
                     {
+                        if (token.IsCancellationRequested)
+                        {
+                            return null;
+                        }
+
                         string terrorKey = terrorKvp.Key;
                         TerrorAggregate tAgg = terrorKvp.Value;
-                        var terrorParts = new List<string>();
-                        terrorParts.Add(terrorKey);
-                        if (_settings.Filter_Appearance)
+                        var terrorParts = new List<string> { terrorKey };
+                        if (config.FilterAppearance)
                             terrorParts.Add(TranslateSafe("出現回数") + "=" + tAgg.Total);
-                        if (_settings.Filter_Survival)
+                        if (config.FilterSurvival)
                             terrorParts.Add(TranslateSafe("生存回数") + "=" + tAgg.Survival);
-                        if (_settings.Filter_Death)
+                        if (config.FilterDeath)
                             terrorParts.Add(TranslateSafe("死亡回数") + "=" + tAgg.Death);
-                        if (_settings.Filter_SurvivalRate)
+                        if (config.FilterSurvivalRate)
                             terrorParts.Add(string.Format(TranslateSafe("生存率") + "={0:F1}%", tAgg.SurvivalRate));
                         string terrorLine = string.Join(" ", terrorParts);
                         Color rawColor = terrorColors.ContainsKey(terrorKey) ? terrorColors[terrorKey] : Color.Black;
-                        Color terrorColor = (_settings.FixedTerrorColor != Color.Empty && _settings.FixedTerrorColor != Color.White)
-                            ? _settings.FixedTerrorColor
+                        Color terrorColor = (config.FixedTerrorColor != Color.Empty && config.FixedTerrorColor != Color.White)
+                            ? config.FixedTerrorColor
                             : AdjustColorForVisibility(rawColor);
-                        AppendIndentedLine(rtbStatsDisplay, terrorLine, terrorColor);
+                        lines.Add(new FormattedTextLine(terrorLine, terrorColor, indent: true));
                     }
                 }
-                AppendLine(rtbStatsDisplay, "", Theme.Current.Foreground);
+
+                lines.Add(new FormattedTextLine(string.Empty, Theme.Current.Foreground, indent: false));
             }
-            if (_settings.ShowDebug)
+
+            if (config.ShowDebug)
             {
-                AppendLine(rtbStatsDisplay, "VelocityMagnitude: " + currentVelocity.ToString("F2"), Color.Blue);
+                lines.Add(new FormattedTextLine($"VelocityMagnitude: {currentVelocity:F2}", Color.Blue, indent: false));
                 if (idleStartTime != DateTime.MinValue)
                 {
                     double idleSeconds = (DateTime.Now - idleStartTime).TotalSeconds;
-                    AppendLine(rtbStatsDisplay, "Idle Time: " + idleSeconds.ToString("F2") + " sec", Color.Blue);
+                    lines.Add(new FormattedTextLine($"Idle Time: {idleSeconds:F2} sec", Color.Blue, indent: false));
                 }
             }
 
-            RefreshRoundStatsOverlay();
+            var (entries, totalRounds) = BuildRoundStatsEntries();
+            return new AggregateStatsUpdate(lines, entries, totalRounds);
+        }
+
+        private void ApplyAggregateStatsUpdate(AggregateStatsUpdate update)
+        {
+            rtbStatsDisplay.SuspendLayout();
+            try
+            {
+                rtbStatsDisplay.Clear();
+                foreach (var line in update.Lines)
+                {
+                    if (line.Indent)
+                    {
+                        AppendIndentedLine(rtbStatsDisplay, line.Text, line.Color);
+                    }
+                    else
+                    {
+                        AppendLine(rtbStatsDisplay, line.Text, line.Color);
+                    }
+                }
+            }
+            finally
+            {
+                rtbStatsDisplay.ResumeLayout();
+            }
+
+            RefreshRoundStatsOverlay(update.Entries, update.TotalRounds);
+        }
+
+        private CancellationTokenSource RenewTokenSource(ref CancellationTokenSource? target, object syncRoot)
+        {
+            CancellationTokenSource? previous;
+            var newSource = new CancellationTokenSource();
+            lock (syncRoot)
+            {
+                previous = target;
+                target = newSource;
+            }
+
+            previous?.Cancel();
+            previous?.Dispose();
+            return newSource;
         }
 
         private void AppendLine(RichTextBox rtb, string text, Color color)
@@ -2568,12 +2729,54 @@ namespace ToNRoundCounter.UI
 
         public void UpdateRoundLog(IEnumerable<string> logEntries)
         {
-            _dispatcher.Invoke(() =>
+            var entries = logEntries ?? Array.Empty<string>();
+            var cts = RenewTokenSource(ref roundLogUpdateCts, roundLogUpdateSync);
+            var token = cts.Token;
+
+            Task.Run(() =>
             {
-                logPanel.RoundLogTextBox.Clear();
-                foreach (var entry in logEntries)
+                try
                 {
-                    logPanel.RoundLogTextBox.AppendText(entry + Environment.NewLine);
+                    var builder = new StringBuilder();
+                    foreach (var entry in entries)
+                    {
+                        if (token.IsCancellationRequested)
+                        {
+                            return;
+                        }
+
+                        builder.AppendLine(entry ?? string.Empty);
+                    }
+
+                    if (token.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
+                    var text = builder.ToString();
+                    _dispatcher.Invoke(() =>
+                    {
+                        if (token.IsCancellationRequested)
+                        {
+                            return;
+                        }
+
+                        logPanel.RoundLogTextBox.SuspendLayout();
+                        try
+                        {
+                            logPanel.RoundLogTextBox.Text = text;
+                            logPanel.RoundLogTextBox.SelectionStart = logPanel.RoundLogTextBox.TextLength;
+                            logPanel.RoundLogTextBox.ScrollToCaret();
+                        }
+                        finally
+                        {
+                            logPanel.RoundLogTextBox.ResumeLayout();
+                        }
+                    });
+                }
+                finally
+                {
+                    cts.Dispose();
                 }
             });
         }
