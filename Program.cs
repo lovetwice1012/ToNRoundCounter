@@ -6,6 +6,7 @@ using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using Serilog;
+using System.Threading.Tasks;
 using ToNRoundCounter.Application;
 using ToNRoundCounter.Infrastructure;
 using ToNRoundCounter.Domain;
@@ -22,16 +23,7 @@ namespace ToNRoundCounter
             WinFormsApp.EnableVisualStyles();
             WinFormsApp.SetCompatibleTextRenderingDefault(false);
 
-            var bootstrap = new AppSettingsData();
-            try
-            {
-                if (File.Exists("appsettings.json"))
-                {
-                    var json = File.ReadAllText("appsettings.json");
-                    bootstrap = JsonConvert.DeserializeObject<AppSettingsData>(json) ?? new AppSettingsData();
-                }
-            }
-            catch { }
+            var bootstrap = LoadBootstrapAsync().GetAwaiter().GetResult();
 
             var useDefaultLogPath = string.IsNullOrWhiteSpace(bootstrap.LogFilePath);
             var defaultLogPath = Path.Combine("logs", $"log-{DateTime.Now:yyyyMMdd_HHmmss}.txt");
@@ -77,7 +69,7 @@ namespace ToNRoundCounter
                 sp.GetRequiredService<IAppSettings>(),
                 sp.GetRequiredService<IEventLogger>(),
                 sp.GetRequiredService<IHttpClient>()));
-            ModuleLoader.LoadModules(services, moduleHost, eventLogger, eventBus);
+            Task.Run(() => ModuleLoader.LoadModules(services, moduleHost, eventLogger, eventBus)).GetAwaiter().GetResult();
             eventLogger.LogEvent("Bootstrap", $"Module discovery complete. Discovered modules: {moduleHost.Modules.Count}");
             services.AddSingleton<MainForm>(sp => new MainForm(
                 sp.GetRequiredService<IWebSocketClient>(),
@@ -98,7 +90,7 @@ namespace ToNRoundCounter
             eventLogger.LogEvent("Bootstrap", "Building service provider (pre-build notifications).");
             moduleHost.NotifyServiceProviderBuilding(new ModuleServiceProviderBuildContext(services, eventLogger, eventBus));
 
-            var provider = services.BuildServiceProvider();
+            var provider = Task.Run(services.BuildServiceProvider).GetAwaiter().GetResult();
             eventLogger.LogEvent("Bootstrap", "Service provider built successfully.");
             moduleHost.NotifyServiceProviderBuilt(new ModuleServiceProviderContext(provider, eventLogger, eventBus));
             provider.GetRequiredService<IErrorReporter>().Register();
@@ -142,6 +134,46 @@ namespace ToNRoundCounter
                 throw new InvalidOperationException("Crash report test triggered");
             }
 
+            var launches = Task.Run(() => BuildAutoLaunchPlans(autoLaunchPath, autoLaunchArguments, appSettings)).GetAwaiter().GetResult();
+
+            if (launches.Count > 0)
+            {
+                Task.Run(() => moduleHost.NotifyAutoLaunchEvaluating(new ModuleAutoLaunchEvaluationContext(launches, appSettings, provider))).GetAwaiter().GetResult();
+                mainForm.Shown += async (s, e) => await Task.Run(() => ExecuteAutoLaunchPlans(launches, moduleHost, eventLogger, provider));
+            }
+
+            moduleHost.NotifyAppRunStarting(new ModuleAppRunContext(mainForm, provider));
+            eventLogger.LogEvent("Bootstrap", "Starting WinForms message loop.");
+            WinFormsApp.Run(mainForm);
+            eventLogger.LogEvent("Bootstrap", "WinForms message loop exited.");
+            moduleHost.NotifyAppRunCompleted(new ModuleAppRunContext(mainForm, provider));
+            moduleHost.NotifyAppShutdownStarting(new ModuleAppShutdownContext(provider));
+            eventLogger.LogEvent("Bootstrap", "Disposing service provider and shutting down.");
+            Task.Run(() => (provider as IDisposable)?.Dispose()).GetAwaiter().GetResult();
+            moduleHost.NotifyAppShutdownCompleted(new ModuleAppShutdownContext(provider));
+            eventLogger.LogEvent("Bootstrap", "Application shutdown complete.");
+        }
+
+        private static async Task<AppSettingsData> LoadBootstrapAsync()
+        {
+            try
+            {
+                if (!File.Exists("appsettings.json"))
+                {
+                    return new AppSettingsData();
+                }
+
+                var json = await File.ReadAllTextAsync("appsettings.json").ConfigureAwait(false);
+                return JsonConvert.DeserializeObject<AppSettingsData>(json) ?? new AppSettingsData();
+            }
+            catch
+            {
+                return new AppSettingsData();
+            }
+        }
+
+        private static List<AutoLaunchPlan> BuildAutoLaunchPlans(string? autoLaunchPath, string? autoLaunchArguments, IAppSettings appSettings)
+        {
             var launches = new List<AutoLaunchPlan>();
 
             if (!string.IsNullOrWhiteSpace(autoLaunchPath))
@@ -161,68 +193,55 @@ namespace ToNRoundCounter
                 }
             }
 
-            if (launches.Count > 0)
+            return launches;
+        }
+
+        private static void ExecuteAutoLaunchPlans(IEnumerable<AutoLaunchPlan> launches, ModuleHost moduleHost, IEventLogger eventLogger, IServiceProvider provider)
+        {
+            foreach (var launch in launches)
             {
-                moduleHost.NotifyAutoLaunchEvaluating(new ModuleAutoLaunchEvaluationContext(launches, appSettings, provider));
-                mainForm.Shown += (s, e) =>
+                try
                 {
-                    foreach (var launch in launches)
+                    string resolvedPath = launch.Path;
+                    if (!Path.IsPathRooted(resolvedPath))
                     {
-                        try
-                        {
-                            string resolvedPath = launch.Path;
-                            if (!Path.IsPathRooted(resolvedPath))
-                            {
-                                resolvedPath = Path.GetFullPath(resolvedPath);
-                            }
-
-                            if (!File.Exists(resolvedPath))
-                            {
-                                var failureContext = new ModuleAutoLaunchFailureContext(launch, new FileNotFoundException("Executable not found", resolvedPath), provider);
-                                moduleHost.NotifyAutoLaunchFailed(failureContext);
-                                eventLogger.LogEvent("AutoLaunch", $"Executable not found ({launch.Origin}): {resolvedPath}", Serilog.Events.LogEventLevel.Error);
-                                continue;
-                            }
-
-                            var psi = new ProcessStartInfo
-                            {
-                                FileName = resolvedPath,
-                                UseShellExecute = true,
-                                Arguments = launch.Arguments ?? string.Empty,
-                            };
-
-                            var workingDirectory = Path.GetDirectoryName(resolvedPath);
-                            if (!string.IsNullOrEmpty(workingDirectory))
-                            {
-                                psi.WorkingDirectory = workingDirectory;
-                            }
-
-                            var executionContext = new ModuleAutoLaunchExecutionContext(launch, provider);
-                            moduleHost.NotifyAutoLaunchStarting(executionContext);
-                            Process.Start(psi);
-                            moduleHost.NotifyAutoLaunchCompleted(executionContext);
-                            eventLogger.LogEvent("AutoLaunch", $"Started executable ({launch.Origin}): {resolvedPath}");
-                        }
-                        catch (Exception ex)
-                        {
-                            var failureContext = new ModuleAutoLaunchFailureContext(launch, ex, provider);
-                            moduleHost.NotifyAutoLaunchFailed(failureContext);
-                            eventLogger.LogEvent("AutoLaunch", $"Failed to start executable ({launch.Origin}): {ex.Message}", Serilog.Events.LogEventLevel.Error);
-                        }
+                        resolvedPath = Path.GetFullPath(resolvedPath);
                     }
-                };
-            }
 
-            moduleHost.NotifyAppRunStarting(new ModuleAppRunContext(mainForm, provider));
-            eventLogger.LogEvent("Bootstrap", "Starting WinForms message loop.");
-            WinFormsApp.Run(mainForm);
-            eventLogger.LogEvent("Bootstrap", "WinForms message loop exited.");
-            moduleHost.NotifyAppRunCompleted(new ModuleAppRunContext(mainForm, provider));
-            moduleHost.NotifyAppShutdownStarting(new ModuleAppShutdownContext(provider));
-            eventLogger.LogEvent("Bootstrap", "Disposing service provider and shutting down.");
-            (provider as IDisposable)?.Dispose();
-            moduleHost.NotifyAppShutdownCompleted(new ModuleAppShutdownContext(provider));
-            eventLogger.LogEvent("Bootstrap", "Application shutdown complete.");
+                    if (!File.Exists(resolvedPath))
+                    {
+                        var failureContext = new ModuleAutoLaunchFailureContext(launch, new FileNotFoundException("Executable not found", resolvedPath), provider);
+                        moduleHost.NotifyAutoLaunchFailed(failureContext);
+                        eventLogger.LogEvent("AutoLaunch", $"Executable not found ({launch.Origin}): {resolvedPath}", Serilog.Events.LogEventLevel.Error);
+                        continue;
+                    }
+
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = resolvedPath,
+                        UseShellExecute = true,
+                        Arguments = launch.Arguments ?? string.Empty,
+                    };
+
+                    var workingDirectory = Path.GetDirectoryName(resolvedPath);
+                    if (!string.IsNullOrEmpty(workingDirectory))
+                    {
+                        psi.WorkingDirectory = workingDirectory;
+                    }
+
+                    var executionContext = new ModuleAutoLaunchExecutionContext(launch, provider);
+                    moduleHost.NotifyAutoLaunchStarting(executionContext);
+                    Process.Start(psi);
+                    moduleHost.NotifyAutoLaunchCompleted(executionContext);
+                    eventLogger.LogEvent("AutoLaunch", $"Started executable ({launch.Origin}): {resolvedPath}");
+                }
+                catch (Exception ex)
+                {
+                    var failureContext = new ModuleAutoLaunchFailureContext(launch, ex, provider);
+                    moduleHost.NotifyAutoLaunchFailed(failureContext);
+                    eventLogger.LogEvent("AutoLaunch", $"Failed to start executable ({launch.Origin}): {ex.Message}", Serilog.Events.LogEventLevel.Error);
+                }
+            }
         }
     }
 }
