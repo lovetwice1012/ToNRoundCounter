@@ -25,6 +25,8 @@ using MediaPlayer = System.Windows.Media.MediaPlayer;
 using WinFormsApp = System.Windows.Forms.Application;
 using ToNRoundCounter.Infrastructure.Interop;
 
+#nullable enable
+
 namespace ToNRoundCounter.UI
 {
     public partial class MainForm : Form, IMainView

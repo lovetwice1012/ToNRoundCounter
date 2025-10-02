@@ -173,7 +173,7 @@ namespace ToNRoundCounter.UI.DirectX
                 return glyphs;
             }
 
-            foreach (char c in text)
+            foreach (char c in text!)
             {
                 if (c == '.')
                 {

@@ -163,7 +163,7 @@ namespace ToNRoundCounter
                     return new AppSettingsData();
                 }
 
-                var json = await File.ReadAllTextAsync("appsettings.json").ConfigureAwait(false);
+                var json = await Task.Run(() => File.ReadAllText("appsettings.json")).ConfigureAwait(false);
                 return JsonConvert.DeserializeObject<AppSettingsData>(json) ?? new AppSettingsData();
             }
             catch
