@@ -8,6 +8,7 @@ namespace ToNRoundCounter.Application
     public class StateService
     {
         public event Action? StateChanged;
+        public event Action<Round, string>? RoundLogAdded;
 
         private readonly object _sync = new object();
         private readonly IEventLogger? _logger;
@@ -21,6 +22,7 @@ namespace ToNRoundCounter.Application
         private readonly Dictionary<string, string?> _roundMapNames = new();
         private readonly TerrorMapNameCollection _terrorMapNames = new();
         private readonly List<Tuple<Round, string>> _roundLogHistory = new();
+        private IReadOnlyList<Tuple<Round, string>>? _roundLogHistoryCache;
         private readonly Dictionary<string, object> _stats = new();
         public int RoundCycle { get; private set; } = 0;
 
@@ -36,14 +38,14 @@ namespace ToNRoundCounter.Application
             var handlers = StateChanged;
             if (handlers == null)
             {
-                _logger?.LogEvent("StateService", $"State change '{reason}' occurred but no subscribers were registered.", LogEventLevel.Debug);
+                _logger?.LogEvent("StateService", () => $"State change '{reason}' occurred but no subscribers were registered.", LogEventLevel.Debug);
                 return;
             }
 
             var subscriberCount = handlers.GetInvocationList().Length;
-            _logger?.LogEvent("StateService", $"Notifying {subscriberCount} subscriber(s) of state change '{reason}'.", LogEventLevel.Debug);
+            _logger?.LogEvent("StateService", () => $"Notifying {subscriberCount} subscriber(s) of state change '{reason}'.", LogEventLevel.Debug);
             handlers.Invoke();
-            _logger?.LogEvent("StateService", $"State change '{reason}' notifications completed.", LogEventLevel.Debug);
+            _logger?.LogEvent("StateService", () => $"State change '{reason}' notifications completed.", LogEventLevel.Debug);
         }
 
         private static string DescribeRound(Round? round)
@@ -58,7 +60,7 @@ namespace ToNRoundCounter.Application
 
         public void UpdateCurrentRound(Round? round)
         {
-            _logger?.LogEvent("StateService", $"Updating current round to {DescribeRound(round)}.");
+            _logger?.LogEvent("StateService", () => $"Updating current round to {DescribeRound(round)}.");
             Round? archivedRound = null;
             lock (_sync)
             {
@@ -73,25 +75,33 @@ namespace ToNRoundCounter.Application
 
             if (archivedRound != null)
             {
-                _logger?.LogEvent("StateService", $"Archived previous round as {DescribeRound(archivedRound)}.", LogEventLevel.Debug);
+                _logger?.LogEvent("StateService", () => $"Archived previous round as {DescribeRound(archivedRound)}.", LogEventLevel.Debug);
             }
             NotifyStateChanged(nameof(UpdateCurrentRound));
         }
 
         public void AddRoundLog(Round round, string logEntry)
         {
-            _logger?.LogEvent("StateService", $"Appending round log entry for {DescribeRound(round)}: {logEntry}");
+            _logger?.LogEvent("StateService", () => $"Appending round log entry for {DescribeRound(round)}: {logEntry}");
+
+            var snapshot = round.Clone();
+            Action<Round, string>? roundLogHandlers;
             lock (_sync)
             {
-                _roundLogHistory.Add(new Tuple<Round, string>(round, logEntry));
+                _roundLogHistory.Add(new Tuple<Round, string>(snapshot, logEntry));
+                _roundLogHistoryCache = null;
+                roundLogHandlers = RoundLogAdded;
             }
+
             try
             {
-                _roundDataRepository?.AddRoundLog(round.Clone(), logEntry, DateTime.UtcNow);
+                _roundDataRepository?.AddRoundLog(snapshot.Clone(), logEntry, DateTime.UtcNow);
             }
             catch
             {
             }
+
+            roundLogHandlers?.Invoke(snapshot, logEntry);
             NotifyStateChanged(nameof(AddRoundLog));
         }
 
@@ -103,7 +113,7 @@ namespace ToNRoundCounter.Application
                 RoundCycle++;
                 updatedValue = RoundCycle;
             }
-            _logger?.LogEvent("StateService", $"Round cycle incremented to {updatedValue}.");
+            _logger?.LogEvent("StateService", () => $"Round cycle incremented to {updatedValue}.");
             try
             {
                 _roundDataRepository?.UpsertStat("RoundCycle", updatedValue, DateTime.UtcNow);
@@ -116,7 +126,7 @@ namespace ToNRoundCounter.Application
 
         public void SetRoundCycle(int value)
         {
-            _logger?.LogEvent("StateService", $"Setting round cycle to {value}.");
+            _logger?.LogEvent("StateService", () => $"Setting round cycle to {value}.");
             lock (_sync)
             {
                 RoundCycle = value;
@@ -133,7 +143,7 @@ namespace ToNRoundCounter.Application
 
         public void RecordRoundResult(string roundType, string? terrorType, bool survived)
         {
-            _logger?.LogEvent("StateService", $"Recording round result. Round: {roundType}, Terror: {terrorType ?? "<none>"}, Survived: {survived}");
+            _logger?.LogEvent("StateService", () => $"Recording round result. Round: {roundType}, Terror: {terrorType ?? "<none>"}, Survived: {survived}");
             lock (_sync)
             {
                 if (!_roundAggregates.TryGetValue(roundType, out var roundAgg))
@@ -165,7 +175,7 @@ namespace ToNRoundCounter.Application
 
         public void UpdateStat(string name, object value)
         {
-            _logger?.LogEvent("StateService", $"Updating stat '{name}' to value '{value}'.", LogEventLevel.Debug);
+            _logger?.LogEvent("StateService", () => $"Updating stat '{name}' to value '{value}'.", LogEventLevel.Debug);
             lock (_sync)
             {
                 _stats[name] = value;
@@ -192,6 +202,7 @@ namespace ToNRoundCounter.Application
                 _roundMapNames.Clear();
                 _terrorMapNames.Clear();
                 _roundLogHistory.Clear();
+                _roundLogHistoryCache = null;
                 RoundCycle = 0;
                 _stats.Clear();
             }
@@ -206,23 +217,23 @@ namespace ToNRoundCounter.Application
             {
                 snapshot = new Dictionary<string, RoundAggregate>(_roundAggregates);
             }
-            _logger?.LogEvent("StateService", $"Providing round aggregates snapshot with {snapshot.Count} entries.", LogEventLevel.Debug);
+            _logger?.LogEvent("StateService", () => $"Providing round aggregates snapshot with {snapshot.Count} entries.", LogEventLevel.Debug);
             return snapshot;
         }
 
         public bool TryGetTerrorAggregates(string round, out Dictionary<string, TerrorAggregate>? terrorDict)
         {
-            _logger?.LogEvent("StateService", $"Retrieving terror aggregates for round '{round}'.", LogEventLevel.Debug);
+            _logger?.LogEvent("StateService", () => $"Retrieving terror aggregates for round '{round}'.", LogEventLevel.Debug);
             lock (_sync)
             {
                 if (_terrorAggregates.TryGetRound(round, out var dict))
                 {
                     terrorDict = new Dictionary<string, TerrorAggregate>(dict);
-                    _logger?.LogEvent("StateService", $"Terror aggregates retrieval succeeded for round '{round}' with {terrorDict.Count} entries.", LogEventLevel.Debug);
+                    _logger?.LogEvent("StateService", () => $"Terror aggregates retrieval succeeded for round '{round}' with {terrorDict.Count} entries.", LogEventLevel.Debug);
                     return true;
                 }
                 terrorDict = null;
-                _logger?.LogEvent("StateService", $"Terror aggregates retrieval failed for round '{round}'.", LogEventLevel.Debug);
+                _logger?.LogEvent("StateService", () => $"Terror aggregates retrieval failed for round '{round}'.", LogEventLevel.Debug);
                 return false;
             }
         }
@@ -234,7 +245,7 @@ namespace ToNRoundCounter.Application
             {
                 snapshot = new Dictionary<string, string?>(_roundMapNames);
             }
-            _logger?.LogEvent("StateService", $"Providing round map names snapshot with {snapshot.Count} entries.", LogEventLevel.Debug);
+            _logger?.LogEvent("StateService", () => $"Providing round map names snapshot with {snapshot.Count} entries.", LogEventLevel.Debug);
             return snapshot;
         }
 
@@ -242,7 +253,7 @@ namespace ToNRoundCounter.Application
         {
             if (string.IsNullOrWhiteSpace(roundType))
             {
-                _logger?.LogEvent("StateService", $"Cannot resolve round map name for empty round type '{roundType}'.", LogEventLevel.Debug);
+                _logger?.LogEvent("StateService", () => $"Cannot resolve round map name for empty round type '{roundType}'.", LogEventLevel.Debug);
                 return null;
             }
 
@@ -250,12 +261,12 @@ namespace ToNRoundCounter.Application
             {
                 if (_roundMapNames.TryGetValue(roundType, out var storedName) && !string.IsNullOrWhiteSpace(storedName))
                 {
-                    _logger?.LogEvent("StateService", $"Resolved round map name '{storedName}' for round '{roundType}'.", LogEventLevel.Debug);
+                    _logger?.LogEvent("StateService", () => $"Resolved round map name '{storedName}' for round '{roundType}'.", LogEventLevel.Debug);
                     return storedName;
                 }
             }
 
-            _logger?.LogEvent("StateService", $"No stored map name found for round '{roundType}'.", LogEventLevel.Debug);
+            _logger?.LogEvent("StateService", () => $"No stored map name found for round '{roundType}'.", LogEventLevel.Debug);
             return null;
         }
 
@@ -263,11 +274,11 @@ namespace ToNRoundCounter.Application
         {
             if (string.IsNullOrWhiteSpace(roundType) || string.IsNullOrWhiteSpace(mapName))
             {
-                _logger?.LogEvent("StateService", $"Ignoring empty round or map name assignment. Round: '{roundType}', Map: '{mapName}'.", LogEventLevel.Debug);
+                _logger?.LogEvent("StateService", () => $"Ignoring empty round or map name assignment. Round: '{roundType}', Map: '{mapName}'.", LogEventLevel.Debug);
                 return;
             }
 
-            _logger?.LogEvent("StateService", $"Associating map '{mapName}' with round '{roundType}'.");
+            _logger?.LogEvent("StateService", () => $"Associating map '{mapName}' with round '{roundType}'.");
             lock (_sync)
             {
                 _roundMapNames[roundType] = mapName;
@@ -279,11 +290,11 @@ namespace ToNRoundCounter.Application
         {
             if (string.IsNullOrWhiteSpace(round) || string.IsNullOrWhiteSpace(terror) || string.IsNullOrWhiteSpace(mapName))
             {
-                _logger?.LogEvent("StateService", $"Ignoring empty terror map assignment. Round: '{round}', Terror: '{terror}', Map: '{mapName}'.", LogEventLevel.Debug);
+                _logger?.LogEvent("StateService", () => $"Ignoring empty terror map assignment. Round: '{round}', Terror: '{terror}', Map: '{mapName}'.", LogEventLevel.Debug);
                 return;
             }
 
-            _logger?.LogEvent("StateService", $"Associating terror map '{mapName}' with round '{round}' / terror '{terror}'.");
+            _logger?.LogEvent("StateService", () => $"Associating terror map '{mapName}' with round '{round}' / terror '{terror}'.");
             lock (_sync)
             {
                 _terrorMapNames.Set(round, terror, mapName);
@@ -295,7 +306,7 @@ namespace ToNRoundCounter.Application
         {
             if (string.IsNullOrWhiteSpace(round) || string.IsNullOrWhiteSpace(terror))
             {
-                _logger?.LogEvent("StateService", $"Cannot retrieve terror map name with empty identifiers. Round: '{round}', Terror: '{terror}'.", LogEventLevel.Debug);
+                _logger?.LogEvent("StateService", () => $"Cannot retrieve terror map name with empty identifiers. Round: '{round}', Terror: '{terror}'.", LogEventLevel.Debug);
                 return null;
             }
 
@@ -306,23 +317,35 @@ namespace ToNRoundCounter.Application
                     terrorDict.TryGetValue(terror, out var storedName) &&
                     !string.IsNullOrWhiteSpace(storedName))
                 {
-                    _logger?.LogEvent("StateService", $"Resolved terror map name '{storedName}' for round '{round}' and terror '{terror}'.", LogEventLevel.Debug);
+                    _logger?.LogEvent("StateService", () => $"Resolved terror map name '{storedName}' for round '{round}' and terror '{terror}'.", LogEventLevel.Debug);
                     return storedName;
                 }
             }
 
-            _logger?.LogEvent("StateService", $"No terror map name found for round '{round}' and terror '{terror}'.", LogEventLevel.Debug);
+            _logger?.LogEvent("StateService", () => $"No terror map name found for round '{round}' and terror '{terror}'.", LogEventLevel.Debug);
             return null;
         }
 
         public IReadOnlyList<Tuple<Round, string>> GetRoundLogHistory()
         {
-            Tuple<Round, string>[] snapshot;
+            IReadOnlyList<Tuple<Round, string>> snapshot;
             lock (_sync)
             {
-                snapshot = _roundLogHistory.ToArray();
+                if (_roundLogHistoryCache == null)
+                {
+                    var entries = new Tuple<Round, string>[_roundLogHistory.Count];
+                    for (int i = 0; i < _roundLogHistory.Count; i++)
+                    {
+                        var entry = _roundLogHistory[i];
+                        entries[i] = new Tuple<Round, string>(entry.Item1.Clone(), entry.Item2);
+                    }
+                    _roundLogHistoryCache = Array.AsReadOnly(entries);
+                }
+
+                snapshot = _roundLogHistoryCache;
             }
-            _logger?.LogEvent("StateService", $"Providing round log history snapshot with {snapshot.Length} entries.", LogEventLevel.Debug);
+
+            _logger?.LogEvent("StateService", () => $"Providing round log history snapshot with {snapshot.Count} entries.", LogEventLevel.Debug);
             return snapshot;
         }
 
@@ -333,7 +356,7 @@ namespace ToNRoundCounter.Application
             {
                 snapshot = new Dictionary<string, object>(_stats);
             }
-            _logger?.LogEvent("StateService", $"Providing statistics snapshot with {snapshot.Count} entries.", LogEventLevel.Debug);
+            _logger?.LogEvent("StateService", () => $"Providing statistics snapshot with {snapshot.Count} entries.", LogEventLevel.Debug);
             return snapshot;
         }
     }

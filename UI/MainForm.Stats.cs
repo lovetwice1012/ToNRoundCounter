@@ -16,8 +16,6 @@ namespace ToNRoundCounter.UI
     {
         private readonly object aggregateStatsUpdateSync = new();
         private CancellationTokenSource? aggregateStatsUpdateCts;
-        private readonly object roundLogUpdateSync = new();
-        private CancellationTokenSource? roundLogUpdateCts;
 
         private readonly struct FormattedTextLine
         {
@@ -280,53 +278,44 @@ namespace ToNRoundCounter.UI
         public void UpdateRoundLog(IEnumerable<string> logEntries)
         {
             var entries = logEntries ?? Array.Empty<string>();
-            var cts = RenewTokenSource(ref roundLogUpdateCts, roundLogUpdateSync);
-            var token = cts.Token;
-
-            Task.Run(() =>
+            var builder = new StringBuilder();
+            foreach (var entry in entries)
             {
+                builder.AppendLine(entry ?? string.Empty);
+            }
+
+            var text = builder.ToString();
+            _dispatcher.Invoke(() =>
+            {
+                logPanel.RoundLogTextBox.SuspendLayout();
                 try
                 {
-                    var builder = new StringBuilder();
-                    foreach (var entry in entries)
-                    {
-                        if (token.IsCancellationRequested)
-                        {
-                            return;
-                        }
-
-                        builder.AppendLine(entry ?? string.Empty);
-                    }
-
-                    if (token.IsCancellationRequested)
-                    {
-                        return;
-                    }
-
-                    var text = builder.ToString();
-                    _dispatcher.Invoke(() =>
-                    {
-                        if (token.IsCancellationRequested)
-                        {
-                            return;
-                        }
-
-                        logPanel.RoundLogTextBox.SuspendLayout();
-                        try
-                        {
-                            logPanel.RoundLogTextBox.Text = text;
-                            logPanel.RoundLogTextBox.SelectionStart = logPanel.RoundLogTextBox.TextLength;
-                            logPanel.RoundLogTextBox.ScrollToCaret();
-                        }
-                        finally
-                        {
-                            logPanel.RoundLogTextBox.ResumeLayout();
-                        }
-                    });
+                    logPanel.RoundLogTextBox.Text = text;
+                    logPanel.RoundLogTextBox.SelectionStart = logPanel.RoundLogTextBox.TextLength;
+                    logPanel.RoundLogTextBox.ScrollToCaret();
                 }
                 finally
                 {
-                    cts.Dispose();
+                    logPanel.RoundLogTextBox.ResumeLayout();
+                }
+            });
+        }
+
+        public void AppendRoundLogEntry(string logEntry)
+        {
+            var entry = logEntry ?? string.Empty;
+            _dispatcher.Invoke(() =>
+            {
+                logPanel.RoundLogTextBox.SuspendLayout();
+                try
+                {
+                    logPanel.RoundLogTextBox.AppendText(entry + Environment.NewLine);
+                    logPanel.RoundLogTextBox.SelectionStart = logPanel.RoundLogTextBox.TextLength;
+                    logPanel.RoundLogTextBox.ScrollToCaret();
+                }
+                finally
+                {
+                    logPanel.RoundLogTextBox.ResumeLayout();
                 }
             });
         }
