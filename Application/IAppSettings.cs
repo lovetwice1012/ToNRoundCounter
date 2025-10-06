@@ -73,6 +73,7 @@ namespace ToNRoundCounter.Application
         string AutoRecordingArguments { get; set; }
         string AutoRecordingOutputDirectory { get; set; }
         string AutoRecordingOutputExtension { get; set; }
+        bool AutoRecordingIncludeOverlay { get; set; }
         List<string> AutoRecordingRoundTypes { get; set; }
         List<string> AutoRecordingTerrors { get; set; }
         string DiscordWebhookUrl { get; set; }

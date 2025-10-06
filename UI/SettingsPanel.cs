@@ -115,6 +115,7 @@ namespace ToNRoundCounter.UI
         public CheckBox AutoRecordingEnabledCheckBox { get; private set; } = null!;
         public TextBox AutoRecordingWindowTitleTextBox { get; private set; } = null!;
         public NumericUpDown AutoRecordingFrameRateNumeric { get; private set; } = null!;
+        public CheckBox AutoRecordingIncludeOverlayCheckBox { get; private set; } = null!;
         public TextBox AutoRecordingOutputDirectoryTextBox { get; private set; } = null!;
         public ComboBox AutoRecordingFormatComboBox { get; private set; } = null!;
         public CheckedListBox AutoRecordingRoundTypesListBox { get; private set; } = null!;
@@ -1042,7 +1043,15 @@ namespace ToNRoundCounter.UI
             autoRecordingFpsLabel.Location = new Point(AutoRecordingFrameRateNumeric.Right + 8, AutoRecordingFrameRateNumeric.Top + 4);
             grpAutoRecording.Controls.Add(autoRecordingFpsLabel);
 
-            autoRecordingInnerY = AutoRecordingFrameRateNumeric.Bottom + 10;
+            autoRecordingInnerY = AutoRecordingFrameRateNumeric.Bottom + 8;
+
+            AutoRecordingIncludeOverlayCheckBox = new CheckBox();
+            AutoRecordingIncludeOverlayCheckBox.Text = LanguageManager.Translate("AutoRecording_IncludeOverlay");
+            AutoRecordingIncludeOverlayCheckBox.AutoSize = true;
+            AutoRecordingIncludeOverlayCheckBox.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(AutoRecordingIncludeOverlayCheckBox);
+
+            autoRecordingInnerY = AutoRecordingIncludeOverlayCheckBox.Bottom + 10;
 
             Label autoRecordingOutputLabel = new Label();
             autoRecordingOutputLabel.Text = LanguageManager.Translate("出力フォルダー");
@@ -1133,6 +1142,7 @@ namespace ToNRoundCounter.UI
             AutoRecordingFrameRateNumeric.Value = Math.Min(Math.Max(_settings.AutoRecordingFrameRate, 5), 60);
             AutoRecordingOutputDirectoryTextBox.Text = _settings.AutoRecordingOutputDirectory;
             AutoRecordingEnabledCheckBox.Checked = _settings.AutoRecordingEnabled;
+            AutoRecordingIncludeOverlayCheckBox.Checked = _settings.AutoRecordingIncludeOverlay;
             SetAutoRecordingFormat(_settings.AutoRecordingOutputExtension);
             SetAutoRecordingRoundTypes(_settings.AutoRecordingRoundTypes);
             SetAutoRecordingTerrors(_settings.AutoRecordingTerrors);
@@ -2564,6 +2574,10 @@ namespace ToNRoundCounter.UI
             if (AutoRecordingFrameRateNumeric != null)
             {
                 AutoRecordingFrameRateNumeric.Enabled = enabled;
+            }
+            if (AutoRecordingIncludeOverlayCheckBox != null)
+            {
+                AutoRecordingIncludeOverlayCheckBox.Enabled = enabled;
             }
             if (AutoRecordingOutputDirectoryTextBox != null)
             {

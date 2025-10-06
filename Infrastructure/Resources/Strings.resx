@@ -293,6 +293,9 @@ Please obtain an API key from the website.</value>
   <data name="AutoRecording_FormatOption_GIF" xml:space="preserve">
     <value>GIF (animated image)</value>
   </data>
+  <data name="AutoRecording_IncludeOverlay" xml:space="preserve">
+    <value>Include overlay windows in recordings</value>
+  </data>
   <data name="AutoRecording_FormatHelp" xml:space="preserve">
     <value>AVI creates lossless recordings but results in large files. MP4, MOV, MKV, and FLV use H.264 to balance size and compatibility. WMV and ASF produce Windows Media Video files. MPG and VOB generate MPEG-2 program streams. GIF produces lightweight animated images with limited colors and frame rate.</value>
   </data>
