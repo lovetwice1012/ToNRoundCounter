@@ -92,7 +92,9 @@ namespace ToNRoundCounter.Infrastructure
         public double ItemMusicMaxSpeed { get; set; }
         public bool AutoRecordingEnabled { get; set; }
         public string AutoRecordingWindowTitle { get; set; } = "VRChat";
+        public string AutoRecordingCommand { get; set; } = string.Empty;
         public int AutoRecordingFrameRate { get; set; } = 30;
+        public string AutoRecordingArguments { get; set; } = string.Empty;
         public string AutoRecordingOutputDirectory { get; set; } = "recordings";
         public string AutoRecordingOutputExtension { get; set; } = "avi";
         public List<string> AutoRecordingRoundTypes { get; set; } = new List<string>();
@@ -372,7 +374,13 @@ namespace ToNRoundCounter.Infrastructure
             AutoRecordingWindowTitle = string.IsNullOrWhiteSpace(AutoRecordingWindowTitle)
                 ? "VRChat"
                 : AutoRecordingWindowTitle.Trim();
+            AutoRecordingCommand = string.IsNullOrWhiteSpace(AutoRecordingCommand)
+                ? string.Empty
+                : AutoRecordingCommand.Trim();
             AutoRecordingFrameRate = NormalizeRecordingFrameRate(AutoRecordingFrameRate);
+            AutoRecordingArguments = string.IsNullOrWhiteSpace(AutoRecordingArguments)
+                ? string.Empty
+                : AutoRecordingArguments.Trim();
             AutoRecordingOutputDirectory = string.IsNullOrWhiteSpace(AutoRecordingOutputDirectory)
                 ? "recordings"
                 : AutoRecordingOutputDirectory.Trim();
@@ -551,7 +559,9 @@ namespace ToNRoundCounter.Infrastructure
                 RoundBgmItemConflictBehavior = RoundBgmItemConflictBehavior,
                 AutoRecordingEnabled = AutoRecordingEnabled,
                 AutoRecordingWindowTitle = AutoRecordingWindowTitle,
+                AutoRecordingCommand = AutoRecordingCommand,
                 AutoRecordingFrameRate = AutoRecordingFrameRate,
+                AutoRecordingArguments = AutoRecordingArguments,
                 AutoRecordingOutputDirectory = AutoRecordingOutputDirectory,
                 AutoRecordingOutputExtension = AutoRecordingOutputExtension,
                 AutoRecordingRoundTypes = AutoRecordingRoundTypes,
@@ -644,7 +654,9 @@ namespace ToNRoundCounter.Infrastructure
         public RoundBgmItemConflictBehavior RoundBgmItemConflictBehavior { get; set; } = RoundBgmItemConflictBehavior.PlayBoth;
         public bool AutoRecordingEnabled { get; set; }
         public string AutoRecordingWindowTitle { get; set; } = "VRChat";
+        public string AutoRecordingCommand { get; set; } = string.Empty;
         public int AutoRecordingFrameRate { get; set; } = 30;
+        public string AutoRecordingArguments { get; set; } = string.Empty;
         public string AutoRecordingOutputDirectory { get; set; } = "recordings";
         public string AutoRecordingOutputExtension { get; set; } = "avi";
         public List<string> AutoRecordingRoundTypes { get; set; } = new List<string>();

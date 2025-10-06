@@ -114,12 +114,15 @@ namespace ToNRoundCounter.UI
         public TextBox DiscordWebhookUrlTextBox { get; private set; } = null!;
         public CheckBox AutoRecordingEnabledCheckBox { get; private set; } = null!;
         public TextBox AutoRecordingWindowTitleTextBox { get; private set; } = null!;
+        public TextBox AutoRecordingCommandTextBox { get; private set; } = null!;
+        public TextBox AutoRecordingArgumentsTextBox { get; private set; } = null!;
         public NumericUpDown AutoRecordingFrameRateNumeric { get; private set; } = null!;
         public TextBox AutoRecordingOutputDirectoryTextBox { get; private set; } = null!;
         public ComboBox AutoRecordingFormatComboBox { get; private set; } = null!;
         public CheckedListBox AutoRecordingRoundTypesListBox { get; private set; } = null!;
         public TextBox AutoRecordingTerrorNamesTextBox { get; private set; } = null!;
         private Button autoRecordingBrowseOutputButton = null!;
+        private Button autoRecordingBrowseCommandButton = null!;
         private Button roundLogExportButton = null!;
 
         private const string AutoLaunchEnabledColumnName = "AutoLaunchEnabled";
@@ -1055,16 +1058,16 @@ namespace ToNRoundCounter.UI
             AutoRecordingCommandTextBox.Width = columnWidth - innerMargin * 3 - 90;
             grpAutoRecording.Controls.Add(AutoRecordingCommandTextBox);
 
-            Button autoRecordingCommandBrowseButton = new Button();
-            autoRecordingCommandBrowseButton.Text = LanguageManager.Translate("参照...");
-            autoRecordingCommandBrowseButton.AutoSize = true;
-            autoRecordingCommandBrowseButton.Location = new Point(AutoRecordingCommandTextBox.Right + 10, AutoRecordingCommandTextBox.Top - 2);
-            autoRecordingCommandBrowseButton.Click += (s, e) =>
+            autoRecordingBrowseCommandButton = new Button();
+            autoRecordingBrowseCommandButton.Text = LanguageManager.Translate("参照...");
+            autoRecordingBrowseCommandButton.AutoSize = true;
+            autoRecordingBrowseCommandButton.Location = new Point(AutoRecordingCommandTextBox.Right + 10, AutoRecordingCommandTextBox.Top - 2);
+            autoRecordingBrowseCommandButton.Click += (s, e) =>
             {
                 BrowseForAutoRecordingExecutable();
                 RefreshAutoRecordingControlsState();
             };
-            grpAutoRecording.Controls.Add(autoRecordingCommandBrowseButton);
+            grpAutoRecording.Controls.Add(autoRecordingBrowseCommandButton);
 
             autoRecordingInnerY = AutoRecordingCommandTextBox.Bottom + 8;
 
@@ -1176,7 +1179,9 @@ namespace ToNRoundCounter.UI
 
             AutoRecordingEnabledCheckBox.CheckedChanged += (s, e) => RefreshAutoRecordingControlsState();
             AutoRecordingWindowTitleTextBox.Text = _settings.AutoRecordingWindowTitle;
+            AutoRecordingCommandTextBox.Text = _settings.AutoRecordingCommand ?? string.Empty;
             AutoRecordingFrameRateNumeric.Value = Math.Min(Math.Max(_settings.AutoRecordingFrameRate, 5), 60);
+            AutoRecordingArgumentsTextBox.Text = _settings.AutoRecordingArguments ?? string.Empty;
             AutoRecordingOutputDirectoryTextBox.Text = _settings.AutoRecordingOutputDirectory;
             AutoRecordingEnabledCheckBox.Checked = _settings.AutoRecordingEnabled;
             SetAutoRecordingFormat(_settings.AutoRecordingOutputExtension);
@@ -2553,6 +2558,29 @@ namespace ToNRoundCounter.UI
             }
         }
 
+        private void BrowseForAutoRecordingExecutable()
+        {
+            if (AutoRecordingCommandTextBox == null)
+            {
+                return;
+            }
+
+            using (OpenFileDialog dialog = new OpenFileDialog())
+            {
+                dialog.Filter = "実行ファイル|*.exe;*.bat;*.cmd;*.com|すべてのファイル|*.*";
+                string current = AutoRecordingCommandTextBox.Text ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(current))
+                {
+                    dialog.FileName = current;
+                }
+
+                if (dialog.ShowDialog() == DialogResult.OK)
+                {
+                    AutoRecordingCommandTextBox.Text = dialog.FileName;
+                }
+            }
+        }
+
         private void BrowseForAutoRecordingOutputDirectory()
         {
             if (AutoRecordingOutputDirectoryTextBox == null)
@@ -2607,9 +2635,17 @@ namespace ToNRoundCounter.UI
             {
                 AutoRecordingWindowTitleTextBox.Enabled = enabled;
             }
+            if (AutoRecordingCommandTextBox != null)
+            {
+                AutoRecordingCommandTextBox.Enabled = enabled;
+            }
             if (AutoRecordingFrameRateNumeric != null)
             {
                 AutoRecordingFrameRateNumeric.Enabled = enabled;
+            }
+            if (AutoRecordingArgumentsTextBox != null)
+            {
+                AutoRecordingArgumentsTextBox.Enabled = enabled;
             }
             if (AutoRecordingOutputDirectoryTextBox != null)
             {
@@ -2622,6 +2658,10 @@ namespace ToNRoundCounter.UI
             if (autoRecordingBrowseOutputButton != null)
             {
                 autoRecordingBrowseOutputButton.Enabled = enabled;
+            }
+            if (autoRecordingBrowseCommandButton != null)
+            {
+                autoRecordingBrowseCommandButton.Enabled = enabled;
             }
             if (AutoRecordingRoundTypesListBox != null)
             {
