@@ -236,14 +236,14 @@ namespace ToNRoundCounter.Application
                 .ToList();
         }
 
-        private static IEnumerable<string> SplitTerrorNames(string terrorKey)
+        private static IEnumerable<string> SplitTerrorNames(string? terrorKey)
         {
             if (string.IsNullOrWhiteSpace(terrorKey))
             {
                 yield break;
             }
 
-            foreach (var part in terrorKey.Split(new[] { '&', ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            foreach (var part in terrorKey!.Split(new[] { '&', ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
             {
                 var value = part.Trim();
                 if (!string.IsNullOrWhiteSpace(value))

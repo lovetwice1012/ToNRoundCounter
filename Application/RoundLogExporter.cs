@@ -108,8 +108,22 @@ namespace ToNRoundCounter.Application
                 Directory.CreateDirectory(directory);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
+
             var json = JsonConvert.SerializeObject(exportEntries, Formatting.Indented);
-            await File.WriteAllTextAsync(options.OutputPath, json, cancellationToken).ConfigureAwait(false);
+
+            using (var stream = new FileStream(
+                       options.OutputPath,
+                       FileMode.Create,
+                       FileAccess.Write,
+                       FileShare.None,
+                       4096,
+                       useAsync: true))
+            using (var writer = new StreamWriter(stream))
+            {
+                await writer.WriteAsync(json).ConfigureAwait(false);
+                await writer.FlushAsync().ConfigureAwait(false);
+            }
             _logger?.Information("Exported {Count} round log entries to '{OutputPath}'.", exportEntries.Count, options.OutputPath);
             return exportEntries.Count;
         }
@@ -156,78 +170,85 @@ namespace ToNRoundCounter.Application
                 Mode = SqliteOpenMode.ReadOnly
             };
 
-            await using var connection = new SqliteConnection(builder.ToString());
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-
-            await using var command = connection.CreateCommand();
-            command.CommandText = "SELECT Id, RoundId, RoundJson, RoundType, TerrorKey, MapName, IsDeath, CreatedAt, RoundInt, MapId, TerrorIds FROM RoundLogs";
-
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            using (var connection = new SqliteConnection(builder.ToString()))
             {
-                long rowId = reader.GetInt64(0);
-                string? roundId = reader.IsDBNull(1) ? null : reader.GetString(1);
-                string? roundJson = reader.IsDBNull(2) ? null : reader.GetString(2);
-                string? roundType = reader.IsDBNull(3) ? null : reader.GetString(3);
-                string? terrorKey = reader.IsDBNull(4) ? null : reader.GetString(4);
-                string? mapName = reader.IsDBNull(5) ? null : reader.GetString(5);
-                bool isDeath = !reader.IsDBNull(6) && reader.GetInt32(6) == 1;
-                string? createdAtRaw = reader.IsDBNull(7) ? null : reader.GetString(7);
-                int? roundInt = reader.IsDBNull(8) ? (int?)null : reader.GetInt32(8);
-                int? mapId = reader.IsDBNull(9) ? (int?)null : reader.GetInt32(9);
-                string? terrorIdsJson = reader.IsDBNull(10) ? null : reader.GetString(10);
+                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-                var round = DeserializeRound(roundJson) ?? new Round();
-                if (!string.IsNullOrWhiteSpace(roundType))
+                using (var command = connection.CreateCommand())
                 {
-                    round.RoundType = roundType;
-                }
-                if (!string.IsNullOrWhiteSpace(terrorKey))
-                {
-                    round.TerrorKey = terrorKey;
-                }
-                if (!string.IsNullOrWhiteSpace(mapName))
-                {
-                    round.MapName = mapName;
-                }
-                round.IsDeath = round.IsDeath || isDeath;
+                    command.CommandText = "SELECT Id, RoundId, RoundJson, RoundType, TerrorKey, MapName, IsDeath, CreatedAt, RoundInt, MapId, TerrorIds FROM RoundLogs";
 
-                if (roundInt.HasValue)
-                {
-                    round.RoundNumber = roundInt;
-                }
-
-                if (mapId.HasValue)
-                {
-                    round.MapId = mapId;
-                }
-
-                if (!string.IsNullOrWhiteSpace(terrorIdsJson))
-                {
-                    try
+                    var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                    using (reader)
                     {
-                        var ids = JsonConvert.DeserializeObject<int[]>(terrorIdsJson);
-                        if (ids != null)
+                        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                         {
-                            round.TerrorIds = ids;
+                            long rowId = reader.GetInt64(0);
+                            string? roundId = reader.IsDBNull(1) ? null : reader.GetString(1);
+                            string? roundJson = reader.IsDBNull(2) ? null : reader.GetString(2);
+                            string? roundType = reader.IsDBNull(3) ? null : reader.GetString(3);
+                            string? terrorKey = reader.IsDBNull(4) ? null : reader.GetString(4);
+                            string? mapName = reader.IsDBNull(5) ? null : reader.GetString(5);
+                            bool isDeath = !reader.IsDBNull(6) && reader.GetInt32(6) == 1;
+                            string? createdAtRaw = reader.IsDBNull(7) ? null : reader.GetString(7);
+                            int? roundInt = reader.IsDBNull(8) ? (int?)null : reader.GetInt32(8);
+                            int? mapId = reader.IsDBNull(9) ? (int?)null : reader.GetInt32(9);
+                            string? terrorIdsJson = reader.IsDBNull(10) ? null : reader.GetString(10);
+
+                            var round = DeserializeRound(roundJson) ?? new Round();
+                            if (!string.IsNullOrWhiteSpace(roundType))
+                            {
+                                round.RoundType = roundType;
+                            }
+                            if (!string.IsNullOrWhiteSpace(terrorKey))
+                            {
+                                round.TerrorKey = terrorKey;
+                            }
+                            if (!string.IsNullOrWhiteSpace(mapName))
+                            {
+                                round.MapName = mapName;
+                            }
+                            round.IsDeath = round.IsDeath || isDeath;
+
+                            if (roundInt.HasValue)
+                            {
+                                round.RoundNumber = roundInt;
+                            }
+
+                            if (mapId.HasValue)
+                            {
+                                round.MapId = mapId;
+                            }
+
+                            if (!string.IsNullOrWhiteSpace(terrorIdsJson))
+                            {
+                                try
+                                {
+                                    var ids = JsonConvert.DeserializeObject<int[]>(terrorIdsJson!);
+                                    if (ids != null)
+                                    {
+                                        round.TerrorIds = ids;
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger?.Warning(ex, "Failed to parse terror IDs from '{DatabasePath}'.", databasePath);
+                                }
+                            }
+
+                            DateTime timestamp = ParseTimestamp(createdAtRaw);
+
+                            results.Add(new RoundLogRecord
+                            {
+                                RowId = rowId,
+                                RoundId = roundId,
+                                Round = round,
+                                Timestamp = timestamp,
+                                SourcePath = databasePath
+                            });
                         }
                     }
-                    catch (Exception ex)
-                    {
-                        _logger?.Warning(ex, "Failed to parse terror IDs from '{DatabasePath}'.", databasePath);
-                    }
                 }
-
-                DateTime timestamp = ParseTimestamp(createdAtRaw);
-
-                results.Add(new RoundLogRecord
-                {
-                    RowId = rowId,
-                    RoundId = roundId,
-                    Round = round,
-                    Timestamp = timestamp,
-                    SourcePath = databasePath
-                });
             }
 
             return results;
@@ -242,7 +263,7 @@ namespace ToNRoundCounter.Application
 
             try
             {
-                return JsonConvert.DeserializeObject<Round>(roundJson);
+                return JsonConvert.DeserializeObject<Round>(roundJson!);
             }
             catch
             {
@@ -344,7 +365,7 @@ namespace ToNRoundCounter.Application
                 return new List<string>();
             }
 
-            return terrorKey
+            return terrorKey!
                 .Split(TerrorSeparators, StringSplitOptions.RemoveEmptyEntries)
                 .Select(t => t.Trim())
                 .Where(t => !string.IsNullOrWhiteSpace(t))
@@ -389,29 +410,29 @@ namespace ToNRoundCounter.Application
 
             if (!string.IsNullOrWhiteSpace(roundType))
             {
-                if (AlternateRounds.Contains(roundType))
+                if (AlternateRounds.Contains(roundType!))
                 {
                     group = 1;
                 }
-                else if (EightPagesRounds.Contains(roundType))
+                else if (EightPagesRounds.Contains(roundType!))
                 {
                     group = 2;
                 }
-                else if (UnboundRounds.Contains(roundType))
+                else if (UnboundRounds.Contains(roundType!))
                 {
                     group = 3;
                 }
-                else if (MoonRounds.Contains(roundType))
+                else if (MoonRounds.Contains(roundType!))
                 {
                     group = 4;
                 }
-                else if (EventRounds.Contains(roundType))
+                else if (EventRounds.Contains(roundType!))
                 {
                     group = 6;
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(terrorName) && SpecialGroupOverrideTerrors.Contains(terrorName))
+            if (!string.IsNullOrWhiteSpace(terrorName) && SpecialGroupOverrideTerrors.Contains(terrorName!))
             {
                 group = 6;
             }
@@ -421,7 +442,7 @@ namespace ToNRoundCounter.Application
 
         private int? ResolveEncounter(string? terrorName)
         {
-            if (!string.IsNullOrWhiteSpace(terrorName) && EncounterlessTerrors.Contains(terrorName))
+            if (!string.IsNullOrWhiteSpace(terrorName) && EncounterlessTerrors.Contains(terrorName!))
             {
                 return null;
             }
