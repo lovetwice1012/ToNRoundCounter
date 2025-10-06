@@ -661,7 +661,9 @@ namespace ToNRoundCounter.UI
                     _settings.AutoLaunchEntries = settingsForm.SettingsPanel.GetAutoLaunchEntries();
                     _settings.AutoRecordingEnabled = settingsForm.SettingsPanel.AutoRecordingEnabledCheckBox.Checked;
                     _settings.AutoRecordingWindowTitle = settingsForm.SettingsPanel.AutoRecordingWindowTitleTextBox.Text?.Trim() ?? string.Empty;
+                    _settings.AutoRecordingCommand = settingsForm.SettingsPanel.AutoRecordingCommandTextBox.Text?.Trim() ?? string.Empty;
                     _settings.AutoRecordingFrameRate = (int)settingsForm.SettingsPanel.AutoRecordingFrameRateNumeric.Value;
+                    _settings.AutoRecordingArguments = settingsForm.SettingsPanel.AutoRecordingArgumentsTextBox.Text?.Trim() ?? string.Empty;
                     _settings.AutoRecordingOutputDirectory = settingsForm.SettingsPanel.AutoRecordingOutputDirectoryTextBox.Text?.Trim() ?? string.Empty;
                     _settings.AutoRecordingOutputExtension = settingsForm.SettingsPanel.GetAutoRecordingOutputExtension();
                     _settings.AutoRecordingRoundTypes = settingsForm.SettingsPanel.GetAutoRecordingRoundTypes();

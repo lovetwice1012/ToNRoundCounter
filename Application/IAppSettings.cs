@@ -68,7 +68,9 @@ namespace ToNRoundCounter.Application
         double ItemMusicMaxSpeed { get; set; }
         bool AutoRecordingEnabled { get; set; }
         string AutoRecordingWindowTitle { get; set; }
+        string AutoRecordingCommand { get; set; }
         int AutoRecordingFrameRate { get; set; }
+        string AutoRecordingArguments { get; set; }
         string AutoRecordingOutputDirectory { get; set; }
         string AutoRecordingOutputExtension { get; set; }
         List<string> AutoRecordingRoundTypes { get; set; }
