@@ -24,6 +24,8 @@ namespace ToNRoundCounter
             WinFormsApp.EnableVisualStyles();
             WinFormsApp.SetCompatibleTextRenderingDefault(false);
 
+            LanguageAssemblyResolver.Initialize();
+
             var bootstrap = LoadBootstrapAsync().GetAwaiter().GetResult();
 
             var useDefaultLogPath = string.IsNullOrWhiteSpace(bootstrap.LogFilePath);
