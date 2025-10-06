@@ -97,6 +97,7 @@ namespace ToNRoundCounter.Infrastructure
         public string AutoRecordingArguments { get; set; } = string.Empty;
         public string AutoRecordingOutputDirectory { get; set; } = "recordings";
         public string AutoRecordingOutputExtension { get; set; } = "avi";
+        public bool AutoRecordingIncludeOverlay { get; set; }
         public List<string> AutoRecordingRoundTypes { get; set; } = new List<string>();
         public List<string> AutoRecordingTerrors { get; set; } = new List<string>();
         public string DiscordWebhookUrl { get; set; } = string.Empty;
@@ -564,6 +565,7 @@ namespace ToNRoundCounter.Infrastructure
                 AutoRecordingArguments = AutoRecordingArguments,
                 AutoRecordingOutputDirectory = AutoRecordingOutputDirectory,
                 AutoRecordingOutputExtension = AutoRecordingOutputExtension,
+                AutoRecordingIncludeOverlay = AutoRecordingIncludeOverlay,
                 AutoRecordingRoundTypes = AutoRecordingRoundTypes,
                 AutoRecordingTerrors = AutoRecordingTerrors,
                 DiscordWebhookUrl = DiscordWebhookUrl,
@@ -659,6 +661,7 @@ namespace ToNRoundCounter.Infrastructure
         public string AutoRecordingArguments { get; set; } = string.Empty;
         public string AutoRecordingOutputDirectory { get; set; } = "recordings";
         public string AutoRecordingOutputExtension { get; set; } = "avi";
+        public bool AutoRecordingIncludeOverlay { get; set; }
         public List<string> AutoRecordingRoundTypes { get; set; } = new List<string>();
         public List<string> AutoRecordingTerrors { get; set; } = new List<string>();
         public string DiscordWebhookUrl { get; set; } = string.Empty;
