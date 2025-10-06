@@ -266,11 +266,35 @@ APIキーはwebサイトから取得してください。</value>
   <data name="AutoRecording_FormatOption_AVI" xml:space="preserve">
     <value>AVI（非圧縮動画）</value>
   </data>
+  <data name="AutoRecording_FormatOption_MP4" xml:space="preserve">
+    <value>MP4（H.264 動画）</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MOV" xml:space="preserve">
+    <value>MOV（H.264 動画）</value>
+  </data>
+  <data name="AutoRecording_FormatOption_WMV" xml:space="preserve">
+    <value>WMV（Windows Media 動画）</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MPG" xml:space="preserve">
+    <value>MPEG2（プログラムストリーム）</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MKV" xml:space="preserve">
+    <value>MKV（H.264 動画）</value>
+  </data>
+  <data name="AutoRecording_FormatOption_FLV" xml:space="preserve">
+    <value>FLV（H.264 動画）</value>
+  </data>
+  <data name="AutoRecording_FormatOption_ASF" xml:space="preserve">
+    <value>ASF（Windows Media コンテナ）</value>
+  </data>
+  <data name="AutoRecording_FormatOption_VOB" xml:space="preserve">
+    <value>VOB（MPEG2 プログラムストリーム）</value>
+  </data>
   <data name="AutoRecording_FormatOption_GIF" xml:space="preserve">
     <value>GIF（アニメーション画像）</value>
   </data>
   <data name="AutoRecording_FormatHelp" xml:space="preserve">
-    <value>AVIは非圧縮で高品質ですがファイルサイズが大きくなります。GIFはアニメーション画像で、ファイルサイズは小さくなりますが色数やフレームレートに制限があります。</value>
+    <value>AVIは非圧縮で高品質ですがファイルサイズが大きくなります。MP4/MOV/MKV/FLVはH.264圧縮で容量と互換性のバランスを取ります。WMV/ASFはWindows Media Videoを生成します。MPG/VOBはMPEG2のプログラムストリームです。GIFは軽量ですが色数とフレームレートに制限があるアニメーション画像です。</value>
   </data>
   <data name="録画開始テラー" xml:space="preserve">
     <value>録画開始テラー</value>

@@ -2066,6 +2066,14 @@ namespace ToNRoundCounter.UI
             return new[]
             {
                 new RecordingFormatOption("avi", LanguageManager.Translate("AutoRecording_FormatOption_AVI")),
+                new RecordingFormatOption("mp4", LanguageManager.Translate("AutoRecording_FormatOption_MP4")),
+                new RecordingFormatOption("mov", LanguageManager.Translate("AutoRecording_FormatOption_MOV")),
+                new RecordingFormatOption("wmv", LanguageManager.Translate("AutoRecording_FormatOption_WMV")),
+                new RecordingFormatOption("mpg", LanguageManager.Translate("AutoRecording_FormatOption_MPG")),
+                new RecordingFormatOption("mkv", LanguageManager.Translate("AutoRecording_FormatOption_MKV")),
+                new RecordingFormatOption("flv", LanguageManager.Translate("AutoRecording_FormatOption_FLV")),
+                new RecordingFormatOption("asf", LanguageManager.Translate("AutoRecording_FormatOption_ASF")),
+                new RecordingFormatOption("vob", LanguageManager.Translate("AutoRecording_FormatOption_VOB")),
                 new RecordingFormatOption("gif", LanguageManager.Translate("AutoRecording_FormatOption_GIF")),
             };
         }
