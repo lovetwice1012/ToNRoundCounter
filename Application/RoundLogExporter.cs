@@ -297,7 +297,7 @@ namespace ToNRoundCounter.Application
             int level = DetermineLevel(round.RoundType);
 
             var terrorNames = SplitTerrorNames(round.TerrorKey);
-            var terrorEntries = new List<RoundLogExportEntry.TerrorData>(capacity: 3);
+            var terrorEntries = new List<RoundLogExportEntry.TerrorEntry>(capacity: 3);
             var terrorIds = round.TerrorIds ?? Array.Empty<int>();
 
             for (int index = 0; index < 3; index++)
@@ -307,7 +307,7 @@ namespace ToNRoundCounter.Application
                 int group = ResolveGroup(round.RoundType, terrorName);
                 int? encounter = ResolveEncounter(terrorName);
 
-                var terrorData = new RoundLogExportEntry.TerrorData
+                var terrorData = new RoundLogExportEntry.TerrorEntry
                 {
                     Index = terrorId,
                     RoundType = roundTypeId,
@@ -459,7 +459,7 @@ namespace ToNRoundCounter.Application
             public int RoundTypeId { get; set; }
 
             [JsonProperty("TD")]
-            public List<TerrorData> TerrorData { get; set; } = new List<TerrorData>();
+            public List<TerrorEntry> TerrorData { get; set; } = new List<TerrorEntry>();
 
             [JsonProperty("MapID")]
             public int MapId { get; set; }
@@ -473,7 +473,7 @@ namespace ToNRoundCounter.Application
             [JsonProperty("RType")]
             public object? RoundType { get; set; }
 
-            public sealed class TerrorData
+            public sealed class TerrorEntry
             {
                 [JsonProperty("i")]
                 public int Index { get; set; }
