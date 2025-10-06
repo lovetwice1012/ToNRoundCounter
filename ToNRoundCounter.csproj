@@ -240,6 +240,7 @@
     <Compile Include="Infrastructure\WinFormsDispatcher.cs" />
     <Compile Include="Infrastructure\ChannelReaderExtensions.cs" />
     <Compile Include="Infrastructure\HttpClientWrapper.cs" />
+    <Compile Include="Infrastructure\SafeModeManager.cs" />
     <Compile Include="Infrastructure\ModuleHost.cs" />
     <Compile Include="Infrastructure\ModuleLoader.cs" />
     <EmbeddedResource Include="Properties\Resources.resx">

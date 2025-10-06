@@ -64,8 +64,32 @@ namespace ToNRoundCounter
             eventLogger.LogEvent("Bootstrap", $"Statistics SQLite path: {Path.GetFullPath(statisticsPath)}");
             eventLogger.LogEvent("Bootstrap", $"Settings SQLite path: {Path.GetFullPath(settingsPath)}");
 
+            var safeModePath = Path.Combine(dataDirectory, "safe-mode.json");
+            var safeModeManager = new SafeModeManager(safeModePath, eventLogger);
+            var manualSafeMode = args.Contains("--safe-mode");
+            var disableSafeMode = args.Contains("--disable-safe-mode");
+
+            if (manualSafeMode)
+            {
+                safeModeManager.RecordManualActivation("Command line flag '--safe-mode'.");
+            }
+
+            if (disableSafeMode)
+            {
+                eventLogger.LogEvent("Bootstrap", "Safe mode override requested via '--disable-safe-mode'. Clearing scheduled safe mode.");
+                safeModeManager.ClearScheduledSafeMode();
+            }
+
+            var safeModeActive = !disableSafeMode && (manualSafeMode || safeModeManager.IsSafeModeRequested);
+
+            if (safeModeActive)
+            {
+                var description = manualSafeMode ? "Command line request (--safe-mode)." : safeModeManager.DescribeCurrentState();
+                eventLogger.LogEvent("Bootstrap", $"Safe mode active. {description}");
+            }
+
             var eventBus = new EventBus(eventLogger);
-            var moduleHost = new ModuleHost(eventLogger, eventBus);
+            var moduleHost = new ModuleHost(eventLogger, eventBus, safeModeManager);
 
             services.AddSingleton<ICancellationProvider, CancellationProvider>();
             services.AddSingleton<IEventLogger>(eventLogger);
@@ -73,6 +97,7 @@ namespace ToNRoundCounter
             services.AddSingleton<IEventBus>(eventBus);
             services.AddSingleton<IRoundDataRepository>(roundDataRepository);
             services.AddSingleton<ISettingsRepository>(settingsRepository);
+            services.AddSingleton(safeModeManager);
             services.AddSingleton(moduleHost);
             services.AddSingleton<IOSCListener>(sp => new OSCListener(sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ICancellationProvider>(), sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<IWebSocketClient>(sp => new WebSocketClient(wsUrl, sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ICancellationProvider>(), sp.GetRequiredService<IEventLogger>()));
@@ -88,7 +113,7 @@ namespace ToNRoundCounter
                 sp.GetRequiredService<IAppSettings>(),
                 sp.GetRequiredService<IEventLogger>(),
                 sp.GetRequiredService<IHttpClient>()));
-            Task.Run(() => ModuleLoader.LoadModules(services, moduleHost, eventLogger, eventBus)).GetAwaiter().GetResult();
+            Task.Run(() => ModuleLoader.LoadModules(services, moduleHost, eventLogger, eventBus, safeMode: safeModeActive)).GetAwaiter().GetResult();
             eventLogger.LogEvent("Bootstrap", $"Module discovery complete. Discovered modules: {moduleHost.Modules.Count}");
             services.AddSingleton<MainForm>(sp => new MainForm(
                 sp.GetRequiredService<IWebSocketClient>(),
@@ -130,7 +155,7 @@ namespace ToNRoundCounter
 
             for (int i = 0; i < args.Length; i++)
             {
-                if (args[i] == "--debug")
+                if (args[i] == "--debug" || args[i] == "--safe-mode" || args[i] == "--disable-safe-mode")
                 {
                     continue;
                 }
