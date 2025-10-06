@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -26,6 +27,9 @@ namespace Updater
                 Thread.Sleep(1000);
             }
 
+            var backupDirectory = Path.Combine(targetDir, $".update-backup-{DateTime.UtcNow:yyyyMMddHHmmssfff}");
+            var backedUpEntries = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             try
             {
                 using (var archive = ZipFile.OpenRead(zipPath))
@@ -39,7 +43,11 @@ namespace Updater
                         }
                         else
                         {
-                            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath));
+                            var destinationDirectory = Path.GetDirectoryName(destinationPath);
+                            if (!string.IsNullOrEmpty(destinationDirectory))
+                            {
+                                Directory.CreateDirectory(destinationDirectory);
+                            }
 
                             if (IsAudioEntry(entry) && File.Exists(destinationPath) && HasFileChanged(entry, destinationPath))
                             {
@@ -47,20 +55,96 @@ namespace Updater
                                 continue;
                             }
 
+                            BackupExistingFile(destinationPath, entry.FullName, backupDirectory, backedUpEntries);
                             entry.ExtractToFile(destinationPath, true);
                         }
                     }
                 }
+
                 File.Delete(zipPath);
+
+                if (Directory.Exists(backupDirectory))
+                {
+                    Directory.Delete(backupDirectory, true);
+                }
             }
             catch (Exception ex)
             {
                 Console.WriteLine("Update failed: " + ex.Message);
+                TryRollback(targetDir, backupDirectory, backedUpEntries);
                 return 1;
             }
 
             Process.Start(new ProcessStartInfo(targetExe) { UseShellExecute = true });
             return 0;
+        }
+
+        private static void BackupExistingFile(string destinationPath, string relativeEntryPath, string backupDirectory, HashSet<string> backedUpEntries)
+        {
+            if (!File.Exists(destinationPath))
+            {
+                return;
+            }
+
+            if (backedUpEntries.Contains(relativeEntryPath))
+            {
+                return;
+            }
+
+            var backupPath = Path.Combine(backupDirectory, relativeEntryPath);
+            var backupDir = Path.GetDirectoryName(backupPath);
+
+            if (!string.IsNullOrEmpty(backupDir))
+            {
+                Directory.CreateDirectory(backupDir);
+            }
+
+            Directory.CreateDirectory(backupDirectory);
+            File.Copy(destinationPath, backupPath, true);
+            backedUpEntries.Add(relativeEntryPath);
+        }
+
+        private static void TryRollback(string targetDir, string backupDirectory, HashSet<string> backedUpEntries)
+        {
+            if (!Directory.Exists(backupDirectory))
+            {
+                return;
+            }
+
+            try
+            {
+                foreach (var relativePath in backedUpEntries)
+                {
+                    var backupPath = Path.Combine(backupDirectory, relativePath);
+                    var restorePath = Path.Combine(targetDir, relativePath);
+                    var restoreDir = Path.GetDirectoryName(restorePath);
+
+                    if (!string.IsNullOrEmpty(restoreDir))
+                    {
+                        Directory.CreateDirectory(restoreDir);
+                    }
+
+                    if (File.Exists(backupPath))
+                    {
+                        File.Copy(backupPath, restorePath, true);
+                    }
+                }
+            }
+            catch (Exception rollbackEx)
+            {
+                Console.WriteLine("Rollback failed: " + rollbackEx.Message);
+            }
+            finally
+            {
+                try
+                {
+                    Directory.Delete(backupDirectory, true);
+                }
+                catch
+                {
+                    // ignore cleanup errors
+                }
+            }
         }
 
         private static bool IsFileLocked(string path)

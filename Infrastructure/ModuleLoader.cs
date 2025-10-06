@@ -13,12 +13,19 @@ namespace ToNRoundCounter.Infrastructure
     /// </summary>
     public static class ModuleLoader
     {
-        public static void LoadModules(IServiceCollection services, ModuleHost host, IEventLogger logger, IEventBus bus, string path = "Modules")
+        public static void LoadModules(IServiceCollection services, ModuleHost host, IEventLogger logger, IEventBus bus, string path = "Modules", bool safeMode = false)
         {
             var modulesDirectory = ResolveModulesDirectory(path);
 
             logger.LogEvent("ModuleLoader", $"Starting module discovery in '{modulesDirectory}'.");
             host.NotifyDiscoveryStarted(modulesDirectory);
+
+            if (safeMode)
+            {
+                logger.LogEvent("ModuleLoader", "Safe mode active. Skipping module discovery.", Serilog.Events.LogEventLevel.Warning);
+                host.NotifyDiscoveryCompleted();
+                return;
+            }
 
             if (!Directory.Exists(modulesDirectory))
             {

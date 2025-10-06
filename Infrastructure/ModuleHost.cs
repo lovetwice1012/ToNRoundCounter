@@ -17,14 +17,16 @@ namespace ToNRoundCounter.Infrastructure
         private readonly List<LoadedModule> _modules = new();
         private readonly IEventLogger _logger;
         private readonly IEventBus _bus;
+        private readonly SafeModeManager? _safeModeManager;
         private IServiceProvider? _serviceProvider;
         private readonly Dictionary<string, AuxiliaryWindowDescriptor> _auxiliaryWindows = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, List<Form>> _activeAuxiliaryWindows = new(StringComparer.OrdinalIgnoreCase);
 
-        public ModuleHost(IEventLogger logger, IEventBus bus)
+        public ModuleHost(IEventLogger logger, IEventBus bus, SafeModeManager? safeModeManager = null)
         {
             _logger = logger;
             _bus = bus;
+            _safeModeManager = safeModeManager;
 
             bus.Subscribe<WebSocketConnecting>(HandleWebSocketConnecting);
             bus.Subscribe<WebSocketConnected>(HandleWebSocketConnected);
@@ -1095,6 +1097,14 @@ namespace ToNRoundCounter.Infrastructure
         private void HandleModuleException(LoadedModule module, string stage, Exception exception)
         {
             _logger.LogEvent("ModuleHost", $"Module '{module.Discovery.ModuleName}' failed during {stage}: {exception}", LogEventLevel.Error);
+
+            if (_safeModeManager?.TryScheduleAutomaticSafeMode(module.Discovery.ModuleName, stage, exception) == true)
+            {
+                _logger.LogEvent(
+                    "ModuleHost",
+                    $"Safe mode scheduled due to repeated failure of module '{module.Discovery.ModuleName}' at stage {stage}.",
+                    LogEventLevel.Warning);
+            }
             _bus.Publish(new ModuleCallbackFailed(module.Discovery, stage, exception));
         }
 
