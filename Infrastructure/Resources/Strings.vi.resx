@@ -443,4 +443,85 @@ Vui lòng lấy khóa API từ trang web.</value>
   <data name="Language_Ukrainian" xml:space="preserve">
     <value>Ukraine</value>
   </data>
+  <data name="出力フォルダー" xml:space="preserve">
+    <value>Thư mục đầu ra</value>
+  </data>
+  <data name="出力拡張子" xml:space="preserve">
+    <value>Mở rộng đầu ra</value>
+  </data>
+  <data name="自動録画設定" xml:space="preserve">
+    <value>Tự động ghi</value>
+  </data>
+  <data name="指定条件でVRChatを自動録画する" xml:space="preserve">
+    <value>Ghi lại VRChat tự động khi các kích hoạt khớp</value>
+  </data>
+  <data name="録画コマンド" xml:space="preserve">
+    <value>Ghi lại thực thi</value>
+  </data>
+  <data name="録画引数" xml:space="preserve">
+    <value>Ghi lại đối số</value>
+  </data>
+  <data name="録画引数の説明" xml:space="preserve">
+    <value>Sử dụng {output} cho đường dẫn tệp và {window} cho tiêu đề cửa sổ.</value>
+  </data>
+  <data name="ウィンドウタイトル" xml:space="preserve">
+    <value>Tiêu đề cửa sổ</value>
+  </data>
+  <data name="録画対象ウィンドウ" xml:space="preserve">
+    <value>Cửa sổ mục tiêu</value>
+  </data>
+  <data name="ウィンドウ名またはプロセス名の一部を指定できます" xml:space="preserve">
+    <value>Bạn có thể chỉ định một phần của tiêu đề cửa sổ hoặc tên quy trình.</value>
+  </data>
+  <data name="録画フレームレート" xml:space="preserve">
+    <value>Tốc độ khung hình</value>
+  </data>
+  <data name="fps" xml:space="preserve">
+    <value>fps</value>
+  </data>
+  <data name="AutoRecording_FormatLabel" xml:space="preserve">
+    <value>Định dạng đầu ra</value>
+  </data>
+  <data name="AutoRecording_FormatOption_AVI" xml:space="preserve">
+    <value>AVI (video không nén)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MP4" xml:space="preserve">
+    <value>MP4 (Video H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MOV" xml:space="preserve">
+    <value>MOV (Video H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_WMV" xml:space="preserve">
+    <value>WMV (Video phương tiện Windows)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MPG" xml:space="preserve">
+    <value>MPEG-2 (luồng chương trình)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MKV" xml:space="preserve">
+    <value>MKV (video H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_FLV" xml:space="preserve">
+    <value>FLV (Video H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_ASF" xml:space="preserve">
+    <value>ASF (hộp chứa phương tiện Windows)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_VOB" xml:space="preserve">
+    <value>VOB (luồng chương trình MPEG-2)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_GIF" xml:space="preserve">
+    <value>GIF (hình ảnh hoạt hình)</value>
+  </data>
+  <data name="AutoRecording_FormatHelp" xml:space="preserve">
+    <value>AVI tạo ra các bản ghi lossless nhưng dẫn đến các tệp lớn. MP4, MOV, MKV và FLV sử dụng H.264 để cân bằng kích thước và khả năng tương thích. WMV và ASF tạo ra các tệp video Windows Media. MPG và VOB tạo ra các luồng chương trình MPEG-2. GIF tạo ra hình ảnh hoạt hình nhẹ với màu sắc và tốc độ khung hình hạn chế.</value>
+  </data>
+  <data name="録画開始テラー" xml:space="preserve">
+    <value>Kích hoạt tên khủng bố</value>
+  </data>
+  <data name="録画開始ラウンド" xml:space="preserve">
+    <value>Kích hoạt các loại tròn</value>
+  </data>
+  <data name="複数テラーの入力説明" xml:space="preserve">
+    <value>Nhập một tên khủng bố trên mỗi dòng. Phù hợp là trường hợp không nhạy cảm.</value>
+  </data>
 </root>

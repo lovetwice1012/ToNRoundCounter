@@ -443,4 +443,85 @@
   <data name="Language_Ukrainian" xml:space="preserve">
     <value>Ουκρανός</value>
   </data>
+  <data name="出力フォルダー" xml:space="preserve">
+    <value>Φάκελος εξόδου</value>
+  </data>
+  <data name="出力拡張子" xml:space="preserve">
+    <value>Επέκταση εξόδου</value>
+  </data>
+  <data name="自動録画設定" xml:space="preserve">
+    <value>Αυτόματη εγγραφή</value>
+  </data>
+  <data name="指定条件でVRChatを自動録画する" xml:space="preserve">
+    <value>Καταγράψτε αυτόματα το VRChat όταν ενεργοποιεί τον αγώνα</value>
+  </data>
+  <data name="録画コマンド" xml:space="preserve">
+    <value>Καταγραφή εκτελέσιμου</value>
+  </data>
+  <data name="録画引数" xml:space="preserve">
+    <value>Επιχειρήματα εγγραφής</value>
+  </data>
+  <data name="録画引数の説明" xml:space="preserve">
+    <value>Χρησιμοποιήστε {output} για τη διαδρομή αρχείου και {window} για τον τίτλο του παραθύρου.</value>
+  </data>
+  <data name="ウィンドウタイトル" xml:space="preserve">
+    <value>Τίτλος παραθύρου</value>
+  </data>
+  <data name="録画対象ウィンドウ" xml:space="preserve">
+    <value>Παράθυρο στόχου</value>
+  </data>
+  <data name="ウィンドウ名またはプロセス名の一部を指定できます" xml:space="preserve">
+    <value>Μπορείτε να καθορίσετε μέρος του ονόματος του τίτλου ή της διαδικασίας του παραθύρου.</value>
+  </data>
+  <data name="録画フレームレート" xml:space="preserve">
+    <value>Ρυθμός πλαισίου</value>
+  </data>
+  <data name="fps" xml:space="preserve">
+    <value>fps</value>
+  </data>
+  <data name="AutoRecording_FormatLabel" xml:space="preserve">
+    <value>Μορφή εξόδου</value>
+  </data>
+  <data name="AutoRecording_FormatOption_AVI" xml:space="preserve">
+    <value>AVI (μη συμπιεσμένο βίντεο)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MP4" xml:space="preserve">
+    <value>MP4 (βίντεο H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MOV" xml:space="preserve">
+    <value>MOV (βίντεο H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_WMV" xml:space="preserve">
+    <value>WMV (βίντεο Windows Media)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MPG" xml:space="preserve">
+    <value>MPEG-2 (ροή προγράμματος)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MKV" xml:space="preserve">
+    <value>MKV (βίντεο H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_FLV" xml:space="preserve">
+    <value>FLV (βίντεο H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_ASF" xml:space="preserve">
+    <value>ASF (Windows Media Container)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_VOB" xml:space="preserve">
+    <value>VOB (ροή προγράμματος MPEG-2)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_GIF" xml:space="preserve">
+    <value>GIF (κινούμενη εικόνα)</value>
+  </data>
+  <data name="AutoRecording_FormatHelp" xml:space="preserve">
+    <value>Το AVI δημιουργεί εγγραφές χωρίς απώλειες, αλλά έχει ως αποτέλεσμα μεγάλα αρχεία. MP4, MOV, MKV και FLV χρησιμοποιούν H.264 για να ισορροπήσουν το μέγεθος και τη συμβατότητα. Τα WMV και ASF παράγουν αρχεία βίντεο Windows Media. Τα MPG και VOB δημιουργούν ροές προγραμμάτων MPEG-2. Το GIF παράγει ελαφρές κινούμενες εικόνες με περιορισμένα χρώματα και ρυθμό καρέ.</value>
+  </data>
+  <data name="録画開始テラー" xml:space="preserve">
+    <value>Ενεργοποιήστε τα ονόματα τρομοκρατίας</value>
+  </data>
+  <data name="録画開始ラウンド" xml:space="preserve">
+    <value>Τύποι στρογγυλών ενεργοποίησης</value>
+  </data>
+  <data name="複数テラーの入力説明" xml:space="preserve">
+    <value>Εισαγάγετε ένα όνομα τρόμου ανά γραμμή. Η αντιστοίχιση είναι ευαίσθητη στην περίπτωση.</value>
+  </data>
 </root>

@@ -13,69 +13,69 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="APIキー:" xml:space="preserve">
-    <value>API 密钥：</value>
+    <value>API 密鑰：</value>
   </data>
   <data name="APIキーは32文字以上である必要があります。" xml:space="preserve">
-    <value>API 密钥长度必须至少为 32 个字符。</value>
+    <value>API 密鑰長度必須至少爲 32 個字符。</value>
   </data>
   <data name="Connected" xml:space="preserve">
-    <value>已连接</value>
+    <value>已連接</value>
   </data>
   <data name="Disconnected" xml:space="preserve">
-    <value>已断开</value>
+    <value>已斷開</value>
   </data>
   <data name="Discord通知設定" xml:space="preserve">
-    <value>Discord 通知设置</value>
+    <value>Discord 通知設置</value>
   </data>
   <data name="InfoPanel_Damage" xml:space="preserve">
-    <value>伤害：</value>
+    <value>傷害：</value>
   </data>
   <data name="InfoPanel_Item" xml:space="preserve">
     <value>道具：</value>
   </data>
   <data name="InfoPanel_Map" xml:space="preserve">
-    <value>地图：</value>
+    <value>地圖：</value>
   </data>
   <data name="InfoPanel_RoundType" xml:space="preserve">
-    <value>回合类型：</value>
+    <value>回合類型：</value>
   </data>
   <data name="InfoPanel_Terror" xml:space="preserve">
-    <value>恐惧：</value>
+    <value>恐懼：</value>
   </data>
   <data name="Language_ChineseSimplified" xml:space="preserve">
-    <value>简体中文</value>
+    <value>簡體中文</value>
   </data>
   <data name="Language_English" xml:space="preserve">
-    <value>英语</value>
+    <value>英語</value>
   </data>
   <data name="Language_Japanese" xml:space="preserve">
-    <value>日语</value>
+    <value>日語</value>
   </data>
   <data name="Language_Korean" xml:space="preserve">
-    <value>韩语</value>
+    <value>韓語</value>
   </data>
   <data name="OK" xml:space="preserve">
-    <value>确定</value>
+    <value>確定</value>
   </data>
   <data name="OSC接続ポート:" xml:space="preserve">
     <value>OSC 端口：</value>
   </data>
   <data name="OSC設定" xml:space="preserve">
-    <value>OSC 设置</value>
+    <value>OSC 設置</value>
   </data>
   <data name="ParseError" xml:space="preserve">
-    <value>解析错误</value>
+    <value>解析錯誤</value>
   </data>
   <data name="ToNRoundCounter-Cloudの設定" xml:space="preserve">
-    <value>ToNRoundCounter-Cloud 设置</value>
+    <value>ToNRoundCounter-Cloud 設置</value>
   </data>
   <data name="ToNRoundCounter-Cloudはセーブコードの複数端末間での全自動同期などの機能を持つクラウドサービスです。\n利用にはAPIキーが必要です。\nAPIキーはwebサイトから取得してください。" xml:space="preserve">
-    <value>ToNRoundCounter-Cloud 是一项可在多台设备间自动同步存档代码的云服务。
-需要提供 API 密钥。
-请从网站获取 API 密钥。</value>
+    <value>ToNRoundCounter-Cloud 是一項可在多臺設備間自動同步存檔代碼的雲服務。
+需要提供 API 密鑰。
+請從網站獲取 API 密鑰。</value>
   </data>
   <data name="ToNRoundCounter-Cloudを開く" xml:space="preserve">
-    <value>打开 ToNRoundCounter-Cloud</value>
+    <value>打開 ToNRoundCounter-Cloud</value>
   </data>
   <data name="ToNRoundCouter" xml:space="preserve">
     <value>ToNRoundCounter</value>
@@ -87,163 +87,163 @@
     <value>Webhook URL：</value>
   </data>
   <data name="アイテムサウンドを優先する" xml:space="preserve">
-    <value>物品音效优先</value>
+    <value>物品音效優先</value>
   </data>
   <data name="アイテム音楽ギミック" xml:space="preserve">
-    <value>物品音乐机关</value>
+    <value>物品音樂機關</value>
   </data>
   <data name="アンバウンドのテラー内容を表示" xml:space="preserve">
-    <value>显示无拘束恐惧详情</value>
+    <value>顯示無拘束恐懼詳情</value>
   </data>
   <data name="インポート" xml:space="preserve">
-    <value>导入</value>
+    <value>導入</value>
   </data>
   <data name="ウィンドウ" xml:space="preserve">
     <value>窗口</value>
   </data>
   <data name="エクスポート" xml:space="preserve">
-    <value>导出</value>
+    <value>導出</value>
   </data>
   <data name="エラー" xml:space="preserve">
-    <value>错误</value>
+    <value>錯誤</value>
   </data>
   <data name="オーバーレイ設定" xml:space="preserve">
-    <value>叠加层设置</value>
+    <value>疊加層設置</value>
   </data>
   <data name="キャンセル" xml:space="preserve">
     <value>取消</value>
   </data>
   <data name="ショートカットを表示" xml:space="preserve">
-    <value>显示快捷键</value>
+    <value>顯示快捷鍵</value>
   </data>
   <data name="ダメージを表示" xml:space="preserve">
-    <value>显示伤害</value>
+    <value>顯示傷害</value>
   </data>
   <data name="テラー" xml:space="preserve">
-    <value>恐惧</value>
+    <value>恐懼</value>
   </data>
   <data name="テラーの名前の色固定:" xml:space="preserve">
-    <value>固定恐惧名称颜色：</value>
+    <value>固定恐懼名稱顏色：</value>
   </data>
   <data name="テラーを表示" xml:space="preserve">
-    <value>显示恐惧</value>
+    <value>顯示恐懼</value>
   </data>
   <data name="テラー名" xml:space="preserve">
-    <value>恐惧名称</value>
+    <value>恐懼名稱</value>
   </data>
   <data name="テラー詳細情報を表示" xml:space="preserve">
-    <value>显示恐惧详细信息</value>
+    <value>顯示恐懼詳細信息</value>
   </data>
   <data name="テーマ" xml:space="preserve">
-    <value>主题</value>
+    <value>主題</value>
   </data>
   <data name="デバッグ情報表示" xml:space="preserve">
-    <value>显示调试信息</value>
+    <value>顯示調試信息</value>
   </data>
   <data name="ファイル" xml:space="preserve">
     <value>文件</value>
   </data>
   <data name="フィルター設定" xml:space="preserve">
-    <value>筛选设置</value>
+    <value>篩選設置</value>
   </data>
   <data name="プリセット:" xml:space="preserve">
-    <value>预设：</value>
+    <value>預設：</value>
   </data>
   <data name="プリセットをインポートしました。" xml:space="preserve">
-    <value>已导入预设。</value>
+    <value>已導入預設。</value>
   </data>
   <data name="プリセットをエクスポートしました。" xml:space="preserve">
-    <value>已导出预设。</value>
+    <value>已導出預設。</value>
   </data>
   <data name="プリセットを保存しました。" xml:space="preserve">
-    <value>已保存预设。</value>
+    <value>已保存預設。</value>
   </data>
   <data name="ラウンド/テラーBGM設定" xml:space="preserve">
-    <value>回合/恐惧 BGM 设置</value>
+    <value>回合/恐懼 BGM 設置</value>
   </data>
   <data name="ラウンド/テラーごとのBGMを再生する" xml:space="preserve">
-    <value>按回合/恐惧播放 BGM</value>
+    <value>按回合/恐懼播放 BGM</value>
   </data>
   <data name="ラウンドBGMを優先する" xml:space="preserve">
-    <value>回合 BGM 优先</value>
+    <value>回合 BGM 優先</value>
   </data>
   <data name="ラウンドタイプ" xml:space="preserve">
-    <value>回合类型</value>
+    <value>回合類型</value>
   </data>
   <data name="ラウンドタイプごとの統計表示設定:" xml:space="preserve">
-    <value>回合类型统计显示设置：</value>
+    <value>回合類型統計顯示設置：</value>
   </data>
   <data name="ラウンドタイプ推移を表示" xml:space="preserve">
-    <value>显示回合类型变化</value>
+    <value>顯示回合類型變化</value>
   </data>
   <data name="ラウンドログ" xml:space="preserve">
-    <value>回合日志</value>
+    <value>回合日誌</value>
   </data>
   <data name="ラウンドログを表示する" xml:space="preserve">
-    <value>显示回合日志</value>
+    <value>顯示回合日誌</value>
   </data>
   <data name="ラウンドログ背景色:" xml:space="preserve">
-    <value>回合日志背景色：</value>
+    <value>回合日誌背景色：</value>
   </data>
   <data name="ラウンド名" xml:space="preserve">
-    <value>回合名称</value>
+    <value>回合名稱</value>
   </data>
   <data name="ラウンド状況を表示" xml:space="preserve">
-    <value>显示回合状态</value>
+    <value>顯示回合狀態</value>
   </data>
   <data name="ラウンド結果をDiscordに送信するWebhook URLを設定します。空欄で無効化されます。" xml:space="preserve">
-    <value>设置将回合结果发送到 Discord 的 Webhook URL。留空则禁用。</value>
+    <value>設置將回合結果發送到 Discord 的 Webhook URL。留空則禁用。</value>
   </data>
   <data name="ラウンド統計を表示" xml:space="preserve">
-    <value>显示回合统计</value>
+    <value>顯示回合統計</value>
   </data>
   <data name="両方とも再生する" xml:space="preserve">
-    <value>同时播放</value>
+    <value>同時播放</value>
   </data>
   <data name="保存" xml:space="preserve">
     <value>保存</value>
   </data>
   <data name="再生する音声" xml:space="preserve">
-    <value>要播放的音频</value>
+    <value>要播放的音頻</value>
   </data>
   <data name="出現回数" xml:space="preserve">
-    <value>出现次数</value>
+    <value>出現次數</value>
   </data>
   <data name="削除" xml:space="preserve">
-    <value>删除</value>
+    <value>刪除</value>
   </data>
   <data name="参照..." xml:space="preserve">
-    <value>浏览...</value>
+    <value>瀏覽...</value>
   </data>
   <data name="固定する" xml:space="preserve">
-    <value>置顶</value>
+    <value>置頂</value>
   </data>
   <data name="固定解除" xml:space="preserve">
-    <value>取消置顶</value>
+    <value>取消置頂</value>
   </data>
   <data name="外部アプリを自動起動する" xml:space="preserve">
-    <value>自动启动外部应用程序</value>
+    <value>自動啓動外部應用程序</value>
   </data>
   <data name="実行ファイル" xml:space="preserve">
-    <value>可执行文件</value>
+    <value>可執行文件</value>
   </data>
   <data name="対象アイテム名" xml:space="preserve">
-    <value>目标物品名称</value>
+    <value>目標物品名稱</value>
   </data>
   <data name="履歴表示数:" xml:space="preserve">
-    <value>历史显示数量：</value>
+    <value>歷史顯示數量：</value>
   </data>
   <data name="引数" xml:space="preserve">
-    <value>参数</value>
+    <value>參數</value>
   </data>
   <data name="情報" xml:space="preserve">
     <value>信息</value>
   </data>
   <data name="情報表示欄背景色:" xml:space="preserve">
-    <value>信息显示区域背景色：</value>
+    <value>信息顯示區域背景色：</value>
   </data>
   <data name="時計を表示" xml:space="preserve">
-    <value>显示时钟</value>
+    <value>顯示時鐘</value>
   </data>
   <data name="曖昧マッチング" xml:space="preserve">
     <value>模糊匹配</value>
@@ -255,103 +255,103 @@
     <value>最小速度</value>
   </data>
   <data name="有効" xml:space="preserve">
-    <value>启用</value>
+    <value>啓用</value>
   </data>
   <data name="構文エラー" xml:space="preserve">
-    <value>语法错误</value>
+    <value>語法錯誤</value>
   </data>
   <data name="次ラウンド予測を表示" xml:space="preserve">
-    <value>显示下回合预测</value>
+    <value>顯示下回合預測</value>
   </data>
   <data name="死亡回数" xml:space="preserve">
-    <value>死亡次数</value>
+    <value>死亡次數</value>
   </data>
   <data name="滞在タイマーを表示" xml:space="preserve">
-    <value>显示停留计时器</value>
+    <value>顯示停留計時器</value>
   </data>
   <data name="特定アイテムで音楽を再生する" xml:space="preserve">
-    <value>针对特定物品播放音乐</value>
+    <value>針對特定物品播放音樂</value>
   </data>
   <data name="現在の設定では自動自殺を行いません" xml:space="preserve">
-    <value>当前设置下不会执行自动自杀。</value>
+    <value>當前設置下不會執行自動自殺。</value>
   </data>
   <data name="生存回数" xml:space="preserve">
-    <value>生存次数</value>
+    <value>生存次數</value>
   </data>
   <data name="生存率" xml:space="preserve">
     <value>生存率</value>
   </data>
   <data name="競合時の優先設定:" xml:space="preserve">
-    <value>冲突时的优先级：</value>
+    <value>衝突時的優先級：</value>
   </data>
   <data name="終了" xml:space="preserve">
     <value>退出</value>
   </data>
   <data name="統計情報を表示する" xml:space="preserve">
-    <value>显示统计信息</value>
+    <value>顯示統計信息</value>
   </data>
   <data name="統計情報表示欄" xml:space="preserve">
-    <value>统计信息区域</value>
+    <value>統計信息區域</value>
   </data>
   <data name="統計表示欄背景色:" xml:space="preserve">
-    <value>统计显示区域背景色：</value>
+    <value>統計顯示區域背景色：</value>
   </data>
   <data name="背景色設定" xml:space="preserve">
-    <value>背景色设置</value>
+    <value>背景色設置</value>
   </data>
   <data name="自動自殺は無効になっています" xml:space="preserve">
-    <value>自动自杀已禁用。</value>
+    <value>自動自殺已禁用。</value>
   </data>
   <data name="自動自殺を有効にする" xml:space="preserve">
-    <value>启用自动自杀</value>
+    <value>啓用自動自殺</value>
   </data>
   <data name="自動自殺モード" xml:space="preserve">
-    <value>自动自杀模式</value>
+    <value>自動自殺模式</value>
   </data>
   <data name="自動自殺対象ラウンド:" xml:space="preserve">
-    <value>自动自杀目标回合：</value>
+    <value>自動自殺目標回合：</value>
   </data>
   <data name="自動起動設定" xml:space="preserve">
-    <value>自动启动设置</value>
+    <value>自動啓動設置</value>
   </data>
   <data name="色選択" xml:space="preserve">
-    <value>选择颜色</value>
+    <value>選擇顏色</value>
   </data>
   <data name="表示設定" xml:space="preserve">
-    <value>显示设置</value>
+    <value>顯示設置</value>
   </data>
   <data name="角度を表示" xml:space="preserve">
-    <value>显示角度</value>
+    <value>顯示角度</value>
   </data>
   <data name="解析できなかった行があります:" xml:space="preserve">
-    <value>存在无法解析的行：</value>
+    <value>存在無法解析的行：</value>
   </data>
   <data name="言語" xml:space="preserve">
-    <value>语言</value>
+    <value>語言</value>
   </data>
   <data name="設定" xml:space="preserve">
-    <value>设置</value>
+    <value>設置</value>
   </data>
   <data name="設定..." xml:space="preserve">
-    <value>设置...</value>
+    <value>設置...</value>
   </data>
   <data name="設定内容" xml:space="preserve">
     <value>配置</value>
   </data>
   <data name="設定内容確認" xml:space="preserve">
-    <value>检查配置</value>
+    <value>檢查配置</value>
   </data>
   <data name="設定変更" xml:space="preserve">
-    <value>更改设置</value>
+    <value>更改設置</value>
   </data>
   <data name="詳細設定を利用する" xml:space="preserve">
-    <value>使用高级设置</value>
+    <value>使用高級設置</value>
   </data>
   <data name="詳細設定ドキュメント" xml:space="preserve">
-    <value>高级设置文档</value>
+    <value>高級設置文檔</value>
   </data>
   <data name="読み込み" xml:space="preserve">
-    <value>加载</value>
+    <value>加載</value>
   </data>
   <data name="警告" xml:space="preserve">
     <value>警告</value>
@@ -360,168 +360,168 @@
     <value>添加</value>
   </data>
   <data name="追加設定" xml:space="preserve">
-    <value>附加设置</value>
+    <value>附加設置</value>
   </data>
   <data name="透明度" xml:space="preserve">
     <value>透明度</value>
   </data>
   <data name="速度を表示" xml:space="preserve">
-    <value>显示速度</value>
+    <value>顯示速度</value>
   </data>
   <data name="Language_Danish" xml:space="preserve">
-    <value>丹麦语</value>
+    <value>丹麥語</value>
   </data>
   <data name="Language_German" xml:space="preserve">
-    <value>德语</value>
+    <value>德語</value>
   </data>
   <data name="Language_EnglishUnitedKingdom" xml:space="preserve">
-    <value>英语（英国）</value>
+    <value>英語（英國）</value>
   </data>
   <data name="Language_EnglishUnitedStates" xml:space="preserve">
-    <value>英语（美国）</value>
+    <value>英語（美國）</value>
   </data>
   <data name="Language_Spanish" xml:space="preserve">
-    <value>西班牙语</value>
+    <value>西班牙語</value>
   </data>
   <data name="Language_SpanishLatinAmerica" xml:space="preserve">
-    <value>西班牙语（拉丁美洲）</value>
+    <value>西班牙語（拉丁美洲）</value>
   </data>
   <data name="Language_French" xml:space="preserve">
-    <value>法语</value>
+    <value>法語</value>
   </data>
   <data name="Language_Croatian" xml:space="preserve">
-    <value>克罗地亚语</value>
+    <value>克羅地亞語</value>
   </data>
   <data name="Language_Italian" xml:space="preserve">
-    <value>意大利语</value>
+    <value>意大利語</value>
   </data>
   <data name="Language_Lithuanian" xml:space="preserve">
-    <value>立陶宛语</value>
+    <value>立陶宛語</value>
   </data>
   <data name="Language_Hungarian" xml:space="preserve">
-    <value>匈牙利语</value>
+    <value>匈牙利語</value>
   </data>
   <data name="Language_Dutch" xml:space="preserve">
-    <value>荷兰语</value>
+    <value>荷蘭語</value>
   </data>
   <data name="Language_Norwegian" xml:space="preserve">
-    <value>挪威语</value>
+    <value>挪威語</value>
   </data>
   <data name="Language_Polish" xml:space="preserve">
-    <value>波兰语</value>
+    <value>波蘭語</value>
   </data>
   <data name="Language_PortugueseBrazil" xml:space="preserve">
-    <value>葡萄牙语（巴西）</value>
+    <value>葡萄牙語（巴西）</value>
   </data>
   <data name="Language_Romanian" xml:space="preserve">
-    <value>罗马尼亚语</value>
+    <value>羅馬尼亞語</value>
   </data>
   <data name="Language_Finnish" xml:space="preserve">
-    <value>芬兰语</value>
+    <value>芬蘭語</value>
   </data>
   <data name="Language_Swedish" xml:space="preserve">
-    <value>瑞典语</value>
+    <value>瑞典語</value>
   </data>
   <data name="Language_Vietnamese" xml:space="preserve">
-    <value>越南语</value>
+    <value>越南語</value>
   </data>
   <data name="Language_Turkish" xml:space="preserve">
-    <value>土耳其语</value>
+    <value>土耳其語</value>
   </data>
   <data name="Language_Thai" xml:space="preserve">
-    <value>泰语</value>
+    <value>泰語</value>
   </data>
   <data name="Language_Greek" xml:space="preserve">
-    <value>希腊语</value>
+    <value>希臘語</value>
   </data>
   <data name="Language_Bulgarian" xml:space="preserve">
-    <value>保加利亚语</value>
+    <value>保加利亞語</value>
   </data>
   <data name="Language_Russian" xml:space="preserve">
-    <value>俄语</value>
+    <value>俄語</value>
   </data>
   <data name="Language_Ukrainian" xml:space="preserve">
-    <value>乌克兰语</value>
+    <value>烏克蘭語</value>
   </data>
   <data name="出力フォルダー" xml:space="preserve">
-    <value>输出文件夹</value>
+    <value>輸出文件夾</value>
   </data>
   <data name="出力拡張子" xml:space="preserve">
-    <value>输出文件扩展名</value>
+    <value>輸出文件擴展名</value>
   </data>
   <data name="自動録画設定" xml:space="preserve">
-    <value>自动录制设置</value>
+    <value>自動錄製設定</value>
   </data>
   <data name="指定条件でVRChatを自動録画する" xml:space="preserve">
-    <value>当触发条件满足时自动录制 VRChat</value>
+    <value>當觸發條件符合時自動錄製 VRChat</value>
   </data>
   <data name="録画コマンド" xml:space="preserve">
-    <value>录制可执行文件</value>
+    <value>錄製執行檔</value>
   </data>
   <data name="録画引数" xml:space="preserve">
-    <value>录制启动参数</value>
+    <value>錄製啟動參數</value>
   </data>
   <data name="録画引数の説明" xml:space="preserve">
-    <value>使用{output}作为文件路径，{window}用于窗口标题。</value>
+    <value>使用 {output} 作為檔案路徑，{window} 作為視窗標題。</value>
   </data>
   <data name="ウィンドウタイトル" xml:space="preserve">
-    <value>窗口标题</value>
+    <value>窗口標題</value>
   </data>
   <data name="録画対象ウィンドウ" xml:space="preserve">
-    <value>目标窗口</value>
+    <value>目標視窗</value>
   </data>
   <data name="ウィンドウ名またはプロセス名の一部を指定できます" xml:space="preserve">
-    <value>您可以指定窗口标题或过程名称的一部分。</value>
+    <value>可以指定視窗標題或程序名稱的一部分。</value>
   </data>
   <data name="録画フレームレート" xml:space="preserve">
-    <value>录制帧率</value>
+    <value>錄製幀率</value>
   </data>
   <data name="fps" xml:space="preserve">
     <value>fps</value>
   </data>
   <data name="AutoRecording_FormatLabel" xml:space="preserve">
-    <value>输出格式</value>
+    <value>輸出格式</value>
   </data>
   <data name="AutoRecording_FormatOption_AVI" xml:space="preserve">
-    <value>AVI（未压缩视频）</value>
+    <value>AVI（未壓縮影片）</value>
   </data>
   <data name="AutoRecording_FormatOption_MP4" xml:space="preserve">
-    <value>MP4（H.264 视频）</value>
+    <value>MP4（H.264 影片）</value>
   </data>
   <data name="AutoRecording_FormatOption_MOV" xml:space="preserve">
-    <value>MOV（H.264 视频）</value>
+    <value>MOV（H.264 影片）</value>
   </data>
   <data name="AutoRecording_FormatOption_WMV" xml:space="preserve">
-    <value>WMV（Windows Media 视频）</value>
+    <value>WMV（Windows Media 影片）</value>
   </data>
   <data name="AutoRecording_FormatOption_MPG" xml:space="preserve">
-    <value>MPEG-2（程序流）</value>
+    <value>MPEG-2（節目串流）</value>
   </data>
   <data name="AutoRecording_FormatOption_MKV" xml:space="preserve">
-    <value>MKV（H.264 视频）</value>
+    <value>MKV（H.264 影片）</value>
   </data>
   <data name="AutoRecording_FormatOption_FLV" xml:space="preserve">
-    <value>FLV（H.264 视频）</value>
+    <value>FLV（H.264 影片）</value>
   </data>
   <data name="AutoRecording_FormatOption_ASF" xml:space="preserve">
     <value>ASF（Windows Media 容器）</value>
   </data>
   <data name="AutoRecording_FormatOption_VOB" xml:space="preserve">
-    <value>VOB（MPEG-2 程序流）</value>
+    <value>VOB（MPEG-2 節目串流）</value>
   </data>
   <data name="AutoRecording_FormatOption_GIF" xml:space="preserve">
-    <value>GIF（动画图像）</value>
+    <value>GIF（動畫圖像）</value>
   </data>
   <data name="AutoRecording_FormatHelp" xml:space="preserve">
-    <value>AVI 会生成无损录制，但文件较大。MP4、MOV、MKV 和 FLV 使用 H.264 在文件大小与兼容性之间取得平衡。WMV 和 ASF 会生成 Windows Media 视频文件。MPG 和 VOB 会生成 MPEG-2 程序流。GIF 会生成色彩数量和帧率受限的轻量动画图像。</value>
+    <value>AVI 會產生無失真錄製，但檔案較大。MP4、MOV、MKV 與 FLV 使用 H.264 以在檔案大小與相容性之間取得平衡。WMV 與 ASF 會產生 Windows Media 影片檔。MPG 與 VOB 會建立 MPEG-2 節目串流。GIF 會建立色彩數量與幀率受限的輕量動畫影像。</value>
   </data>
   <data name="録画開始テラー" xml:space="preserve">
-    <value>触发录制的恐怖名称</value>
+    <value>觸發錄製的恐怖名稱</value>
   </data>
   <data name="録画開始ラウンド" xml:space="preserve">
-    <value>触发录制的回合类型</value>
+    <value>觸發錄製的回合類型</value>
   </data>
   <data name="複数テラーの入力説明" xml:space="preserve">
-    <value>每行输入一个恐怖名称，比较时不区分大小写。</value>
+    <value>每行輸入一個恐怖名稱，比對時不區分大小寫。</value>
   </data>
 </root>

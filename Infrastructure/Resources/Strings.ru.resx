@@ -443,4 +443,85 @@
   <data name="Language_Ukrainian" xml:space="preserve">
     <value>Украинский</value>
   </data>
+  <data name="出力フォルダー" xml:space="preserve">
+    <value>Выводная папка</value>
+  </data>
+  <data name="出力拡張子" xml:space="preserve">
+    <value>Выходное расширение</value>
+  </data>
+  <data name="自動録画設定" xml:space="preserve">
+    <value>Автозаписи</value>
+  </data>
+  <data name="指定条件でVRChatを自動録画する" xml:space="preserve">
+    <value>Запишите VRChat автоматически при совпадении триггеров</value>
+  </data>
+  <data name="録画コマンド" xml:space="preserve">
+    <value>Запись исполняемого файла</value>
+  </data>
+  <data name="録画引数" xml:space="preserve">
+    <value>Запись аргументов</value>
+  </data>
+  <data name="録画引数の説明" xml:space="preserve">
+    <value>Используйте {output} для пути файла и {window} для заголовка окна.</value>
+  </data>
+  <data name="ウィンドウタイトル" xml:space="preserve">
+    <value>Название окон</value>
+  </data>
+  <data name="録画対象ウィンドウ" xml:space="preserve">
+    <value>Целевое окно</value>
+  </data>
+  <data name="ウィンドウ名またはプロセス名の一部を指定できます" xml:space="preserve">
+    <value>Вы можете указать часть заголовка окна или имени процесса.</value>
+  </data>
+  <data name="録画フレームレート" xml:space="preserve">
+    <value>Частота кадров</value>
+  </data>
+  <data name="fps" xml:space="preserve">
+    <value>fps</value>
+  </data>
+  <data name="AutoRecording_FormatLabel" xml:space="preserve">
+    <value>Выходной формат</value>
+  </data>
+  <data name="AutoRecording_FormatOption_AVI" xml:space="preserve">
+    <value>AVI (несомненное видео)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MP4" xml:space="preserve">
+    <value>MP4 (видео H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MOV" xml:space="preserve">
+    <value>MOV (видео H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_WMV" xml:space="preserve">
+    <value>WMV (видео Windows Media)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MPG" xml:space="preserve">
+    <value>MPEG-2 (программный поток)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MKV" xml:space="preserve">
+    <value>MKV (H.264 Видео)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_FLV" xml:space="preserve">
+    <value>FLV (видео H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_ASF" xml:space="preserve">
+    <value>ASF (контейнер Windows Media)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_VOB" xml:space="preserve">
+    <value>VOB (MPEG-2 программный поток)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_GIF" xml:space="preserve">
+    <value>GIF (анимированное изображение)</value>
+  </data>
+  <data name="AutoRecording_FormatHelp" xml:space="preserve">
+    <value>AVI создает записи без потерь, но приводит к большим файлам. MP4, MOV, MKV и FLV используют H.264 для баланса и совместимости. WMV и ASF создают видеофайлы Windows Media. MPG и VOB генерируют потоки программ MPEG-2. GIF создает легкие анимированные изображения с ограниченной частотой и частотой кадров.</value>
+  </data>
+  <data name="録画開始テラー" xml:space="preserve">
+    <value>Триггер имена террора</value>
+  </data>
+  <data name="録画開始ラウンド" xml:space="preserve">
+    <value>Триггерные типы</value>
+  </data>
+  <data name="複数テラーの入力説明" xml:space="preserve">
+    <value>Введите одно название террора на строку. Сопоставление нечувствительно.</value>
+  </data>
 </root>
