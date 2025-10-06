@@ -40,6 +40,13 @@ namespace Updater
                         else
                         {
                             Directory.CreateDirectory(Path.GetDirectoryName(destinationPath));
+
+                            if (IsAudioEntry(entry) && File.Exists(destinationPath) && HasFileChanged(entry, destinationPath))
+                            {
+                                Console.WriteLine($"Skipping modified audio file: {entry.FullName}");
+                                continue;
+                            }
+
                             entry.ExtractToFile(destinationPath, true);
                         }
                     }
@@ -64,6 +71,54 @@ namespace Updater
                 {
                     return false;
                 }
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        private static bool IsAudioEntry(ZipArchiveEntry entry)
+        {
+            var normalizedPath = entry.FullName.Replace('\\', '/');
+            return normalizedPath.StartsWith("audio/", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool HasFileChanged(ZipArchiveEntry entry, string destinationPath)
+        {
+            try
+            {
+                using var entryStream = entry.Open();
+                using var destinationStream = File.OpenRead(destinationPath);
+
+                if (entry.Length != destinationStream.Length)
+                {
+                    return true;
+                }
+
+                const int bufferSize = 81920;
+                var entryBuffer = new byte[bufferSize];
+                var destinationBuffer = new byte[bufferSize];
+
+                int entryRead;
+                while ((entryRead = entryStream.Read(entryBuffer, 0, bufferSize)) > 0)
+                {
+                    var destinationRead = destinationStream.Read(destinationBuffer, 0, bufferSize);
+                    if (entryRead != destinationRead)
+                    {
+                        return true;
+                    }
+
+                    for (int i = 0; i < entryRead; i++)
+                    {
+                        if (entryBuffer[i] != destinationBuffer[i])
+                        {
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
             }
             catch
             {
