@@ -985,6 +985,207 @@ namespace ToNRoundCounter.UI
             roundLogExportGroup.Height = roundLogExportButton.Bottom + 20;
             thirdColumnY = roundLogExportGroup.Bottom + margin;
 
+            GroupBox grpAutoRecording = new GroupBox();
+            grpAutoRecording.Text = LanguageManager.Translate("自動録画設定");
+            grpAutoRecording.Location = new Point(thirdColumnX, thirdColumnY);
+            grpAutoRecording.Size = new Size(columnWidth, 360);
+            this.Controls.Add(grpAutoRecording);
+
+            int autoRecordingInnerY = 25;
+
+            AutoRecordingEnabledCheckBox = new CheckBox();
+            AutoRecordingEnabledCheckBox.Text = LanguageManager.Translate("指定条件でVRChatを自動録画する");
+            AutoRecordingEnabledCheckBox.AutoSize = true;
+            AutoRecordingEnabledCheckBox.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(AutoRecordingEnabledCheckBox);
+
+            autoRecordingInnerY = AutoRecordingEnabledCheckBox.Bottom + 8;
+
+            Label autoRecordingWindowTitleLabel = new Label();
+            autoRecordingWindowTitleLabel.Text = LanguageManager.Translate("録画対象ウィンドウ");
+            autoRecordingWindowTitleLabel.AutoSize = true;
+            autoRecordingWindowTitleLabel.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(autoRecordingWindowTitleLabel);
+
+            AutoRecordingWindowTitleTextBox = new TextBox();
+            AutoRecordingWindowTitleTextBox.Location = new Point(innerMargin, autoRecordingWindowTitleLabel.Bottom + 4);
+            AutoRecordingWindowTitleTextBox.Width = columnWidth - innerMargin * 2;
+            grpAutoRecording.Controls.Add(AutoRecordingWindowTitleTextBox);
+
+            autoRecordingInnerY = AutoRecordingWindowTitleTextBox.Bottom + 4;
+
+            Label autoRecordingWindowHelpLabel = new Label();
+            autoRecordingWindowHelpLabel.Text = LanguageManager.Translate("ウィンドウ名またはプロセス名の一部を指定できます");
+            autoRecordingWindowHelpLabel.AutoSize = true;
+            autoRecordingWindowHelpLabel.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(autoRecordingWindowHelpLabel);
+
+            autoRecordingInnerY = autoRecordingWindowHelpLabel.Bottom + 8;
+
+            Label autoRecordingFrameRateLabel = new Label();
+            autoRecordingFrameRateLabel.Text = LanguageManager.Translate("録画フレームレート");
+            autoRecordingFrameRateLabel.AutoSize = true;
+            autoRecordingFrameRateLabel.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(autoRecordingFrameRateLabel);
+
+            AutoRecordingFrameRateNumeric = new NumericUpDown();
+            AutoRecordingFrameRateNumeric.Location = new Point(innerMargin, autoRecordingFrameRateLabel.Bottom + 4);
+            AutoRecordingFrameRateNumeric.Width = 80;
+            AutoRecordingFrameRateNumeric.Minimum = 5;
+            AutoRecordingFrameRateNumeric.Maximum = 60;
+            AutoRecordingFrameRateNumeric.Value = Math.Min(Math.Max(_settings.AutoRecordingFrameRate, 5), 60);
+            grpAutoRecording.Controls.Add(AutoRecordingFrameRateNumeric);
+
+            Label autoRecordingFpsLabel = new Label();
+            autoRecordingFpsLabel.Text = LanguageManager.Translate("fps");
+            autoRecordingFpsLabel.AutoSize = true;
+            autoRecordingFpsLabel.Location = new Point(AutoRecordingFrameRateNumeric.Right + 8, AutoRecordingFrameRateNumeric.Top + 4);
+            grpAutoRecording.Controls.Add(autoRecordingFpsLabel);
+
+            autoRecordingInnerY = AutoRecordingFrameRateNumeric.Bottom + 10;
+
+            Label autoRecordingCommandLabel = new Label();
+            autoRecordingCommandLabel.Text = LanguageManager.Translate("録画コマンド");
+            autoRecordingCommandLabel.AutoSize = true;
+            autoRecordingCommandLabel.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(autoRecordingCommandLabel);
+
+            AutoRecordingCommandTextBox = new TextBox();
+            AutoRecordingCommandTextBox.Location = new Point(innerMargin, autoRecordingCommandLabel.Bottom + 4);
+            AutoRecordingCommandTextBox.Width = columnWidth - innerMargin * 3 - 90;
+            grpAutoRecording.Controls.Add(AutoRecordingCommandTextBox);
+
+            Button autoRecordingCommandBrowseButton = new Button();
+            autoRecordingCommandBrowseButton.Text = LanguageManager.Translate("参照...");
+            autoRecordingCommandBrowseButton.AutoSize = true;
+            autoRecordingCommandBrowseButton.Location = new Point(AutoRecordingCommandTextBox.Right + 10, AutoRecordingCommandTextBox.Top - 2);
+            autoRecordingCommandBrowseButton.Click += (s, e) =>
+            {
+                BrowseForAutoRecordingExecutable();
+                RefreshAutoRecordingControlsState();
+            };
+            grpAutoRecording.Controls.Add(autoRecordingCommandBrowseButton);
+
+            autoRecordingInnerY = AutoRecordingCommandTextBox.Bottom + 8;
+
+            Label autoRecordingArgumentsLabel = new Label();
+            autoRecordingArgumentsLabel.Text = LanguageManager.Translate("録画引数");
+            autoRecordingArgumentsLabel.AutoSize = true;
+            autoRecordingArgumentsLabel.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(autoRecordingArgumentsLabel);
+
+            AutoRecordingArgumentsTextBox = new TextBox();
+            AutoRecordingArgumentsTextBox.Location = new Point(innerMargin, autoRecordingArgumentsLabel.Bottom + 4);
+            AutoRecordingArgumentsTextBox.Width = columnWidth - innerMargin * 2;
+            grpAutoRecording.Controls.Add(AutoRecordingArgumentsTextBox);
+
+            autoRecordingInnerY = AutoRecordingArgumentsTextBox.Bottom + 4;
+
+            Label autoRecordingArgumentsHelpLabel = new Label();
+            autoRecordingArgumentsHelpLabel.Text = LanguageManager.Translate("録画引数の説明");
+            autoRecordingArgumentsHelpLabel.AutoSize = true;
+            autoRecordingArgumentsHelpLabel.MaximumSize = new Size(columnWidth - innerMargin * 2, 0);
+            autoRecordingArgumentsHelpLabel.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(autoRecordingArgumentsHelpLabel);
+
+            autoRecordingInnerY = autoRecordingArgumentsHelpLabel.Bottom + 8;
+
+            Label autoRecordingOutputLabel = new Label();
+            autoRecordingOutputLabel.Text = LanguageManager.Translate("出力フォルダー");
+            autoRecordingOutputLabel.AutoSize = true;
+            autoRecordingOutputLabel.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(autoRecordingOutputLabel);
+
+            AutoRecordingOutputDirectoryTextBox = new TextBox();
+            AutoRecordingOutputDirectoryTextBox.Location = new Point(innerMargin, autoRecordingOutputLabel.Bottom + 4);
+            AutoRecordingOutputDirectoryTextBox.Width = columnWidth - innerMargin * 3 - 90;
+            grpAutoRecording.Controls.Add(AutoRecordingOutputDirectoryTextBox);
+
+            autoRecordingBrowseOutputButton = new Button();
+            autoRecordingBrowseOutputButton.Text = LanguageManager.Translate("参照...");
+            autoRecordingBrowseOutputButton.AutoSize = true;
+            autoRecordingBrowseOutputButton.Location = new Point(AutoRecordingOutputDirectoryTextBox.Right + 10, AutoRecordingOutputDirectoryTextBox.Top - 2);
+            autoRecordingBrowseOutputButton.Click += (s, e) =>
+            {
+                BrowseForAutoRecordingOutputDirectory();
+                RefreshAutoRecordingControlsState();
+            };
+            grpAutoRecording.Controls.Add(autoRecordingBrowseOutputButton);
+
+            autoRecordingInnerY = AutoRecordingOutputDirectoryTextBox.Bottom + 8;
+
+            Label autoRecordingFormatLabel = new Label();
+            autoRecordingFormatLabel.Text = LanguageManager.Translate("AutoRecording_FormatLabel");
+            autoRecordingFormatLabel.AutoSize = true;
+            autoRecordingFormatLabel.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(autoRecordingFormatLabel);
+
+            AutoRecordingFormatComboBox = new ComboBox();
+            AutoRecordingFormatComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            AutoRecordingFormatComboBox.Location = new Point(innerMargin, autoRecordingFormatLabel.Bottom + 4);
+            AutoRecordingFormatComboBox.Width = columnWidth - innerMargin * 2;
+            AutoRecordingFormatComboBox.DisplayMember = nameof(RecordingFormatOption.Display);
+            AutoRecordingFormatComboBox.ValueMember = nameof(RecordingFormatOption.Extension);
+            var autoRecordingFormatOptions = CreateAutoRecordingFormatOptions();
+            AutoRecordingFormatComboBox.Items.AddRange(autoRecordingFormatOptions.Cast<object>().ToArray());
+            grpAutoRecording.Controls.Add(AutoRecordingFormatComboBox);
+
+            Label autoRecordingFormatHelpLabel = new Label();
+            autoRecordingFormatHelpLabel.Text = LanguageManager.Translate("AutoRecording_FormatHelp");
+            autoRecordingFormatHelpLabel.AutoSize = true;
+            autoRecordingFormatHelpLabel.MaximumSize = new Size(columnWidth - innerMargin * 2, 0);
+            autoRecordingFormatHelpLabel.Location = new Point(innerMargin, AutoRecordingFormatComboBox.Bottom + 4);
+            grpAutoRecording.Controls.Add(autoRecordingFormatHelpLabel);
+
+            autoRecordingInnerY = autoRecordingFormatHelpLabel.Bottom + 10;
+
+            Label autoRecordingRoundsLabel = new Label();
+            autoRecordingRoundsLabel.Text = LanguageManager.Translate("録画開始ラウンド");
+            autoRecordingRoundsLabel.AutoSize = true;
+            autoRecordingRoundsLabel.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(autoRecordingRoundsLabel);
+
+            AutoRecordingRoundTypesListBox = new CheckedListBox();
+            AutoRecordingRoundTypesListBox.Location = new Point(innerMargin, autoRecordingRoundsLabel.Bottom + 4);
+            AutoRecordingRoundTypesListBox.Size = new Size(columnWidth - innerMargin * 2, 90);
+            AutoRecordingRoundTypesListBox.Items.AddRange(KnownRoundTypes);
+            grpAutoRecording.Controls.Add(AutoRecordingRoundTypesListBox);
+
+            autoRecordingInnerY = AutoRecordingRoundTypesListBox.Bottom + 8;
+
+            Label autoRecordingTerrorsLabel = new Label();
+            autoRecordingTerrorsLabel.Text = LanguageManager.Translate("録画開始テラー");
+            autoRecordingTerrorsLabel.AutoSize = true;
+            autoRecordingTerrorsLabel.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(autoRecordingTerrorsLabel);
+
+            AutoRecordingTerrorNamesTextBox = new TextBox();
+            AutoRecordingTerrorNamesTextBox.Location = new Point(innerMargin, autoRecordingTerrorsLabel.Bottom + 4);
+            AutoRecordingTerrorNamesTextBox.Width = columnWidth - innerMargin * 2;
+            AutoRecordingTerrorNamesTextBox.Height = 70;
+            AutoRecordingTerrorNamesTextBox.Multiline = true;
+            grpAutoRecording.Controls.Add(AutoRecordingTerrorNamesTextBox);
+
+            Label autoRecordingTerrorHelpLabel = new Label();
+            autoRecordingTerrorHelpLabel.Text = LanguageManager.Translate("複数テラーの入力説明");
+            autoRecordingTerrorHelpLabel.AutoSize = true;
+            autoRecordingTerrorHelpLabel.Location = new Point(innerMargin, AutoRecordingTerrorNamesTextBox.Bottom + 2);
+            grpAutoRecording.Controls.Add(autoRecordingTerrorHelpLabel);
+
+            grpAutoRecording.Height = autoRecordingTerrorHelpLabel.Bottom + 15;
+
+            AutoRecordingEnabledCheckBox.CheckedChanged += (s, e) => RefreshAutoRecordingControlsState();
+            AutoRecordingWindowTitleTextBox.Text = _settings.AutoRecordingWindowTitle;
+            AutoRecordingFrameRateNumeric.Value = Math.Min(Math.Max(_settings.AutoRecordingFrameRate, 5), 60);
+            AutoRecordingOutputDirectoryTextBox.Text = _settings.AutoRecordingOutputDirectory;
+            AutoRecordingEnabledCheckBox.Checked = _settings.AutoRecordingEnabled;
+            SetAutoRecordingFormat(_settings.AutoRecordingOutputExtension);
+            SetAutoRecordingRoundTypes(_settings.AutoRecordingRoundTypes);
+            SetAutoRecordingTerrors(_settings.AutoRecordingTerrors);
+            RefreshAutoRecordingControlsState();
+
+            thirdColumnY += grpAutoRecording.Height + margin;
+
             currentY = currentY + grpOsc.Bottom + margin;
 
             // 表示設定グループ
@@ -1160,161 +1361,6 @@ namespace ToNRoundCounter.UI
             LoadAutoLaunchEntries(_settings.AutoLaunchEntries);
 
             rightColumnY += grpAutoLaunch.Height + margin;
-
-            GroupBox grpAutoRecording = new GroupBox();
-            grpAutoRecording.Text = LanguageManager.Translate("自動録画設定");
-            grpAutoRecording.Location = new Point(margin * 2 + columnWidth, rightColumnY);
-            grpAutoRecording.Size = new Size(columnWidth, 360);
-            this.Controls.Add(grpAutoRecording);
-
-            int autoRecordingInnerY = 25;
-
-            AutoRecordingEnabledCheckBox = new CheckBox();
-            AutoRecordingEnabledCheckBox.Text = LanguageManager.Translate("指定条件でVRChatを自動録画する");
-            AutoRecordingEnabledCheckBox.AutoSize = true;
-            AutoRecordingEnabledCheckBox.Location = new Point(innerMargin, autoRecordingInnerY);
-            grpAutoRecording.Controls.Add(AutoRecordingEnabledCheckBox);
-
-            autoRecordingInnerY = AutoRecordingEnabledCheckBox.Bottom + 8;
-
-            Label autoRecordingWindowTitleLabel = new Label();
-            autoRecordingWindowTitleLabel.Text = LanguageManager.Translate("録画対象ウィンドウ");
-            autoRecordingWindowTitleLabel.AutoSize = true;
-            autoRecordingWindowTitleLabel.Location = new Point(innerMargin, autoRecordingInnerY);
-            grpAutoRecording.Controls.Add(autoRecordingWindowTitleLabel);
-
-            AutoRecordingWindowTitleTextBox = new TextBox();
-            AutoRecordingWindowTitleTextBox.Location = new Point(innerMargin, autoRecordingWindowTitleLabel.Bottom + 4);
-            AutoRecordingWindowTitleTextBox.Width = columnWidth - innerMargin * 2;
-            grpAutoRecording.Controls.Add(AutoRecordingWindowTitleTextBox);
-
-            autoRecordingInnerY = AutoRecordingWindowTitleTextBox.Bottom + 4;
-
-            Label autoRecordingWindowHelpLabel = new Label();
-            autoRecordingWindowHelpLabel.Text = LanguageManager.Translate("ウィンドウ名またはプロセス名の一部を指定できます");
-            autoRecordingWindowHelpLabel.AutoSize = true;
-            autoRecordingWindowHelpLabel.Location = new Point(innerMargin, autoRecordingInnerY);
-            grpAutoRecording.Controls.Add(autoRecordingWindowHelpLabel);
-
-            autoRecordingInnerY = autoRecordingWindowHelpLabel.Bottom + 8;
-
-            Label autoRecordingFrameRateLabel = new Label();
-            autoRecordingFrameRateLabel.Text = LanguageManager.Translate("録画フレームレート");
-            autoRecordingFrameRateLabel.AutoSize = true;
-            autoRecordingFrameRateLabel.Location = new Point(innerMargin, autoRecordingInnerY);
-            grpAutoRecording.Controls.Add(autoRecordingFrameRateLabel);
-
-            AutoRecordingFrameRateNumeric = new NumericUpDown();
-            AutoRecordingFrameRateNumeric.Location = new Point(innerMargin, autoRecordingFrameRateLabel.Bottom + 4);
-            AutoRecordingFrameRateNumeric.Width = 80;
-            AutoRecordingFrameRateNumeric.Minimum = 5;
-            AutoRecordingFrameRateNumeric.Maximum = 60;
-            AutoRecordingFrameRateNumeric.Value = Math.Min(Math.Max(_settings.AutoRecordingFrameRate, 5), 60);
-            grpAutoRecording.Controls.Add(AutoRecordingFrameRateNumeric);
-
-            Label autoRecordingFpsLabel = new Label();
-            autoRecordingFpsLabel.Text = LanguageManager.Translate("fps");
-            autoRecordingFpsLabel.AutoSize = true;
-            autoRecordingFpsLabel.Location = new Point(AutoRecordingFrameRateNumeric.Right + 8, AutoRecordingFrameRateNumeric.Top + 4);
-            grpAutoRecording.Controls.Add(autoRecordingFpsLabel);
-
-            autoRecordingInnerY = AutoRecordingFrameRateNumeric.Bottom + 10;
-
-            Label autoRecordingOutputLabel = new Label();
-            autoRecordingOutputLabel.Text = LanguageManager.Translate("出力フォルダー");
-            autoRecordingOutputLabel.AutoSize = true;
-            autoRecordingOutputLabel.Location = new Point(innerMargin, autoRecordingInnerY);
-            grpAutoRecording.Controls.Add(autoRecordingOutputLabel);
-
-            AutoRecordingOutputDirectoryTextBox = new TextBox();
-            AutoRecordingOutputDirectoryTextBox.Location = new Point(innerMargin, autoRecordingOutputLabel.Bottom + 4);
-            AutoRecordingOutputDirectoryTextBox.Width = columnWidth - innerMargin * 3 - 90;
-            grpAutoRecording.Controls.Add(AutoRecordingOutputDirectoryTextBox);
-
-            autoRecordingBrowseOutputButton = new Button();
-            autoRecordingBrowseOutputButton.Text = LanguageManager.Translate("参照...");
-            autoRecordingBrowseOutputButton.AutoSize = true;
-            autoRecordingBrowseOutputButton.Location = new Point(AutoRecordingOutputDirectoryTextBox.Right + 10, AutoRecordingOutputDirectoryTextBox.Top - 2);
-            autoRecordingBrowseOutputButton.Click += (s, e) =>
-            {
-                BrowseForAutoRecordingOutputDirectory();
-                RefreshAutoRecordingControlsState();
-            };
-            grpAutoRecording.Controls.Add(autoRecordingBrowseOutputButton);
-
-            autoRecordingInnerY = AutoRecordingOutputDirectoryTextBox.Bottom + 8;
-
-            Label autoRecordingFormatLabel = new Label();
-            autoRecordingFormatLabel.Text = LanguageManager.Translate("AutoRecording_FormatLabel");
-            autoRecordingFormatLabel.AutoSize = true;
-            autoRecordingFormatLabel.Location = new Point(innerMargin, autoRecordingInnerY);
-            grpAutoRecording.Controls.Add(autoRecordingFormatLabel);
-
-            AutoRecordingFormatComboBox = new ComboBox();
-            AutoRecordingFormatComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            AutoRecordingFormatComboBox.Location = new Point(innerMargin, autoRecordingFormatLabel.Bottom + 4);
-            AutoRecordingFormatComboBox.Width = columnWidth - innerMargin * 2;
-            AutoRecordingFormatComboBox.DisplayMember = nameof(RecordingFormatOption.Display);
-            AutoRecordingFormatComboBox.ValueMember = nameof(RecordingFormatOption.Extension);
-            var autoRecordingFormatOptions = CreateAutoRecordingFormatOptions();
-            AutoRecordingFormatComboBox.Items.AddRange(autoRecordingFormatOptions.Cast<object>().ToArray());
-            grpAutoRecording.Controls.Add(AutoRecordingFormatComboBox);
-
-            Label autoRecordingFormatHelpLabel = new Label();
-            autoRecordingFormatHelpLabel.Text = LanguageManager.Translate("AutoRecording_FormatHelp");
-            autoRecordingFormatHelpLabel.AutoSize = true;
-            autoRecordingFormatHelpLabel.MaximumSize = new Size(columnWidth - innerMargin * 2, 0);
-            autoRecordingFormatHelpLabel.Location = new Point(innerMargin, AutoRecordingFormatComboBox.Bottom + 4);
-            grpAutoRecording.Controls.Add(autoRecordingFormatHelpLabel);
-
-            autoRecordingInnerY = autoRecordingFormatHelpLabel.Bottom + 10;
-
-            Label autoRecordingRoundsLabel = new Label();
-            autoRecordingRoundsLabel.Text = LanguageManager.Translate("録画開始ラウンド");
-            autoRecordingRoundsLabel.AutoSize = true;
-            autoRecordingRoundsLabel.Location = new Point(innerMargin, autoRecordingInnerY);
-            grpAutoRecording.Controls.Add(autoRecordingRoundsLabel);
-
-            AutoRecordingRoundTypesListBox = new CheckedListBox();
-            AutoRecordingRoundTypesListBox.Location = new Point(innerMargin, autoRecordingRoundsLabel.Bottom + 4);
-            AutoRecordingRoundTypesListBox.Size = new Size(columnWidth - innerMargin * 2, 90);
-            AutoRecordingRoundTypesListBox.Items.AddRange(KnownRoundTypes);
-            grpAutoRecording.Controls.Add(AutoRecordingRoundTypesListBox);
-
-            autoRecordingInnerY = AutoRecordingRoundTypesListBox.Bottom + 8;
-
-            Label autoRecordingTerrorsLabel = new Label();
-            autoRecordingTerrorsLabel.Text = LanguageManager.Translate("録画開始テラー");
-            autoRecordingTerrorsLabel.AutoSize = true;
-            autoRecordingTerrorsLabel.Location = new Point(innerMargin, autoRecordingInnerY);
-            grpAutoRecording.Controls.Add(autoRecordingTerrorsLabel);
-
-            AutoRecordingTerrorNamesTextBox = new TextBox();
-            AutoRecordingTerrorNamesTextBox.Location = new Point(innerMargin, autoRecordingTerrorsLabel.Bottom + 4);
-            AutoRecordingTerrorNamesTextBox.Width = columnWidth - innerMargin * 2;
-            AutoRecordingTerrorNamesTextBox.Height = 70;
-            AutoRecordingTerrorNamesTextBox.Multiline = true;
-            grpAutoRecording.Controls.Add(AutoRecordingTerrorNamesTextBox);
-
-            Label autoRecordingTerrorHelpLabel = new Label();
-            autoRecordingTerrorHelpLabel.Text = LanguageManager.Translate("複数テラーの入力説明");
-            autoRecordingTerrorHelpLabel.AutoSize = true;
-            autoRecordingTerrorHelpLabel.Location = new Point(innerMargin, AutoRecordingTerrorNamesTextBox.Bottom + 2);
-            grpAutoRecording.Controls.Add(autoRecordingTerrorHelpLabel);
-
-            grpAutoRecording.Height = autoRecordingTerrorHelpLabel.Bottom + 15;
-
-            AutoRecordingEnabledCheckBox.CheckedChanged += (s, e) => RefreshAutoRecordingControlsState();
-            AutoRecordingWindowTitleTextBox.Text = _settings.AutoRecordingWindowTitle;
-            AutoRecordingFrameRateNumeric.Value = Math.Min(Math.Max(_settings.AutoRecordingFrameRate, 5), 60);
-            AutoRecordingOutputDirectoryTextBox.Text = _settings.AutoRecordingOutputDirectory;
-            AutoRecordingEnabledCheckBox.Checked = _settings.AutoRecordingEnabled;
-            SetAutoRecordingFormat(_settings.AutoRecordingOutputExtension);
-            SetAutoRecordingRoundTypes(_settings.AutoRecordingRoundTypes);
-            SetAutoRecordingTerrors(_settings.AutoRecordingTerrors);
-            RefreshAutoRecordingControlsState();
-
-            rightColumnY += grpAutoRecording.Height + margin;
 
             GroupBox grpItemMusic = new GroupBox();
             grpItemMusic.Text = LanguageManager.Translate("アイテム音楽ギミック");
