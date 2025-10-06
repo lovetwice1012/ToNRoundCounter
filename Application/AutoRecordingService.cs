@@ -402,9 +402,9 @@ namespace ToNRoundCounter.Application
             }
 
             string sanitized = builder.ToString();
-            while (sanitized.Contains("__", StringComparison.Ordinal))
+            while (sanitized.Contains("__"))
             {
-                sanitized = sanitized.Replace("__", "_", StringComparison.Ordinal);
+                sanitized = sanitized.Replace("__", "_");
             }
 
             return sanitized.Trim('_');
@@ -602,13 +602,13 @@ namespace ToNRoundCounter.Application
                         break;
                     }
 
-                    var origin = new Point(rect.Left, rect.Top);
+                    var origin = new System.Drawing.Point(rect.Left, rect.Top);
 
                     try
                     {
                         using (var graphics = Graphics.FromImage(bitmap))
                         {
-                            graphics.CopyFromScreen(origin, Point.Empty, size, CopyPixelOperation.SourceCopy);
+                            graphics.CopyFromScreen(origin, System.Drawing.Point.Empty, size, CopyPixelOperation.SourceCopy);
                         }
 
                         _writer.WriteFrame(bitmap);
