@@ -11,6 +11,7 @@ namespace ToNRoundCounter.Application
 
         private readonly object _sync = new object();
         private readonly IEventLogger? _logger;
+        private readonly IRoundDataRepository? _roundDataRepository;
 
         public string PlayerDisplayName { get; set; } = string.Empty;
         public Round? CurrentRound { get; private set; }
@@ -23,9 +24,10 @@ namespace ToNRoundCounter.Application
         private readonly Dictionary<string, object> _stats = new();
         public int RoundCycle { get; private set; } = 0;
 
-        public StateService(IEventLogger? logger = null)
+        public StateService(IEventLogger? logger = null, IRoundDataRepository? roundDataRepository = null)
         {
             _logger = logger;
+            _roundDataRepository = roundDataRepository;
             _logger?.LogEvent("StateService", "State service instantiated.", LogEventLevel.Debug);
         }
 
@@ -83,6 +85,13 @@ namespace ToNRoundCounter.Application
             {
                 _roundLogHistory.Add(new Tuple<Round, string>(round, logEntry));
             }
+            try
+            {
+                _roundDataRepository?.AddRoundLog(round.Clone(), logEntry, DateTime.UtcNow);
+            }
+            catch
+            {
+            }
             NotifyStateChanged(nameof(AddRoundLog));
         }
 
@@ -95,6 +104,13 @@ namespace ToNRoundCounter.Application
                 updatedValue = RoundCycle;
             }
             _logger?.LogEvent("StateService", $"Round cycle incremented to {updatedValue}.");
+            try
+            {
+                _roundDataRepository?.UpsertStat("RoundCycle", updatedValue, DateTime.UtcNow);
+            }
+            catch
+            {
+            }
             NotifyStateChanged(nameof(IncrementRoundCycle));
         }
 
@@ -104,6 +120,13 @@ namespace ToNRoundCounter.Application
             lock (_sync)
             {
                 RoundCycle = value;
+            }
+            try
+            {
+                _roundDataRepository?.UpsertStat("RoundCycle", value, DateTime.UtcNow);
+            }
+            catch
+            {
             }
             NotifyStateChanged(nameof(SetRoundCycle));
         }
@@ -129,6 +152,13 @@ namespace ToNRoundCounter.Application
                     if (survived) terrorAgg.Survival++; else terrorAgg.Death++;
                 }
             }
+            try
+            {
+                _roundDataRepository?.RecordRoundResult(roundType, terrorType, survived, DateTime.UtcNow);
+            }
+            catch
+            {
+            }
 
             NotifyStateChanged(nameof(RecordRoundResult));
         }
@@ -139,6 +169,13 @@ namespace ToNRoundCounter.Application
             lock (_sync)
             {
                 _stats[name] = value;
+            }
+            try
+            {
+                _roundDataRepository?.UpsertStat(name, value, DateTime.UtcNow);
+            }
+            catch
+            {
             }
             NotifyStateChanged(nameof(UpdateStat));
         }

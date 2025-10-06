@@ -11,6 +11,7 @@ using ToNRoundCounter.Application;
 using ToNRoundCounter.Infrastructure;
 using ToNRoundCounter.Domain;
 using ToNRoundCounter.UI;
+using ToNRoundCounter.Infrastructure.Sqlite;
 using WinFormsApp = System.Windows.Forms.Application;
 
 namespace ToNRoundCounter
@@ -41,25 +42,43 @@ namespace ToNRoundCounter
 
             Log.Logger = loggerConfiguration.CreateLogger();
 
+            var dataDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data");
+            Directory.CreateDirectory(dataDirectory);
+
+            var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff", System.Globalization.CultureInfo.InvariantCulture);
+            var roundDataPath = Path.Combine(dataDirectory, "rounds", $"{timestamp}.sqlite");
+            var statisticsPath = Path.Combine(dataDirectory, "statistics", $"{timestamp}.sqlite");
+            var settingsPath = Path.Combine(dataDirectory, "settings", $"{timestamp}.sqlite");
+
+            var roundDataRepository = new SqliteRoundDataRepository(roundDataPath);
+            var eventLogRepository = new SqliteEventLogRepository(statisticsPath);
+            var settingsRepository = new SqliteSettingsRepository(settingsPath);
+
             var services = new ServiceCollection();
 
-            var eventLogger = new EventLogger();
+            var eventLogger = new EventLogger(eventLogRepository);
             eventLogger.LogEvent("Bootstrap", $"Application starting. Args: {(args.Length == 0 ? "<none>" : string.Join(" ", args))}");
             eventLogger.LogEvent("Bootstrap", $"Resolved log path: {Path.GetFullPath(logPath)}");
             eventLogger.LogEvent("Bootstrap", $"Resolved WebSocket endpoint: {wsUrl}");
+            eventLogger.LogEvent("Bootstrap", $"Round data SQLite path: {Path.GetFullPath(roundDataPath)}");
+            eventLogger.LogEvent("Bootstrap", $"Statistics SQLite path: {Path.GetFullPath(statisticsPath)}");
+            eventLogger.LogEvent("Bootstrap", $"Settings SQLite path: {Path.GetFullPath(settingsPath)}");
 
             var eventBus = new EventBus(eventLogger);
             var moduleHost = new ModuleHost(eventLogger, eventBus);
 
             services.AddSingleton<ICancellationProvider, CancellationProvider>();
             services.AddSingleton<IEventLogger>(eventLogger);
+            services.AddSingleton<IEventLogRepository>(eventLogRepository);
             services.AddSingleton<IEventBus>(eventBus);
+            services.AddSingleton<IRoundDataRepository>(roundDataRepository);
+            services.AddSingleton<ISettingsRepository>(settingsRepository);
             services.AddSingleton(moduleHost);
             services.AddSingleton<IOSCListener>(sp => new OSCListener(sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ICancellationProvider>(), sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<IWebSocketClient>(sp => new WebSocketClient(wsUrl, sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ICancellationProvider>(), sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton(sp => new AutoSuicideService(sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<StateService>();
-            services.AddSingleton<IAppSettings>(sp => new AppSettings(sp.GetRequiredService<IEventLogger>(), sp.GetRequiredService<IEventBus>()));
+            services.AddSingleton<IAppSettings>(sp => new AppSettings(sp.GetRequiredService<IEventLogger>(), sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ISettingsRepository>()));
             services.AddSingleton<IInputSender, NativeInputSender>();
             services.AddSingleton<IErrorReporter>(sp => new ErrorReporter(sp.GetRequiredService<IEventLogger>(), sp.GetRequiredService<IEventBus>()));
             services.AddSingleton<IHttpClient, HttpClientWrapper>();
