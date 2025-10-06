@@ -50,7 +50,7 @@ namespace ToNRoundCounter
             var statisticsPath = Path.Combine(dataDirectory, "statistics", $"{timestamp}.sqlite");
             var settingsPath = Path.Combine(dataDirectory, "settings", $"{timestamp}.sqlite");
 
-            var roundDataRepository = new SqliteRoundDataRepository(roundDataPath);
+            using var roundDataRepository = new SqliteRoundDataRepository(roundDataPath);
             var eventLogRepository = new SqliteEventLogRepository(statisticsPath);
             var settingsRepository = new SqliteSettingsRepository(settingsPath);
 

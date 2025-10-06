@@ -1,6 +1,5 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.Buffers;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
@@ -94,7 +93,7 @@ namespace ToNRoundCounter.Infrastructure
             {
                 return;
             }
-            var buffer = new byte[8192];
+            var buffer = ArrayPool<byte>.Shared.Rent(8192);
             try
             {
                 while (socket.State == WebSocketState.Open && !token.IsCancellationRequested)
@@ -107,14 +106,42 @@ namespace ToNRoundCounter.Infrastructure
                         await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", token);
                         break;
                     }
-                    var messageBytes = new List<byte>();
-                    messageBytes.AddRange(buffer.Take(result.Count));
-                    while (!result.EndOfMessage)
+                    string message;
+                    if (result.EndOfMessage)
                     {
-                        result = await socket.ReceiveAsync(segment, token);
-                        messageBytes.AddRange(buffer.Take(result.Count));
+                        message = Encoding.UTF8.GetString(buffer, 0, result.Count);
                     }
-                    var message = Encoding.UTF8.GetString(messageBytes.ToArray());
+                    else
+                    {
+                        var totalBytes = result.Count;
+                        byte[] currentMessageBuffer = ArrayPool<byte>.Shared.Rent(Math.Max(totalBytes, buffer.Length));
+                        try
+                        {
+                            Buffer.BlockCopy(buffer, 0, currentMessageBuffer, 0, result.Count);
+
+                            while (!result.EndOfMessage)
+                            {
+                                result = await socket.ReceiveAsync(segment, token);
+                                var requiredLength = totalBytes + result.Count;
+                                if (requiredLength > currentMessageBuffer.Length)
+                                {
+                                    var newBuffer = ArrayPool<byte>.Shared.Rent(Math.Max(currentMessageBuffer.Length * 2, requiredLength));
+                                    Buffer.BlockCopy(currentMessageBuffer, 0, newBuffer, 0, totalBytes);
+                                    ArrayPool<byte>.Shared.Return(currentMessageBuffer);
+                                    currentMessageBuffer = newBuffer;
+                                }
+
+                                Buffer.BlockCopy(buffer, 0, currentMessageBuffer, totalBytes, result.Count);
+                                totalBytes += result.Count;
+                            }
+
+                            message = Encoding.UTF8.GetString(currentMessageBuffer, 0, totalBytes);
+                        }
+                        finally
+                        {
+                            ArrayPool<byte>.Shared.Return(currentMessageBuffer);
+                        }
+                    }
                     await _channel.Writer.WriteAsync(message, token);
                     _receivedMessages++;
                     _logger.LogEvent("WebSocket", $"Received message #{_receivedMessages}: {Truncate(message, 200)}");
@@ -123,6 +150,10 @@ namespace ToNRoundCounter.Infrastructure
             catch (Exception ex)
             {
                 _logger.LogEvent("WebSocketReceive", ex.Message, Serilog.Events.LogEventLevel.Error);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
             }
         }
 
