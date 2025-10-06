@@ -228,8 +228,9 @@ namespace ToNRoundCounter.Application
             {
                 if (_terrorAggregates.TryGetRound(round, out var dict))
                 {
-                    terrorDict = new Dictionary<string, TerrorAggregate>(dict);
-                    _logger?.LogEvent("StateService", () => $"Terror aggregates retrieval succeeded for round '{round}' with {terrorDict.Count} entries.", LogEventLevel.Debug);
+                    var terrorDictSnapshot = new Dictionary<string, TerrorAggregate>(dict);
+                    terrorDict = terrorDictSnapshot;
+                    _logger?.LogEvent("StateService", () => $"Terror aggregates retrieval succeeded for round '{round}' with {terrorDictSnapshot.Count} entries.", LogEventLevel.Debug);
                     return true;
                 }
                 terrorDict = null;
