@@ -50,6 +50,7 @@ namespace ToNRoundCounter.Application
         bool AutoSuicideEnabled { get; set; }
         string apikey { get; set; }
         string ThemeKey { get; set; }
+        string Language { get; set; }
         string LogFilePath { get; set; }
         string WebSocketIp { get; set; }
         bool AutoLaunchEnabled { get; set; }

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version='1.0' encoding='utf-8'?>
 <root>
   <resheader name="resmimetype">
     <value>text/microsoft-resx</value>
@@ -13,72 +13,72 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="APIキー:" xml:space="preserve">
-    <value>APIキー:</value>
+    <value>API ključ:</value>
   </data>
   <data name="APIキーは32文字以上である必要があります。" xml:space="preserve">
-    <value>APIキーは32文字以上である必要があります。</value>
+    <value>API tipke moraju biti dugačke najmanje 32 znaka.</value>
   </data>
   <data name="Connected" xml:space="preserve">
-    <value>接続済み</value>
+    <value>Povezan</value>
   </data>
   <data name="Disconnected" xml:space="preserve">
-    <value>切断</value>
+    <value>Nepovezan</value>
   </data>
   <data name="Discord通知設定" xml:space="preserve">
-    <value>Discord通知設定</value>
+    <value>Postavke obavijesti o neskladu</value>
   </data>
   <data name="InfoPanel_Damage" xml:space="preserve">
-    <value>ダメージ:</value>
+    <value>Oštećenje:</value>
   </data>
   <data name="InfoPanel_Item" xml:space="preserve">
-    <value>アイテム:</value>
+    <value>Artikal:</value>
   </data>
   <data name="InfoPanel_Map" xml:space="preserve">
-    <value>MAP:</value>
+    <value>KARTA:</value>
   </data>
   <data name="InfoPanel_RoundType" xml:space="preserve">
-    <value>ラウンドタイプ:</value>
+    <value>Vrsta kruga:</value>
   </data>
   <data name="InfoPanel_Terror" xml:space="preserve">
-    <value>テラー:</value>
+    <value>Teror:</value>
   </data>
   <data name="Language_ChineseSimplified" xml:space="preserve">
-    <value>中国語(簡体字)</value>
+    <value>Kinezi (pojednostavljeni)</value>
   </data>
   <data name="Language_English" xml:space="preserve">
-    <value>英語</value>
+    <value>engleski</value>
   </data>
   <data name="Language_Japanese" xml:space="preserve">
-    <value>日本語</value>
+    <value>japanski</value>
   </data>
   <data name="Language_Korean" xml:space="preserve">
-    <value>韓国語</value>
+    <value>korejski</value>
   </data>
   <data name="OK" xml:space="preserve">
-    <value>OK</value>
+    <value>U REDU</value>
   </data>
   <data name="OSC接続ポート:" xml:space="preserve">
-    <value>OSC接続ポート:</value>
+    <value>OSC luka:</value>
   </data>
   <data name="OSC設定" xml:space="preserve">
-    <value>OSC設定</value>
+    <value>OSC postavke</value>
   </data>
   <data name="ParseError" xml:space="preserve">
-    <value>解析エラー</value>
+    <value>Pogreška raščlanjivanja</value>
   </data>
   <data name="ToNRoundCounter-Cloudの設定" xml:space="preserve">
-    <value>ToNRoundCounter-Cloudの設定</value>
+    <value>Postavke tonroundcounter-cloud</value>
   </data>
   <data name="ToNRoundCounter-Cloudはセーブコードの複数端末間での全自動同期などの機能を持つクラウドサービスです。\n利用にはAPIキーが必要です。\nAPIキーはwebサイトから取得してください。" xml:space="preserve">
-    <value>ToNRoundCounter-Cloudはセーブコードの複数端末間での全自動同期などの機能を持つクラウドサービスです。
-利用にはAPIキーが必要です。
-APIキーはwebサイトから取得してください。</value>
+    <value>TonroundCounter-Cloud je usluga u oblaku koja može automatski sinkronizirati kodove na više uređaja.
+Potreban je API ključ.
+Na web stranici dobijte API ključ.</value>
   </data>
   <data name="ToNRoundCounter-Cloudを開く" xml:space="preserve">
-    <value>ToNRoundCounter-Cloudを開く</value>
+    <value>Otvoreni tonroundcounter-cloud</value>
   </data>
   <data name="ToNRoundCouter" xml:space="preserve">
-    <value>ToNRoundCounter</value>
+    <value>Tonroundcounter</value>
   </data>
   <data name="WebSocket IP:" xml:space="preserve">
     <value>WebSocket IP:</value>
@@ -87,360 +87,360 @@ APIキーはwebサイトから取得してください。</value>
     <value>Webhook URL:</value>
   </data>
   <data name="アイテムサウンドを優先する" xml:space="preserve">
-    <value>アイテムサウンドを優先する</value>
+    <value>Prioritete zvukove predmeta</value>
   </data>
   <data name="アイテム音楽ギミック" xml:space="preserve">
-    <value>アイテム音楽ギミック</value>
+    <value>Predmet glazbenog trik</value>
   </data>
   <data name="アンバウンドのテラー内容を表示" xml:space="preserve">
-    <value>アンバウンドのテラー内容を表示</value>
+    <value>Pokažite nevezane detalje terora</value>
   </data>
   <data name="インポート" xml:space="preserve">
-    <value>インポート</value>
+    <value>Uvoz</value>
   </data>
   <data name="ウィンドウ" xml:space="preserve">
-    <value>ウィンドウ</value>
+    <value>Prozori</value>
   </data>
   <data name="エクスポート" xml:space="preserve">
-    <value>エクスポート</value>
+    <value>Izvoz</value>
   </data>
   <data name="エラー" xml:space="preserve">
-    <value>エラー</value>
+    <value>Pogreška</value>
   </data>
   <data name="オーバーレイ設定" xml:space="preserve">
-    <value>オーバーレイ設定</value>
+    <value>Postavke prekrivanja</value>
   </data>
   <data name="キャンセル" xml:space="preserve">
-    <value>キャンセル</value>
+    <value>Otkazati</value>
   </data>
   <data name="ショートカットを表示" xml:space="preserve">
-    <value>ショートカットを表示</value>
+    <value>Prikaži prečace</value>
   </data>
   <data name="ダメージを表示" xml:space="preserve">
-    <value>ダメージを表示</value>
+    <value>Pokazati štetu</value>
   </data>
   <data name="テラー" xml:space="preserve">
-    <value>テラー</value>
+    <value>Teror</value>
   </data>
   <data name="テラーの名前の色固定:" xml:space="preserve">
-    <value>テラーの名前の色固定:</value>
+    <value>Zaključajte boju imena terora:</value>
   </data>
   <data name="テラーを表示" xml:space="preserve">
-    <value>テラーを表示</value>
+    <value>Pokazati teror</value>
   </data>
   <data name="テラー名" xml:space="preserve">
-    <value>テラー名</value>
+    <value>Ime terora</value>
   </data>
   <data name="テラー詳細情報を表示" xml:space="preserve">
-    <value>テラー詳細情報を表示</value>
+    <value>Prikaži detalje o teroru</value>
   </data>
   <data name="テーマ" xml:space="preserve">
-    <value>テーマ</value>
+    <value>Tema</value>
   </data>
   <data name="デバッグ情報表示" xml:space="preserve">
-    <value>デバッグ情報表示</value>
+    <value>Prikaži informacije o uklanjanju pogrešaka</value>
   </data>
   <data name="ファイル" xml:space="preserve">
-    <value>ファイル</value>
+    <value>Datoteka</value>
   </data>
   <data name="フィルター設定" xml:space="preserve">
-    <value>フィルター設定</value>
+    <value>Postavke filtra</value>
   </data>
   <data name="プリセット:" xml:space="preserve">
-    <value>プリセット:</value>
+    <value>Unaprijed postavljeno:</value>
   </data>
   <data name="プリセットをインポートしました。" xml:space="preserve">
-    <value>プリセットをインポートしました。</value>
+    <value>Unaprijed postavljeno uvezeno.</value>
   </data>
   <data name="プリセットをエクスポートしました。" xml:space="preserve">
-    <value>プリセットをエクスポートしました。</value>
+    <value>Pretpostavljen izvezen.</value>
   </data>
   <data name="プリセットを保存しました。" xml:space="preserve">
-    <value>プリセットを保存しました。</value>
+    <value>Unaprijed spreman.</value>
   </data>
   <data name="ラウンド/テラーBGM設定" xml:space="preserve">
-    <value>ラウンド/テラーBGM設定</value>
+    <value>Postavke okrugle/terorizam BGM</value>
   </data>
   <data name="ラウンド/テラーごとのBGMを再生する" xml:space="preserve">
-    <value>ラウンド/テラーごとのBGMを再生する</value>
+    <value>Igrajte BGM po okruglom/teroru</value>
   </data>
   <data name="ラウンドBGMを優先する" xml:space="preserve">
-    <value>ラウンドBGMを優先する</value>
+    <value>Prioritet Okrugli BGM</value>
   </data>
   <data name="ラウンドタイプ" xml:space="preserve">
-    <value>ラウンドタイプ</value>
+    <value>Tipa</value>
   </data>
   <data name="ラウンドタイプごとの統計表示設定:" xml:space="preserve">
-    <value>ラウンドタイプごとの統計表示設定:</value>
+    <value>Zaslon statistike s okruglim vrstama:</value>
   </data>
   <data name="ラウンドタイプ推移を表示" xml:space="preserve">
-    <value>ラウンドタイプ推移を表示</value>
+    <value>Prikaži povijest okruglog tipa</value>
   </data>
   <data name="ラウンドログ" xml:space="preserve">
-    <value>ラウンドログ</value>
+    <value>Okrugli zapisnik</value>
   </data>
   <data name="ラウンドログを表示する" xml:space="preserve">
-    <value>ラウンドログを表示する</value>
+    <value>Prikaži okrugli dnevnik</value>
   </data>
   <data name="ラウンドログ背景色:" xml:space="preserve">
-    <value>ラウンドログ背景色:</value>
+    <value>Pozadina okruglog dnevnika:</value>
   </data>
   <data name="ラウンド名" xml:space="preserve">
-    <value>ラウンド名</value>
+    <value>Okruglo ime</value>
   </data>
   <data name="ラウンド状況を表示" xml:space="preserve">
-    <value>ラウンド状況を表示</value>
+    <value>Prikaži status kruga</value>
   </data>
   <data name="ラウンド結果をDiscordに送信するWebhook URLを設定します。空欄で無効化されます。" xml:space="preserve">
-    <value>ラウンド結果をDiscordに送信するWebhook URLを設定します。空欄で無効化されます。</value>
+    <value>Konfigurirajte URL WebHook da pošalje okrugle rezultate u nesklad. Ostavite prazno da se onemogući.</value>
   </data>
   <data name="ラウンド統計を表示" xml:space="preserve">
-    <value>ラウンド統計を表示</value>
+    <value>Pokažite okrugle statistike</value>
   </data>
   <data name="両方とも再生する" xml:space="preserve">
-    <value>両方とも再生する</value>
+    <value>Igrajte oboje</value>
   </data>
   <data name="保存" xml:space="preserve">
-    <value>保存</value>
+    <value>Uštedjeti</value>
   </data>
   <data name="再生する音声" xml:space="preserve">
-    <value>再生する音声</value>
+    <value>Zvuk za reprodukciju</value>
   </data>
   <data name="出現回数" xml:space="preserve">
-    <value>出現回数</value>
+    <value>Nastupi</value>
   </data>
   <data name="削除" xml:space="preserve">
-    <value>削除</value>
+    <value>Ukloniti</value>
   </data>
   <data name="参照..." xml:space="preserve">
-    <value>参照...</value>
+    <value>Pregledajte ...</value>
   </data>
   <data name="固定する" xml:space="preserve">
-    <value>固定する</value>
+    <value>Pin na vrhu</value>
   </data>
   <data name="固定解除" xml:space="preserve">
-    <value>固定解除</value>
+    <value>Raskoš</value>
   </data>
   <data name="外部アプリを自動起動する" xml:space="preserve">
-    <value>外部アプリを自動起動する</value>
+    <value>Automatski pokrenite vanjske aplikacije</value>
   </data>
   <data name="実行ファイル" xml:space="preserve">
-    <value>実行ファイル</value>
+    <value>Izvršni</value>
   </data>
   <data name="対象アイテム名" xml:space="preserve">
-    <value>対象アイテム名</value>
+    <value>Naziv ciljne stavke</value>
   </data>
   <data name="履歴表示数:" xml:space="preserve">
-    <value>履歴表示数:</value>
+    <value>Broj povijesti:</value>
   </data>
   <data name="引数" xml:space="preserve">
-    <value>引数</value>
+    <value>Argumenti</value>
   </data>
   <data name="情報" xml:space="preserve">
-    <value>情報</value>
+    <value>Informacija</value>
   </data>
   <data name="情報表示欄背景色:" xml:space="preserve">
-    <value>情報表示欄背景色:</value>
+    <value>Pozadina info ploče:</value>
   </data>
   <data name="時計を表示" xml:space="preserve">
-    <value>時計を表示</value>
+    <value>Show clock</value>
   </data>
   <data name="曖昧マッチング" xml:space="preserve">
-    <value>曖昧マッチング</value>
+    <value>Nejasno podudaranje</value>
   </data>
   <data name="最大速度" xml:space="preserve">
-    <value>最大速度</value>
+    <value>Maksimalna brzina</value>
   </data>
   <data name="最小速度" xml:space="preserve">
-    <value>最小速度</value>
+    <value>Min brzina</value>
   </data>
   <data name="有効" xml:space="preserve">
-    <value>有効</value>
+    <value>Omogućeno</value>
   </data>
   <data name="構文エラー" xml:space="preserve">
-    <value>構文エラー</value>
+    <value>Pogreška sintakse</value>
   </data>
   <data name="次ラウンド予測を表示" xml:space="preserve">
-    <value>次ラウンド予測を表示</value>
+    <value>Prikaži predviđanje sljedećeg kruga</value>
   </data>
   <data name="死亡回数" xml:space="preserve">
-    <value>死亡回数</value>
+    <value>Smrtni slučajevi</value>
   </data>
   <data name="滞在タイマーを表示" xml:space="preserve">
-    <value>滞在タイマーを表示</value>
+    <value>Prikaži tajmer</value>
   </data>
   <data name="特定アイテムで音楽を再生する" xml:space="preserve">
-    <value>特定アイテムで音楽を再生する</value>
+    <value>Reproducirajte glazbu za određene predmete</value>
   </data>
   <data name="現在の設定では自動自殺を行いません" xml:space="preserve">
-    <value>現在の設定では自動自殺を行いません</value>
+    <value>Auto-samoubojstvo neće se pokrenuti s trenutnim postavkama.</value>
   </data>
   <data name="生存回数" xml:space="preserve">
-    <value>生存回数</value>
+    <value>Preživjeli</value>
   </data>
   <data name="生存率" xml:space="preserve">
-    <value>生存率</value>
+    <value>Stopa preživljavanja</value>
   </data>
   <data name="競合時の優先設定:" xml:space="preserve">
-    <value>競合時の優先設定:</value>
+    <value>Prioritet kada se pojave sukobi:</value>
   </data>
   <data name="終了" xml:space="preserve">
-    <value>終了</value>
+    <value>Izlaz </value>
   </data>
   <data name="統計情報を表示する" xml:space="preserve">
-    <value>統計情報を表示する</value>
+    <value>Pokazati statistiku</value>
   </data>
   <data name="統計情報表示欄" xml:space="preserve">
-    <value>統計情報表示欄</value>
+    <value>Statistika</value>
   </data>
   <data name="統計表示欄背景色:" xml:space="preserve">
-    <value>統計表示欄背景色:</value>
+    <value>Pozadina ploče statistike:</value>
   </data>
   <data name="背景色設定" xml:space="preserve">
-    <value>背景色設定</value>
+    <value>Boje pozadine</value>
   </data>
   <data name="自動自殺は無効になっています" xml:space="preserve">
-    <value>自動自殺は無効になっています</value>
+    <value>Auto-samoubojstvo je onemogućeno.</value>
   </data>
   <data name="自動自殺を有効にする" xml:space="preserve">
-    <value>自動自殺を有効にする</value>
+    <value>Omogući auto-samoubojstvo</value>
   </data>
   <data name="自動自殺モード" xml:space="preserve">
-    <value>自動自殺モード</value>
+    <value>Auto-samoucidinski način</value>
   </data>
   <data name="自動自殺対象ラウンド:" xml:space="preserve">
-    <value>自動自殺対象ラウンド:</value>
+    <value>Auto-samo-samoubojstvo ciljanih krugova:</value>
   </data>
   <data name="自動起動設定" xml:space="preserve">
-    <value>自動起動設定</value>
+    <value>Postavke automatskog lansiranja</value>
   </data>
   <data name="色選択" xml:space="preserve">
-    <value>色選択</value>
+    <value>Odaberite boju</value>
   </data>
   <data name="表示設定" xml:space="preserve">
-    <value>表示設定</value>
+    <value>Postavke prikaza</value>
   </data>
   <data name="角度を表示" xml:space="preserve">
-    <value>角度を表示</value>
+    <value>Pokazati kut</value>
   </data>
   <data name="解析できなかった行があります:" xml:space="preserve">
-    <value>解析できなかった行があります:</value>
+    <value>Linije se nisu mogle raščlaniti:</value>
   </data>
   <data name="言語" xml:space="preserve">
-    <value>言語</value>
+    <value>Jezik</value>
   </data>
   <data name="設定" xml:space="preserve">
-    <value>設定</value>
+    <value>Postavke</value>
   </data>
   <data name="設定..." xml:space="preserve">
-    <value>設定...</value>
+    <value>Postavke ...</value>
   </data>
   <data name="設定内容" xml:space="preserve">
-    <value>設定内容</value>
+    <value>Konfiguracija</value>
   </data>
   <data name="設定内容確認" xml:space="preserve">
-    <value>設定内容確認</value>
+    <value>Pregledajte konfiguraciju</value>
   </data>
   <data name="設定変更" xml:space="preserve">
-    <value>設定変更</value>
+    <value>Promijenite postavke</value>
   </data>
   <data name="詳細設定を利用する" xml:space="preserve">
-    <value>詳細設定を利用する</value>
+    <value>Koristite napredne postavke</value>
   </data>
   <data name="詳細設定ドキュメント" xml:space="preserve">
-    <value>詳細設定ドキュメント</value>
+    <value>Dokumenti naprednih postavki</value>
   </data>
   <data name="読み込み" xml:space="preserve">
-    <value>読み込み</value>
+    <value>Opterećenje</value>
   </data>
   <data name="警告" xml:space="preserve">
-    <value>警告</value>
+    <value>Upozorenje</value>
   </data>
   <data name="追加" xml:space="preserve">
-    <value>追加</value>
+    <value>Dodati</value>
   </data>
   <data name="追加設定" xml:space="preserve">
-    <value>追加設定</value>
+    <value>Dodatne postavke</value>
   </data>
   <data name="透明度" xml:space="preserve">
-    <value>透明度</value>
+    <value>Neprozirnost</value>
   </data>
   <data name="速度を表示" xml:space="preserve">
-    <value>速度を表示</value>
+    <value>Pokazati brzinu</value>
   </data>
   <data name="Language_Danish" xml:space="preserve">
-    <value>デンマーク語</value>
+    <value>danski</value>
   </data>
   <data name="Language_German" xml:space="preserve">
-    <value>ドイツ語</value>
+    <value>njemački</value>
   </data>
   <data name="Language_EnglishUnitedKingdom" xml:space="preserve">
-    <value>英語, イギリス</value>
+    <value>Engleski (Ujedinjeno Kraljevstvo)</value>
   </data>
   <data name="Language_EnglishUnitedStates" xml:space="preserve">
-    <value>英語, アメリカ</value>
+    <value>Engleski (Sjedinjene Države)</value>
   </data>
   <data name="Language_Spanish" xml:space="preserve">
-    <value>スペイン語</value>
+    <value>Španjolski</value>
   </data>
   <data name="Language_SpanishLatinAmerica" xml:space="preserve">
-    <value>スペイン語 (ラテンアメリカ)</value>
+    <value>Španjolska (Latinska Amerika)</value>
   </data>
   <data name="Language_French" xml:space="preserve">
-    <value>フランス語</value>
+    <value>francuski</value>
   </data>
   <data name="Language_Croatian" xml:space="preserve">
-    <value>クロアチア語</value>
+    <value>hrvatski</value>
   </data>
   <data name="Language_Italian" xml:space="preserve">
-    <value>イタリア語</value>
+    <value>talijanski</value>
   </data>
   <data name="Language_Lithuanian" xml:space="preserve">
-    <value>リトアニア語</value>
+    <value>litvanski</value>
   </data>
   <data name="Language_Hungarian" xml:space="preserve">
-    <value>ハンガリー語</value>
+    <value>Mađarski</value>
   </data>
   <data name="Language_Dutch" xml:space="preserve">
-    <value>オランダ語</value>
+    <value>Nizozemski</value>
   </data>
   <data name="Language_Norwegian" xml:space="preserve">
-    <value>ノルウェー語</value>
+    <value>Norvežanin</value>
   </data>
   <data name="Language_Polish" xml:space="preserve">
-    <value>ポーランド語</value>
+    <value>Polirati</value>
   </data>
   <data name="Language_PortugueseBrazil" xml:space="preserve">
-    <value>ポルトガル語, ブラジル</value>
+    <value>Portugal (Brazil)</value>
   </data>
   <data name="Language_Romanian" xml:space="preserve">
-    <value>ルーマニア語</value>
+    <value>Rumun</value>
   </data>
   <data name="Language_Finnish" xml:space="preserve">
-    <value>フィンランド語</value>
+    <value>Finski</value>
   </data>
   <data name="Language_Swedish" xml:space="preserve">
-    <value>スウェーデン語</value>
+    <value>švedski</value>
   </data>
   <data name="Language_Vietnamese" xml:space="preserve">
-    <value>ベトナム語</value>
+    <value>vijetnamski</value>
   </data>
   <data name="Language_Turkish" xml:space="preserve">
-    <value>トルコ語</value>
+    <value>turski</value>
   </data>
   <data name="Language_Thai" xml:space="preserve">
-    <value>タイ語</value>
+    <value>Tajlandski</value>
   </data>
   <data name="Language_Greek" xml:space="preserve">
-    <value>ギリシャ語</value>
+    <value>grčki</value>
   </data>
   <data name="Language_Bulgarian" xml:space="preserve">
-    <value>ブルガリア語</value>
+    <value>Bugarski</value>
   </data>
   <data name="Language_Russian" xml:space="preserve">
-    <value>ロシア語</value>
+    <value>ruski</value>
   </data>
   <data name="Language_Ukrainian" xml:space="preserve">
-    <value>ウクライナ語</value>
+    <value>ukrajinski</value>
   </data>
 </root>

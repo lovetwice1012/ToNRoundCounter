@@ -72,6 +72,7 @@ namespace ToNRoundCounter.Infrastructure
         public bool AutoSuicideEnabled { get; set; }
         public string apikey { get; set; } = string.Empty;
         public string ThemeKey { get; set; } = Theme.DefaultThemeKey;
+        public string Language { get; set; } = LanguageManager.DefaultCulture;
         public string LogFilePath { get; set; } = "logs/log-.txt";
         public string WebSocketIp { get; set; } = "127.0.0.1";
         public bool AutoLaunchEnabled { get; set; }
@@ -160,6 +161,8 @@ namespace ToNRoundCounter.Infrastructure
                 }
 
                 ThemeKey = NormalizeThemeKey(ThemeKey);
+                Language = LanguageManager.NormalizeCulture(Language);
+                LanguageManager.SetLanguage(Language);
                 _logger.LogEvent("AppSettings", $"Theme normalized to '{ThemeKey}'.");
                 _bus.Publish(new SettingsValidating(this, validationErrors));
                 var errors = Validate();
@@ -466,6 +469,7 @@ namespace ToNRoundCounter.Infrastructure
                 AutoSuicideUseDetail = AutoSuicideUseDetail,
                 apikey = apikey,
                 ThemeKey = NormalizeThemeKey(ThemeKey),
+                Language = LanguageManager.NormalizeCulture(Language),
                 LogFilePath = LogFilePath,
                 WebSocketIp = WebSocketIp,
                 AutoLaunchEnabled = AutoLaunchEnabled,
@@ -551,6 +555,7 @@ namespace ToNRoundCounter.Infrastructure
         public bool AutoSuicideUseDetail { get; set; }
         public string apikey { get; set; } = string.Empty;
         public string ThemeKey { get; set; } = Theme.DefaultThemeKey;
+        public string Language { get; set; } = LanguageManager.DefaultCulture;
         public string LogFilePath { get; set; } = string.Empty;
         public string WebSocketIp { get; set; } = string.Empty;
         public bool AutoLaunchEnabled { get; set; }
