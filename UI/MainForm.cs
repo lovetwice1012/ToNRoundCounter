@@ -1271,7 +1271,7 @@ namespace ToNRoundCounter.UI
 
                     if (string.IsNullOrWhiteSpace(statName) || valueToken == null)
                     {
-                        continue;
+                        return;
                     }
 
                     var statValue = valueToken.Type == JTokenType.Null ? null : valueToken.ToObject<object>();
@@ -2728,6 +2728,12 @@ namespace ToNRoundCounter.UI
                 return null;
             }
 
+            var roundBgmEntries = _settings.RoundBgmEntries;
+            if (roundBgmEntries == null)
+            {
+                return null;
+            }
+
             static string? NormalizeKey(string? value)
             {
                 if (string.IsNullOrWhiteSpace(value))
@@ -2798,7 +2804,7 @@ namespace ToNRoundCounter.UI
             var matchesTerrorOnly = new List<RoundBgmEntry>();
             var matchesWildcard = new List<RoundBgmEntry>();
 
-            foreach (var entry in _settings.RoundBgmEntries)
+            foreach (var entry in roundBgmEntries)
             {
                 if (entry == null || !entry.Enabled)
                 {

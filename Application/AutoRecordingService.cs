@@ -1044,7 +1044,7 @@ namespace ToNRoundCounter.Application
                 { "vob", new FormatDescriptor(MediaFoundationInterop.MFVideoFormat_MPEG2, MediaFoundationInterop.MFTranscodeContainerType_MPEG2) },
             };
 
-            private readonly IMFSinkWriter _sinkWriter = null!;
+            private readonly MediaFoundationInterop.IMFSinkWriter _sinkWriter = null!;
             private readonly int _streamIndex;
             private readonly int _width;
             private readonly int _height;
@@ -1083,10 +1083,10 @@ namespace ToNRoundCounter.Application
                 MediaFoundationInterop.AddRef();
 
                 bool initialized = false;
-                IMFAttributes? attributes = null;
-                IMFMediaType? outputType = null;
-                IMFMediaType? inputType = null;
-                IMFSinkWriter? writer = null;
+                MediaFoundationInterop.IMFAttributes? attributes = null;
+                MediaFoundationInterop.IMFMediaType? outputType = null;
+                MediaFoundationInterop.IMFMediaType? inputType = null;
+                MediaFoundationInterop.IMFSinkWriter? writer = null;
 
                 try
                 {
@@ -1205,8 +1205,8 @@ namespace ToNRoundCounter.Application
 
             private void WriteFrameInternal(IntPtr scan0, int stride)
             {
-                IMFMediaBuffer? buffer = null;
-                IMFSample? sample = null;
+                MediaFoundationInterop.IMFMediaBuffer? buffer = null;
+                MediaFoundationInterop.IMFSample? sample = null;
                 IntPtr destination = IntPtr.Zero;
 
                 try
