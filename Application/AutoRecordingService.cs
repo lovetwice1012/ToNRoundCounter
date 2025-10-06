@@ -130,7 +130,8 @@ namespace ToNRoundCounter.Application
             _recorder = recorder;
             _currentTriggerDescription = triggerDetails;
             recorder.Completion.ContinueWith(_ => HandleRecorderCompleted(recorder), TaskScheduler.Default);
-            _logger.LogEvent("AutoRecording", () => $"Recording started. Output: {outputPath}. Trigger: {triggerDetails}");
+            string encoderDescription = recorder.IsHardwareAccelerated ? "hardware-accelerated" : "software";
+            _logger.LogEvent("AutoRecording", () => $"Recording started. Output: {outputPath}. Trigger: {triggerDetails}. Encoder: {encoderDescription}.");
         }
 
         private void HandleRecorderCompleted(InternalScreenRecorder recorder)
@@ -439,6 +440,7 @@ namespace ToNRoundCounter.Application
             private bool _hasError;
             private bool _stopRequested;
             private bool _disposed;
+            private readonly bool _isHardwareAccelerated;
 
             private InternalScreenRecorder(IntPtr windowHandle, Rectangle bounds, int frameRate, IFrameWriter writer)
             {
@@ -447,6 +449,7 @@ namespace ToNRoundCounter.Application
                 _frameRate = frameRate;
                 _cts = new CancellationTokenSource();
                 _writer = writer;
+                _isHardwareAccelerated = writer.IsHardwareAccelerated;
                 _captureTask = Task.Run(() => CaptureLoopAsync(_cts.Token));
             }
 
@@ -484,6 +487,8 @@ namespace ToNRoundCounter.Application
                     }
                 }
             }
+
+            public bool IsHardwareAccelerated => _isHardwareAccelerated;
 
             public static bool TryCreate(string windowHint, int frameRate, string outputPath, string extension, out InternalScreenRecorder? recorder, out string? failureReason)
             {
@@ -577,41 +582,54 @@ namespace ToNRoundCounter.Application
             {
                 var frameInterval = TimeSpan.FromSeconds(1d / Math.Max(1, _frameRate));
                 var nextFrame = DateTime.UtcNow;
-                var size = _bounds.Size;
-                using var bitmap = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppArgb);
+                var targetSize = _bounds.Size;
+                using var outputFrame = new Bitmap(targetSize.Width, targetSize.Height, PixelFormat.Format32bppArgb);
+                Bitmap? captureFrame = null;
 
-                while (!token.IsCancellationRequested)
+                try
                 {
+                    while (!token.IsCancellationRequested)
+                    {
                     if (!IsWindow(_windowHandle))
                     {
                         SetStopReason("Target window is no longer available.", true);
                         break;
                     }
 
-                    if (!GetWindowRect(_windowHandle, out var rect))
+                    if (!TryGetWindowBounds(_windowHandle, out var rect))
                     {
                         SetStopReason("Failed to retrieve window bounds.", true);
                         break;
                     }
 
-                    int width = rect.Right - rect.Left;
-                    int height = rect.Bottom - rect.Top;
-                    if (width != size.Width || height != size.Height)
+                    int width = Math.Max(1, rect.Right - rect.Left);
+                    int height = Math.Max(1, rect.Bottom - rect.Top);
+
+                    if (captureFrame == null || captureFrame.Width != width || captureFrame.Height != height)
                     {
-                        SetStopReason("Target window size changed during recording.", true);
-                        break;
+                        captureFrame?.Dispose();
+                        captureFrame = new Bitmap(width, height, PixelFormat.Format32bppArgb);
                     }
 
-                    var origin = new System.Drawing.Point(rect.Left, rect.Top);
+                    bool captured = TryCaptureWindow(_windowHandle, rect, captureFrame);
 
                     try
                     {
-                        using (var graphics = Graphics.FromImage(bitmap))
+                        using (var graphics = Graphics.FromImage(outputFrame))
                         {
-                            graphics.CopyFromScreen(origin, System.Drawing.Point.Empty, size, CopyPixelOperation.SourceCopy);
+                            graphics.Clear(Color.Black);
+                            graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                            graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                            graphics.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
+
+                            if (captured)
+                            {
+                                graphics.DrawImage(captureFrame, new Rectangle(System.Drawing.Point.Empty, targetSize),
+                                    new Rectangle(System.Drawing.Point.Empty, captureFrame.Size), GraphicsUnit.Pixel);
+                            }
                         }
 
-                        _writer.WriteFrame(bitmap);
+                        _writer.WriteFrame(outputFrame);
                     }
                     catch (Exception ex)
                     {
@@ -619,28 +637,33 @@ namespace ToNRoundCounter.Application
                         break;
                     }
 
-                    nextFrame += frameInterval;
-                    var delay = nextFrame - DateTime.UtcNow;
-                    if (delay > TimeSpan.Zero)
-                    {
-                        try
+                        nextFrame += frameInterval;
+                        var delay = nextFrame - DateTime.UtcNow;
+                        if (delay > TimeSpan.Zero)
                         {
-                            await Task.Delay(delay, token).ConfigureAwait(false);
+                            try
+                            {
+                                await Task.Delay(delay, token).ConfigureAwait(false);
+                            }
+                            catch (TaskCanceledException) when (token.IsCancellationRequested)
+                            {
+                                break;
+                            }
                         }
-                        catch (TaskCanceledException) when (token.IsCancellationRequested)
+                        else
                         {
-                            break;
+                            nextFrame = DateTime.UtcNow;
                         }
                     }
-                    else
+
+                    if (!_stopReasonSet)
                     {
-                        nextFrame = DateTime.UtcNow;
+                        SetStopReason("Recording completed", false);
                     }
                 }
-
-                if (!_stopReasonSet)
+                finally
                 {
-                    SetStopReason("Recording completed", false);
+                    captureFrame?.Dispose();
                 }
             }
 
@@ -693,66 +716,322 @@ namespace ToNRoundCounter.Application
 
             private static IntPtr FindTargetWindow(string hint)
             {
-                IntPtr found = IntPtr.Zero;
+                var hints = SplitHints(hint).ToArray();
+                var candidates = EnumerateWindows();
+                if (candidates.Count == 0)
+                {
+                    return IntPtr.Zero;
+                }
+
+                WindowCandidate? best = null;
+
+                foreach (var candidate in candidates)
+                {
+                    int score = ScoreCandidate(candidate, hints);
+                    if (score <= 0)
+                    {
+                        continue;
+                    }
+
+                    if (best == null || score > best.Score || (score == best.Score && candidate.ZOrder < best.ZOrder))
+                    {
+                        best = new WindowCandidate(candidate, score);
+                    }
+                }
+
+                return best?.Info.Handle ?? IntPtr.Zero;
+            }
+
+            private static IEnumerable<string> SplitHints(string hint)
+            {
+                if (string.IsNullOrWhiteSpace(hint))
+                {
+                    yield return "VRChat";
+                    yield break;
+                }
+
+                foreach (var part in hint.Split(new[] { '|', ';' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var value = part.Trim();
+                    if (!string.IsNullOrEmpty(value))
+                    {
+                        yield return value;
+                    }
+                }
+            }
+
+            private static int ScoreCandidate(WindowInfo info, IReadOnlyList<string> hints)
+            {
+                int best = 0;
+
+                if (hints.Count == 0)
+                {
+                    return info.IsVisible ? 1 : 0;
+                }
+
+                foreach (var hint in hints)
+                {
+                    int score = ScoreHint(info, hint);
+                    if (score > best)
+                    {
+                        best = score;
+                    }
+                }
+
+                return best;
+            }
+
+            private static int ScoreHint(WindowInfo info, string hint)
+            {
+                if (string.IsNullOrWhiteSpace(hint))
+                {
+                    return 0;
+                }
+
+                string value = hint;
+                string? qualifier = null;
+
+                int colonIndex = hint.IndexOf(':');
+                if (colonIndex > 0)
+                {
+                    qualifier = hint.Substring(0, colonIndex).Trim();
+                    value = hint.Substring(colonIndex + 1).Trim();
+                }
+
+                if (string.IsNullOrEmpty(value))
+                {
+                    return 0;
+                }
+
+                bool exact = false;
+                bool partial = false;
+
+                if (qualifier == null)
+                {
+                    exact |= EqualsIgnoreCase(info.Title, value);
+                    partial |= ContainsIgnoreCase(info.Title, value);
+
+                    exact |= EqualsIgnoreCase(info.ProcessName, value);
+                    partial |= ContainsIgnoreCase(info.ProcessName, value);
+
+                    exact |= EqualsIgnoreCase(info.ClassName, value);
+                    partial |= ContainsIgnoreCase(info.ClassName, value);
+                }
+                else
+                {
+                    switch (qualifier.ToLowerInvariant())
+                    {
+                        case "title":
+                            exact = EqualsIgnoreCase(info.Title, value);
+                            partial = ContainsIgnoreCase(info.Title, value);
+                            break;
+                        case "process":
+                            exact = EqualsIgnoreCase(info.ProcessName, value);
+                            partial = ContainsIgnoreCase(info.ProcessName, value);
+                            break;
+                        case "class":
+                            exact = EqualsIgnoreCase(info.ClassName, value);
+                            partial = ContainsIgnoreCase(info.ClassName, value);
+                            break;
+                        default:
+                            partial = ContainsIgnoreCase(info.Title, value) || ContainsIgnoreCase(info.ProcessName, value);
+                            break;
+                    }
+                }
+
+                if (exact)
+                {
+                    return info.IsVisible ? 200 : 150;
+                }
+
+                if (partial)
+                {
+                    return info.IsVisible ? 120 : 90;
+                }
+
+                return 0;
+            }
+
+            private static bool EqualsIgnoreCase(string a, string b) =>
+                string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+            private static bool ContainsIgnoreCase(string source, string value)
+            {
+                if (string.IsNullOrEmpty(source))
+                {
+                    return false;
+                }
+
+                return source.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+
+            private static List<WindowInfo> EnumerateWindows()
+            {
+                var list = new List<WindowInfo>();
+                int index = 0;
                 EnumWindows((handle, _) =>
                 {
-                    if (!IsWindowVisible(handle))
+                    index++;
+                    try
                     {
-                        return true;
+                        list.Add(CreateWindowInfo(handle, index));
                     }
-
-                    int length = GetWindowTextLength(handle);
-                    if (length <= 0)
+                    catch
                     {
-                        return true;
-                    }
-
-                    var builder = new StringBuilder(length + 1);
-                    if (GetWindowText(handle, builder, builder.Capacity) == 0)
-                    {
-                        return true;
-                    }
-
-                    var title = builder.ToString();
-                    if (title.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        found = handle;
-                        return false;
                     }
 
                     return true;
                 }, IntPtr.Zero);
 
-                if (found != IntPtr.Zero)
+                return list;
+            }
+
+            private static WindowInfo CreateWindowInfo(IntPtr handle, int zOrder)
+            {
+                string title = GetWindowTitle(handle);
+                string className = GetWindowClass(handle);
+                string processName = GetProcessName(handle);
+                bool visible = IsWindowVisible(handle);
+
+                return new WindowInfo(handle, title, className, processName, zOrder, visible);
+            }
+
+            private static string GetWindowTitle(IntPtr handle)
+            {
+                int length = GetWindowTextLength(handle);
+                if (length <= 0)
                 {
-                    return found;
+                    return string.Empty;
                 }
 
-                foreach (var process in Process.GetProcesses())
+                var builder = new StringBuilder(length + 1);
+                if (GetWindowText(handle, builder, builder.Capacity) == 0)
                 {
-                    using (process)
-                    {
-                        try
-                        {
-                            if (process.MainWindowHandle == IntPtr.Zero)
-                            {
-                                continue;
-                            }
+                    return string.Empty;
+                }
 
-                            string title = process.MainWindowTitle ?? string.Empty;
-                            if (title.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                process.ProcessName.Equals(hint, StringComparison.OrdinalIgnoreCase))
-                            {
-                                return process.MainWindowHandle;
-                            }
-                        }
-                        catch
-                        {
-                        }
+                return builder.ToString();
+            }
+
+            private static string GetWindowClass(IntPtr handle)
+            {
+                var builder = new StringBuilder(256);
+                if (GetClassName(handle, builder, builder.Capacity) == 0)
+                {
+                    return string.Empty;
+                }
+
+                return builder.ToString();
+            }
+
+            private static string GetProcessName(IntPtr handle)
+            {
+                try
+                {
+                    _ = GetWindowThreadProcessId(handle, out uint processId);
+                    if (processId == 0)
+                    {
+                        return string.Empty;
+                    }
+
+                    using var process = Process.GetProcessById((int)processId);
+                    return process.ProcessName ?? string.Empty;
+                }
+                catch
+                {
+                    return string.Empty;
+                }
+            }
+
+            private static bool TryGetWindowBounds(IntPtr handle, out RECT rect)
+            {
+                if (DwmGetWindowAttribute(handle, DWMWA_EXTENDED_FRAME_BOUNDS, out var extendedRect, Marshal.SizeOf<RECT>()) == 0)
+                {
+                    rect = extendedRect;
+                    return true;
+                }
+
+                if (GetWindowRect(handle, out rect))
+                {
+                    return true;
+                }
+
+                rect = default;
+                return false;
+            }
+
+            private static bool TryCaptureWindow(IntPtr handle, RECT rect, Bitmap bitmap)
+            {
+                if (bitmap == null)
+                {
+                    return false;
+                }
+
+                bool captured = false;
+
+                using (var graphics = Graphics.FromImage(bitmap))
+                {
+                    graphics.Clear(Color.Black);
+                    IntPtr hdc = graphics.GetHdc();
+                    try
+                    {
+                        captured = PrintWindow(handle, hdc, PW_RENDERFULLCONTENT);
+                    }
+                    finally
+                    {
+                        graphics.ReleaseHdc(hdc);
                     }
                 }
 
-                return IntPtr.Zero;
+                if (!captured)
+                {
+                    var origin = new System.Drawing.Point(rect.Left, rect.Top);
+                    try
+                    {
+                        using var fallback = Graphics.FromImage(bitmap);
+                        fallback.CopyFromScreen(origin, System.Drawing.Point.Empty, bitmap.Size, CopyPixelOperation.SourceCopy);
+                        captured = true;
+                    }
+                    catch
+                    {
+                        captured = false;
+                    }
+                }
+
+                return captured;
+            }
+
+            private readonly struct WindowInfo
+            {
+                public WindowInfo(IntPtr handle, string title, string className, string processName, int zOrder, bool isVisible)
+                {
+                    Handle = handle;
+                    Title = title;
+                    ClassName = className;
+                    ProcessName = processName;
+                    ZOrder = zOrder;
+                    IsVisible = isVisible;
+                }
+
+                public IntPtr Handle { get; }
+                public string Title { get; }
+                public string ClassName { get; }
+                public string ProcessName { get; }
+                public int ZOrder { get; }
+                public bool IsVisible { get; }
+            }
+
+            private readonly struct WindowCandidate
+            {
+                public WindowCandidate(WindowInfo info, int score)
+                {
+                    Info = info;
+                    Score = score;
+                }
+
+                public WindowInfo Info { get; }
+                public int Score { get; }
+                public int ZOrder => Info.ZOrder;
             }
 
             private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
@@ -774,11 +1053,28 @@ namespace ToNRoundCounter.Application
 
             [DllImport("user32.dll")]
             private static extern bool IsWindow(IntPtr hWnd);
+
+            [DllImport("user32.dll")]
+            private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+            [DllImport("user32.dll")]
+            private static extern int GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+            [DllImport("user32.dll")]
+            private static extern bool PrintWindow(IntPtr hwnd, IntPtr hdcBlt, uint nFlags);
+
+            [DllImport("dwmapi.dll")]
+            private static extern int DwmGetWindowAttribute(IntPtr hwnd, uint dwAttribute, out RECT pvAttribute, int cbAttribute);
+
+            private const uint PW_RENDERFULLCONTENT = 0x00000002;
+            private const uint DWMWA_EXTENDED_FRAME_BOUNDS = 9;
         }
 
         private interface IFrameWriter : IDisposable
         {
             void WriteFrame(Bitmap frame);
+
+            bool IsHardwareAccelerated { get; }
         }
 
         private sealed class SimpleAviWriter : IFrameWriter
@@ -868,6 +1164,8 @@ namespace ToNRoundCounter.Application
                     throw;
                 }
             }
+
+            public bool IsHardwareAccelerated => false;
 
             public void WriteFrame(Bitmap frame)
             {
@@ -1055,6 +1353,8 @@ namespace ToNRoundCounter.Application
             private long _timestamp;
             private long _durationAccumulator;
             private bool _disposed;
+            private readonly bool _isHardwareAccelerated;
+            private readonly HardwareDeviceContext? _hardwareContext;
 
             private MediaFoundationFrameWriter(string extension, string path, int width, int height, int frameRate, FormatDescriptor descriptor)
             {
@@ -1083,20 +1383,14 @@ namespace ToNRoundCounter.Application
                 MediaFoundationInterop.AddRef();
 
                 bool initialized = false;
-                MediaFoundationInterop.IMFAttributes? attributes = null;
                 MediaFoundationInterop.IMFMediaType? outputType = null;
                 MediaFoundationInterop.IMFMediaType? inputType = null;
                 MediaFoundationInterop.IMFSinkWriter? writer = null;
+                HardwareDeviceContext? hardwareContext = null;
 
                 try
                 {
-                    if (descriptor.ContainerType.HasValue)
-                    {
-                        attributes = MediaFoundationInterop.CreateAttributes(1);
-                        MediaFoundationInterop.CheckHr(attributes.SetGUID(MediaFoundationInterop.MF_TRANSCODE_CONTAINERTYPE, descriptor.ContainerType.Value), "IMFAttributes.SetGUID");
-                    }
-
-                    writer = MediaFoundationInterop.CreateSinkWriter(path, attributes);
+                    writer = CreateSinkWriterWithHardwareFallback(path, descriptor, out _isHardwareAccelerated, out hardwareContext);
 
                     outputType = MediaFoundationInterop.CreateMediaType();
                     MediaFoundationInterop.CheckHr(outputType.SetGUID(MediaFoundationInterop.MF_MT_MAJOR_TYPE, MediaFoundationInterop.MFMediaType_Video), "MF_MT_MAJOR_TYPE");
@@ -1123,6 +1417,8 @@ namespace ToNRoundCounter.Application
 
                     _sinkWriter = writer;
                     writer = null;
+                    _hardwareContext = hardwareContext;
+                    hardwareContext = null;
                     initialized = true;
                 }
                 catch
@@ -1136,11 +1432,6 @@ namespace ToNRoundCounter.Application
                 }
                 finally
                 {
-                    if (attributes != null)
-                    {
-                        Marshal.ReleaseComObject(attributes);
-                    }
-
                     if (outputType != null)
                     {
                         Marshal.ReleaseComObject(outputType);
@@ -1151,12 +1442,17 @@ namespace ToNRoundCounter.Application
                         Marshal.ReleaseComObject(inputType);
                     }
 
+                    hardwareContext?.Dispose();
+
                     if (!initialized)
                     {
+                        _hardwareContext?.Dispose();
                         MediaFoundationInterop.Release();
                     }
                 }
             }
+
+            public bool IsHardwareAccelerated => _isHardwareAccelerated;
 
             public static MediaFoundationFrameWriter Create(string extension, string path, int width, int height, int frameRate)
             {
@@ -1171,6 +1467,72 @@ namespace ToNRoundCounter.Application
                 }
 
                 return new MediaFoundationFrameWriter(extension, path, width, height, frameRate, descriptor);
+            }
+
+            private static MediaFoundationInterop.IMFSinkWriter CreateSinkWriterWithHardwareFallback(string path, FormatDescriptor descriptor, out bool hardwareEnabled, out HardwareDeviceContext? hardwareContext)
+            {
+                Exception? lastError = null;
+                hardwareContext = null;
+
+                foreach (bool requestHardware in new[] { true, false })
+                {
+                    MediaFoundationInterop.IMFAttributes? attributes = null;
+                    HardwareDeviceContext? context = null;
+
+                    try
+                    {
+                        int attributeCount = 1;
+                        if (descriptor.ContainerType.HasValue)
+                        {
+                            attributeCount++;
+                        }
+
+                        if (requestHardware)
+                        {
+                            attributeCount += 2;
+                        }
+
+                        attributes = MediaFoundationInterop.CreateAttributes(attributeCount);
+                        MediaFoundationInterop.CheckHr(attributes.SetUINT32(MediaFoundationInterop.MF_SINK_WRITER_DISABLE_THROTTLING, 1), "IMFAttributes.SetUINT32(MF_SINK_WRITER_DISABLE_THROTTLING)");
+
+                        if (descriptor.ContainerType.HasValue)
+                        {
+                            MediaFoundationInterop.CheckHr(attributes.SetGUID(MediaFoundationInterop.MF_TRANSCODE_CONTAINERTYPE, descriptor.ContainerType.Value), "IMFAttributes.SetGUID(MF_TRANSCODE_CONTAINERTYPE)");
+                        }
+
+                        if (requestHardware)
+                        {
+                            MediaFoundationInterop.CheckHr(attributes.SetUINT32(MediaFoundationInterop.MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, 1), "IMFAttributes.SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS)");
+                            context = HardwareDeviceContext.Create();
+                            MediaFoundationInterop.CheckHr(attributes.SetUnknown(ref MediaFoundationInterop.MF_SINK_WRITER_D3D_MANAGER, context.DeviceManager), "IMFAttributes.SetUnknown(MF_SINK_WRITER_D3D_MANAGER)");
+                        }
+
+                        var writer = MediaFoundationInterop.CreateSinkWriter(path, attributes);
+                        hardwareEnabled = requestHardware;
+                        hardwareContext = context;
+                        context = null;
+                        return writer;
+                    }
+                    catch (Exception ex)
+                    {
+                        lastError = ex;
+                        if (!requestHardware)
+                        {
+                            throw new InvalidOperationException("Failed to initialize Media Foundation sink writer.", ex);
+                        }
+                    }
+                    finally
+                    {
+                        context?.Dispose();
+
+                        if (attributes != null)
+                        {
+                            Marshal.ReleaseComObject(attributes);
+                        }
+                    }
+                }
+
+                throw new InvalidOperationException("Failed to initialize Media Foundation sink writer.", lastError ?? new InvalidOperationException("Unknown Media Foundation error."));
             }
 
             public void WriteFrame(Bitmap frame)
@@ -1292,9 +1654,177 @@ namespace ToNRoundCounter.Application
                 }
                 finally
                 {
+                    _hardwareContext?.Dispose();
                     MediaFoundationInterop.Release();
                 }
             }
+
+            private sealed class HardwareDeviceContext : IDisposable
+            {
+                private IntPtr _device;
+                private IntPtr _deviceContext;
+                private MediaFoundationInterop.IMFDXGIDeviceManager? _deviceManager;
+                private bool _disposed;
+
+                private HardwareDeviceContext(IntPtr device, IntPtr deviceContext, MediaFoundationInterop.IMFDXGIDeviceManager deviceManager)
+                {
+                    _device = device;
+                    _deviceContext = deviceContext;
+                    _deviceManager = deviceManager;
+                }
+
+                public MediaFoundationInterop.IMFDXGIDeviceManager DeviceManager
+                {
+                    get
+                    {
+                        if (_disposed || _deviceManager == null)
+                        {
+                            throw new ObjectDisposedException(nameof(HardwareDeviceContext));
+                        }
+
+                        return _deviceManager;
+                    }
+                }
+
+                public static HardwareDeviceContext Create()
+                {
+                    IntPtr device = IntPtr.Zero;
+                    IntPtr context = IntPtr.Zero;
+                    MediaFoundationInterop.IMFDXGIDeviceManager? manager = null;
+                    GCHandle handle = default;
+
+                    try
+                    {
+                        var featureLevels = new[]
+                        {
+                            D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_12_1,
+                            D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_12_0,
+                            D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_11_1,
+                            D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_11_0,
+                            D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_10_1,
+                            D3D_FEATURE_LEVEL.D3D_FEATURE_LEVEL_10_0,
+                        };
+
+                        handle = GCHandle.Alloc(featureLevels, GCHandleType.Pinned);
+                        int hr = D3D11CreateDevice(
+                            IntPtr.Zero,
+                            D3D_DRIVER_TYPE.D3D_DRIVER_TYPE_HARDWARE,
+                            IntPtr.Zero,
+                            (uint)D3D11_CREATE_DEVICE_FLAG.D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                            handle.AddrOfPinnedObject(),
+                            (uint)featureLevels.Length,
+                            D3D11_SDK_VERSION,
+                            out device,
+                            out _,
+                            out context);
+
+                        if (hr < 0)
+                        {
+                            throw new InvalidOperationException($"D3D11CreateDevice failed with HRESULT 0x{hr:X8}.");
+                        }
+                    }
+                    finally
+                    {
+                        if (handle.IsAllocated)
+                        {
+                            handle.Free();
+                        }
+                    }
+
+                    try
+                    {
+                        manager = MediaFoundationInterop.CreateDxgiDeviceManager(out var resetToken);
+                        MediaFoundationInterop.CheckHr(manager.ResetDevice(device, resetToken), "IMFDXGIDeviceManager.ResetDevice");
+
+                        var result = new HardwareDeviceContext(device, context, manager);
+                        device = IntPtr.Zero;
+                        context = IntPtr.Zero;
+                        manager = null;
+                        return result;
+                    }
+                    finally
+                    {
+                        if (manager != null)
+                        {
+                            Marshal.ReleaseComObject(manager);
+                        }
+
+                        if (context != IntPtr.Zero)
+                        {
+                            Marshal.Release(context);
+                        }
+
+                        if (device != IntPtr.Zero)
+                        {
+                            Marshal.Release(device);
+                        }
+                    }
+                }
+
+                public void Dispose()
+                {
+                    if (_disposed)
+                    {
+                        return;
+                    }
+
+                    _disposed = true;
+
+                    if (_deviceManager != null)
+                    {
+                        Marshal.ReleaseComObject(_deviceManager);
+                        _deviceManager = null;
+                    }
+
+                    if (_deviceContext != IntPtr.Zero)
+                    {
+                        Marshal.Release(_deviceContext);
+                        _deviceContext = IntPtr.Zero;
+                    }
+
+                    if (_device != IntPtr.Zero)
+                    {
+                        Marshal.Release(_device);
+                        _device = IntPtr.Zero;
+                    }
+                }
+            }
+
+            private enum D3D_DRIVER_TYPE : uint
+            {
+                D3D_DRIVER_TYPE_HARDWARE = 1,
+            }
+
+            [Flags]
+            private enum D3D11_CREATE_DEVICE_FLAG : uint
+            {
+                D3D11_CREATE_DEVICE_BGRA_SUPPORT = 0x20,
+            }
+
+            private enum D3D_FEATURE_LEVEL : uint
+            {
+                D3D_FEATURE_LEVEL_12_1 = 0x0000C100,
+                D3D_FEATURE_LEVEL_12_0 = 0x0000C000,
+                D3D_FEATURE_LEVEL_11_1 = 0x0000B100,
+                D3D_FEATURE_LEVEL_11_0 = 0x0000B000,
+                D3D_FEATURE_LEVEL_10_1 = 0x0000A100,
+                D3D_FEATURE_LEVEL_10_0 = 0x0000A000,
+            }
+
+            private const uint D3D11_SDK_VERSION = 7;
+
+            [DllImport("d3d11.dll")]
+            private static extern int D3D11CreateDevice(
+                IntPtr pAdapter,
+                D3D_DRIVER_TYPE DriverType,
+                IntPtr Software,
+                uint Flags,
+                IntPtr pFeatureLevels,
+                uint FeatureLevels,
+                uint SDKVersion,
+                out IntPtr ppDevice,
+                out D3D_FEATURE_LEVEL pFeatureLevel,
+                out IntPtr ppImmediateContext);
 
             private static int CalculateBitrate(int width, int height, int frameRate)
             {
@@ -1360,6 +1890,9 @@ namespace ToNRoundCounter.Application
                 public static readonly Guid MFTranscodeContainerType_ASF = new Guid("430F6F6E-B6BF-4FC1-A0BD-9EE46EEE2AFB");
                 public static readonly Guid MFTranscodeContainerType_MPEG4 = new Guid("DC6CD05D-B9D0-40EF-BD35-FA622C1AB28A");
                 public static readonly Guid MFTranscodeContainerType_MPEG2 = new Guid("BFC2DBF9-7BB4-4F8F-AFDE-E112C44BA882");
+                public static readonly Guid MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS = new Guid("A634A91C-822B-41B9-A494-4DE4643612B0");
+                public static readonly Guid MF_SINK_WRITER_DISABLE_THROTTLING = new Guid("08B845D8-2B74-4AFE-9D53-BE16D2D5AE4F");
+                public static readonly Guid MF_SINK_WRITER_D3D_MANAGER = new Guid("EC82238C-1EA6-4DBF-8451-4D3EBE0B6837");
                 public static readonly Guid MF_TRANSCODE_CONTAINERTYPE = new Guid("150FF23F-4ABC-478B-AC4F-E1916FBA1CCA");
                 public static readonly Guid MF_MT_MAJOR_TYPE = new Guid("48EBA18E-F8C9-4687-BF11-0A74C9F96A8F");
                 public static readonly Guid MF_MT_SUBTYPE = new Guid("F7E34C9A-42E8-4714-B74B-CB29D72C35E5");
@@ -1445,6 +1978,12 @@ namespace ToNRoundCounter.Application
                     return buffer;
                 }
 
+                public static IMFDXGIDeviceManager CreateDxgiDeviceManager(out uint resetToken)
+                {
+                    CheckHr(MFCreateDXGIDeviceManager(out resetToken, out var manager), nameof(MFCreateDXGIDeviceManager));
+                    return manager;
+                }
+
                 public static void SetAttributeSize(IMFMediaType type, Guid key, int width, int height)
                 {
                     CheckHr(MFSetAttributeSize(type, key, (uint)width, (uint)height), nameof(MFSetAttributeSize));
@@ -1481,6 +2020,9 @@ namespace ToNRoundCounter.Application
 
                 [DllImport("mfplat.dll")]
                 private static extern int MFCreateMemoryBuffer(int cbMaxLength, out IMFMediaBuffer ppBuffer);
+
+                [DllImport("mfplat.dll")]
+                private static extern int MFCreateDXGIDeviceManager(out uint resetToken, out IMFDXGIDeviceManager? ppDeviceManager);
 
                 [ComImport]
                 [Guid("2cd2d921-c447-44a7-a13c-4adabfc247e3")]
@@ -1547,6 +2089,20 @@ namespace ToNRoundCounter.Application
                     [PreserveSig] int Finalize();
                     [PreserveSig] int GetServiceForStream(int streamIndex, ref Guid guidService, ref Guid riid, out IntPtr service);
                     [PreserveSig] int GetStatistics(int streamIndex, out MF_SINK_WRITER_STATISTICS statistics);
+                }
+
+                [ComImport]
+                [Guid("ca86aa50-c46e-429e-9866-2fc0ba7a656f")]
+                [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+                public interface IMFDXGIDeviceManager
+                {
+                    [PreserveSig] int ResetDevice(IntPtr pDevice, uint resetToken);
+                    [PreserveSig] int OpenDeviceHandle(out IntPtr phDevice);
+                    [PreserveSig] int CloseDeviceHandle(IntPtr hDevice);
+                    [PreserveSig] int TestDevice(IntPtr hDevice);
+                    [PreserveSig] int LockDevice(IntPtr hDevice, Guid riid, out IntPtr ppv, bool block);
+                    [PreserveSig] int UnlockDevice(IntPtr hDevice, bool saveState);
+                    [PreserveSig] int GetVideoService(IntPtr hDevice, Guid riid, out IntPtr ppService);
                 }
 
                 [ComImport]
@@ -1674,6 +2230,8 @@ namespace ToNRoundCounter.Application
                 _height = height;
                 _frameDelay = (ushort)Math.Max(1, Math.Round(100.0 / Math.Max(1, frameRate)));
             }
+
+            public bool IsHardwareAccelerated => false;
 
             public void WriteFrame(Bitmap frame)
             {
