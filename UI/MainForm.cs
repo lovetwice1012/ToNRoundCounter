@@ -134,7 +134,7 @@ namespace ToNRoundCounter.UI
         private DateTime terrorCountdownStart = DateTime.MinValue;
         private int terrorCountdownDurationSeconds;
         private string terrorCountdownTargetName = string.Empty;
-        private int terrorCountdownLastDisplayedSeconds = -1;
+        private double terrorCountdownLastDisplayedValue = double.NaN;
         private readonly object instanceTimerSync = new();
         private string currentInstanceId = string.Empty;
         private DateTimeOffset currentInstanceEnteredAt = DateTimeOffset.Now;
@@ -2087,7 +2087,7 @@ namespace ToNRoundCounter.UI
             terrorCountdownTargetName = string.Empty;
             terrorCountdownDurationSeconds = 0;
             terrorCountdownStart = DateTime.MinValue;
-            terrorCountdownLastDisplayedSeconds = -1;
+            terrorCountdownLastDisplayedValue = double.NaN;
             currentTerrorCountdownSuffix = string.Empty;
             RefreshTerrorDisplays();
         }
@@ -2122,7 +2122,7 @@ namespace ToNRoundCounter.UI
             if (restartCountdown)
             {
                 terrorCountdownStart = DateTime.Now;
-                terrorCountdownLastDisplayedSeconds = -1;
+                terrorCountdownLastDisplayedValue = double.NaN;
             }
 
             terrorCountdownActive = true;
@@ -2136,24 +2136,47 @@ namespace ToNRoundCounter.UI
                 return;
             }
 
-            double remaining = terrorCountdownDurationSeconds - (DateTime.Now - terrorCountdownStart).TotalSeconds;
-            if (remaining < 0)
+            double elapsed = (DateTime.Now - terrorCountdownStart).TotalSeconds;
+            double remaining = terrorCountdownDurationSeconds - elapsed;
+            bool shouldCountUp = string.Equals(terrorCountdownTargetName, " ", StringComparison.Ordinal)
+                                 || string.Equals(terrorCountdownTargetName, "sm64.z64", StringComparison.OrdinalIgnoreCase);
+
+            string suffix;
+            double displayValue;
+
+            if (remaining > 0 || !shouldCountUp)
             {
-                remaining = 0;
+                if (remaining < 0)
+                {
+                    remaining = 0;
+                }
+
+                int seconds = (int)Math.Ceiling(remaining);
+                if (seconds < 0)
+                {
+                    seconds = 0;
+                }
+
+                suffix = $"(出現まで {seconds} 秒)";
+                displayValue = seconds;
+            }
+            else
+            {
+                double overtime = elapsed - terrorCountdownDurationSeconds;
+                if (overtime < 0)
+                {
+                    overtime = 0;
+                }
+
+                double rounded = Math.Round(overtime, 1, MidpointRounding.AwayFromZero);
+                suffix = $"{rounded.ToString("F1", CultureInfo.InvariantCulture)}秒経過...";
+                displayValue = rounded;
             }
 
-            int seconds = (int)Math.Ceiling(remaining);
-            if (seconds < 0)
-            {
-                seconds = 0;
-            }
-
-            string suffix = $"(出現まで {seconds} 秒)";
-
-            if (seconds != terrorCountdownLastDisplayedSeconds || !string.Equals(currentTerrorCountdownSuffix, suffix, StringComparison.Ordinal))
+            if (!displayValue.Equals(terrorCountdownLastDisplayedValue) || !string.Equals(currentTerrorCountdownSuffix, suffix, StringComparison.Ordinal))
             {
                 currentTerrorCountdownSuffix = suffix;
-                terrorCountdownLastDisplayedSeconds = seconds;
+                terrorCountdownLastDisplayedValue = displayValue;
                 RefreshTerrorDisplays();
             }
         }
