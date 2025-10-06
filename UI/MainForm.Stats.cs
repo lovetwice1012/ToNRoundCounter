@@ -240,8 +240,20 @@ namespace ToNRoundCounter.UI
                 target = newSource;
             }
 
-            previous?.Cancel();
-            previous?.Dispose();
+            if (previous != null)
+            {
+                try
+                {
+                    previous.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // If the token source has already been disposed by a previous operation,
+                    // we can safely ignore the exception and continue with the new source.
+                }
+
+                previous.Dispose();
+            }
             return newSource;
         }
 
