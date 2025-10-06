@@ -251,7 +251,7 @@
       <SubType>Designer</SubType>
     </EmbeddedResource>
     <EmbeddedResource Include="Infrastructure\Resources\Strings.resx" />
-    <EmbeddedResource Include="Infrastructure\Resources\Strings.ja.resx" />
+    <EmbeddedResource Include="Infrastructure\Resources\Strings.*.resx" />
     <Compile Include="Properties\Resources.Designer.cs">
       <AutoGen>True</AutoGen>
       <DependentUpon>Resources.resx</DependentUpon>

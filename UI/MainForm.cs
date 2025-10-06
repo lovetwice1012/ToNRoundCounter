@@ -37,6 +37,9 @@ namespace ToNRoundCounter.UI
         private Button btnToggleTopMost = null!;   // 画面最前面固定ボタン
         private Button btnSettings = null!;        // 設定変更ボタン
         private MenuStrip mainMenuStrip = null!;
+        private ToolStripMenuItem fileMenuItem = null!;
+        private ToolStripMenuItem settingsMenuItem = null!;
+        private ToolStripMenuItem exitMenuItem = null!;
         private ToolStripMenuItem windowsMenuItem = null!;
 
         // デバッグ情報用ラベル
@@ -79,6 +82,8 @@ namespace ToNRoundCounter.UI
 
         private Dictionary<string, Color> terrorColors = new();
         private bool lastOptedIn = true;
+        private bool _isWebSocketConnected;
+        private bool _isOscConnected;
 
         // 次ラウンド予測用：stateService.RoundCycle==0 → 通常ラウンド, ==1 → 「通常ラウンド or 特殊ラウンド」, >=2 → 特殊ラウンド
         private Random randomGenerator = new Random();
@@ -200,29 +205,29 @@ namespace ToNRoundCounter.UI
             this.Load += MainForm_Load;
             _wsConnectedHandler = _ => _dispatcher.Invoke(() =>
             {
-                lblStatus.Text = "WebSocket: " + LanguageManager.Translate("Connected");
-                lblStatus.ForeColor = Color.Green;
+                _isWebSocketConnected = true;
+                UpdateWebSocketStatusLabel();
             });
             _eventBus.Subscribe(_wsConnectedHandler);
 
             _wsDisconnectedHandler = _ => _dispatcher.Invoke(() =>
             {
-                lblStatus.Text = "WebSocket: " + LanguageManager.Translate("Disconnected");
-                lblStatus.ForeColor = Color.Red;
+                _isWebSocketConnected = false;
+                UpdateWebSocketStatusLabel();
             });
             _eventBus.Subscribe(_wsDisconnectedHandler);
 
             _oscConnectedHandler = _ => _dispatcher.Invoke(() =>
             {
-                lblOSCStatus.Text = "OSC: " + LanguageManager.Translate("Connected");
-                lblOSCStatus.ForeColor = Color.Green;
+                _isOscConnected = true;
+                UpdateOscStatusLabel();
             });
             _eventBus.Subscribe(_oscConnectedHandler);
 
             _oscDisconnectedHandler = _ => _dispatcher.Invoke(() =>
             {
-                lblOSCStatus.Text = "OSC: " + LanguageManager.Translate("Disconnected");
-                lblOSCStatus.ForeColor = Color.Red;
+                _isOscConnected = false;
+                UpdateOscStatusLabel();
             });
             _eventBus.Subscribe(_oscDisconnectedHandler);
 
@@ -259,15 +264,15 @@ namespace ToNRoundCounter.UI
             this.MainMenuStrip = mainMenuStrip;
             this.Controls.Add(mainMenuStrip);
 
-            var fileMenu = new ToolStripMenuItem(LanguageManager.Translate("ファイル"));
-            var settingsMenuItem = new ToolStripMenuItem(LanguageManager.Translate("設定..."));
+            fileMenuItem = new ToolStripMenuItem(LanguageManager.Translate("ファイル"));
+            settingsMenuItem = new ToolStripMenuItem(LanguageManager.Translate("設定..."));
             settingsMenuItem.Click += BtnSettings_Click;
-            var exitMenuItem = new ToolStripMenuItem(LanguageManager.Translate("終了"));
+            exitMenuItem = new ToolStripMenuItem(LanguageManager.Translate("終了"));
             exitMenuItem.Click += (s, e) => Close();
-            fileMenu.DropDownItems.Add(settingsMenuItem);
-            fileMenu.DropDownItems.Add(new ToolStripSeparator());
-            fileMenu.DropDownItems.Add(exitMenuItem);
-            mainMenuStrip.Items.Add(fileMenu);
+            fileMenuItem.DropDownItems.Add(settingsMenuItem);
+            fileMenuItem.DropDownItems.Add(new ToolStripSeparator());
+            fileMenuItem.DropDownItems.Add(exitMenuItem);
+            mainMenuStrip.Items.Add(fileMenuItem);
 
             windowsMenuItem = new ToolStripMenuItem(LanguageManager.Translate("ウィンドウ"));
             mainMenuStrip.Items.Add(windowsMenuItem);
@@ -279,8 +284,8 @@ namespace ToNRoundCounter.UI
 
             // WebSocket接続状況
             lblStatus = new Label();
-            lblStatus.Text = "WebSocket: " + LanguageManager.Translate("Disconnected");
-            lblStatus.ForeColor = Color.Red;
+            _isWebSocketConnected = false;
+            UpdateWebSocketStatusLabel();
             lblStatus.AutoSize = true;
             lblStatus.Location = new Point(margin, currentY);
             lblStatus.Width = contentWidth / 2 - 5;
@@ -288,8 +293,8 @@ namespace ToNRoundCounter.UI
 
             // OSC接続状況
             lblOSCStatus = new Label();
-            lblOSCStatus.Text = "OSC: " + LanguageManager.Translate("Disconnected");
-            lblOSCStatus.ForeColor = Color.Red;
+            _isOscConnected = false;
+            UpdateOscStatusLabel();
             lblOSCStatus.AutoSize = true;
             lblOSCStatus.Location = new Point(lblStatus.Right + 10, currentY);
             this.Controls.Add(lblOSCStatus);
@@ -432,6 +437,46 @@ namespace ToNRoundCounter.UI
             LogUi("Theme applied to main form components.", LogEventLevel.Debug);
         }
 
+        private void ApplyLanguage()
+        {
+            this.Text = LanguageManager.Translate("ToNRoundCouter");
+            fileMenuItem.Text = LanguageManager.Translate("ファイル");
+            settingsMenuItem.Text = LanguageManager.Translate("設定...");
+            exitMenuItem.Text = LanguageManager.Translate("終了");
+            windowsMenuItem.Text = LanguageManager.Translate("ウィンドウ");
+            btnSettings.Text = LanguageManager.Translate("設定変更");
+            btnToggleTopMost.Text = this.TopMost ? LanguageManager.Translate("固定解除") : LanguageManager.Translate("固定する");
+            lblStatsTitle.Text = LanguageManager.Translate("統計情報表示欄");
+            lblRoundLogTitle.Text = LanguageManager.Translate("ラウンドログ");
+            UpdateWebSocketStatusLabel();
+            UpdateOscStatusLabel();
+            InfoPanel?.ApplyLanguage();
+        }
+
+        private void UpdateWebSocketStatusLabel()
+        {
+            if (lblStatus == null)
+            {
+                return;
+            }
+
+            var statusText = LanguageManager.Translate(_isWebSocketConnected ? "Connected" : "Disconnected");
+            lblStatus.Text = $"WebSocket: {statusText}";
+            lblStatus.ForeColor = _isWebSocketConnected ? Color.Green : Color.Red;
+        }
+
+        private void UpdateOscStatusLabel()
+        {
+            if (lblOSCStatus == null)
+            {
+                return;
+            }
+
+            var statusText = LanguageManager.Translate(_isOscConnected ? "Connected" : "Disconnected");
+            lblOSCStatus.Text = $"OSC: {statusText}";
+            lblOSCStatus.ForeColor = _isOscConnected ? Color.Green : Color.Red;
+        }
+
         private void MainForm_Resize(object? sender, EventArgs? e)
         {
             LogUi($"Main form resized to {this.ClientSize.Width}x{this.ClientSize.Height}.", LogEventLevel.Debug);
@@ -543,6 +588,15 @@ namespace ToNRoundCounter.UI
                     var applyingContext = new ModuleSettingsViewLifecycleContext(settingsForm, settingsForm.SettingsPanel, _settings, ModuleSettingsViewStage.Applying, dialogResult, _moduleHost.CurrentServiceProvider);
                     _moduleHost.NotifySettingsViewApplying(applyingContext);
 
+                    var previousLanguage = LanguageManager.NormalizeCulture(_settings.Language);
+                    var selectedLanguage = LanguageManager.NormalizeCulture(settingsForm.SettingsPanel.SelectedLanguage);
+                    bool languageChanged = !string.Equals(previousLanguage, selectedLanguage, StringComparison.OrdinalIgnoreCase);
+                    _settings.Language = selectedLanguage;
+                    if (languageChanged)
+                    {
+                        LanguageManager.SetLanguage(_settings.Language);
+                    }
+
                     _settings.OSCPort = (int)settingsForm.SettingsPanel.oscPortNumericUpDown.Value;
                     _settings.WebSocketIp = settingsForm.SettingsPanel.webSocketIpTextBox.Text;
                     _settings.ShowStats = settingsForm.SettingsPanel.ShowStatsCheckBox.Checked;
@@ -630,6 +684,10 @@ namespace ToNRoundCounter.UI
                     Theme.SetTheme(_settings.ThemeKey, new ThemeApplicationContext(this, _moduleHost.CurrentServiceProvider));
                     _moduleHost.NotifyMainWindowThemeChanged(new ModuleMainWindowThemeContext(this, _settings.ThemeKey, Theme.CurrentDescriptor, _moduleHost.CurrentServiceProvider));
                     ApplyTheme();
+                    if (languageChanged)
+                    {
+                        ApplyLanguage();
+                    }
                     _moduleHost.NotifyMainWindowLayoutUpdated(new ModuleMainWindowLayoutContext(this, _moduleHost.CurrentServiceProvider));
                     InfoPanel.TerrorValue.ForeColor = _settings.FixedTerrorColor;
                     UpdateAggregateStatsDisplay();

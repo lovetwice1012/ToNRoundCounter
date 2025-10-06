@@ -12,19 +12,435 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-  <data name="InfoPanel_RoundType" xml:space="preserve">
-    <value>Round Type:</value>
+  <data name="APIキー:" xml:space="preserve">
+    <value>API Key:</value>
   </data>
-  <data name="InfoPanel_Map" xml:space="preserve">
-    <value>MAP:</value>
+  <data name="APIキーは32文字以上である必要があります。" xml:space="preserve">
+    <value>API keys must be at least 32 characters long.</value>
   </data>
-  <data name="InfoPanel_Terror" xml:space="preserve">
-    <value>Terror:</value>
+  <data name="Connected" xml:space="preserve">
+    <value>Connected</value>
+  </data>
+  <data name="Disconnected" xml:space="preserve">
+    <value>Disconnected</value>
+  </data>
+  <data name="Discord通知設定" xml:space="preserve">
+    <value>Discord Notification Settings</value>
+  </data>
+  <data name="InfoPanel_Damage" xml:space="preserve">
+    <value>Damage:</value>
   </data>
   <data name="InfoPanel_Item" xml:space="preserve">
     <value>Item:</value>
   </data>
-  <data name="InfoPanel_Damage" xml:space="preserve">
-    <value>Damage:</value>
+  <data name="InfoPanel_Map" xml:space="preserve">
+    <value>MAP:</value>
+  </data>
+  <data name="InfoPanel_RoundType" xml:space="preserve">
+    <value>Round Type:</value>
+  </data>
+  <data name="InfoPanel_Terror" xml:space="preserve">
+    <value>Terror:</value>
+  </data>
+  <data name="Language_ChineseSimplified" xml:space="preserve">
+    <value>Chinese (Simplified)</value>
+  </data>
+  <data name="Language_English" xml:space="preserve">
+    <value>English</value>
+  </data>
+  <data name="Language_Japanese" xml:space="preserve">
+    <value>Japanese</value>
+  </data>
+  <data name="Language_Korean" xml:space="preserve">
+    <value>Korean</value>
+  </data>
+  <data name="OK" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="OSC接続ポート:" xml:space="preserve">
+    <value>OSC Port:</value>
+  </data>
+  <data name="OSC設定" xml:space="preserve">
+    <value>OSC Settings</value>
+  </data>
+  <data name="ParseError" xml:space="preserve">
+    <value>Parse Error</value>
+  </data>
+  <data name="ToNRoundCounter-Cloudの設定" xml:space="preserve">
+    <value>ToNRoundCounter-Cloud Settings</value>
+  </data>
+  <data name="ToNRoundCounter-Cloudはセーブコードの複数端末間での全自動同期などの機能を持つクラウドサービスです。\n利用にはAPIキーが必要です。\nAPIキーはwebサイトから取得してください。" xml:space="preserve">
+    <value>ToNRoundCounter-Cloud is a cloud service that can automatically sync save codes across multiple devices.
+An API key is required.
+Please obtain an API key from the website.</value>
+  </data>
+  <data name="ToNRoundCounter-Cloudを開く" xml:space="preserve">
+    <value>Open ToNRoundCounter-Cloud</value>
+  </data>
+  <data name="ToNRoundCouter" xml:space="preserve">
+    <value>ToNRoundCounter</value>
+  </data>
+  <data name="WebSocket IP:" xml:space="preserve">
+    <value>WebSocket IP:</value>
+  </data>
+  <data name="Webhook URL:" xml:space="preserve">
+    <value>Webhook URL:</value>
+  </data>
+  <data name="アイテムサウンドを優先する" xml:space="preserve">
+    <value>Prioritize item sounds</value>
+  </data>
+  <data name="アイテム音楽ギミック" xml:space="preserve">
+    <value>Item Music Gimmick</value>
+  </data>
+  <data name="アンバウンドのテラー内容を表示" xml:space="preserve">
+    <value>Show Unbound terror details</value>
+  </data>
+  <data name="インポート" xml:space="preserve">
+    <value>Import</value>
+  </data>
+  <data name="ウィンドウ" xml:space="preserve">
+    <value>Windows</value>
+  </data>
+  <data name="エクスポート" xml:space="preserve">
+    <value>Export</value>
+  </data>
+  <data name="エラー" xml:space="preserve">
+    <value>Error</value>
+  </data>
+  <data name="オーバーレイ設定" xml:space="preserve">
+    <value>Overlay Settings</value>
+  </data>
+  <data name="キャンセル" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="ショートカットを表示" xml:space="preserve">
+    <value>Show shortcuts</value>
+  </data>
+  <data name="ダメージを表示" xml:space="preserve">
+    <value>Show damage</value>
+  </data>
+  <data name="テラー" xml:space="preserve">
+    <value>Terror</value>
+  </data>
+  <data name="テラーの名前の色固定:" xml:space="preserve">
+    <value>Lock terror name color:</value>
+  </data>
+  <data name="テラーを表示" xml:space="preserve">
+    <value>Show terror</value>
+  </data>
+  <data name="テラー名" xml:space="preserve">
+    <value>Terror Name</value>
+  </data>
+  <data name="テラー詳細情報を表示" xml:space="preserve">
+    <value>Show terror details</value>
+  </data>
+  <data name="テーマ" xml:space="preserve">
+    <value>Theme</value>
+  </data>
+  <data name="デバッグ情報表示" xml:space="preserve">
+    <value>Show debug info</value>
+  </data>
+  <data name="ファイル" xml:space="preserve">
+    <value>File</value>
+  </data>
+  <data name="フィルター設定" xml:space="preserve">
+    <value>Filter Settings</value>
+  </data>
+  <data name="プリセット:" xml:space="preserve">
+    <value>Preset:</value>
+  </data>
+  <data name="プリセットをインポートしました。" xml:space="preserve">
+    <value>Preset imported.</value>
+  </data>
+  <data name="プリセットをエクスポートしました。" xml:space="preserve">
+    <value>Preset exported.</value>
+  </data>
+  <data name="プリセットを保存しました。" xml:space="preserve">
+    <value>Preset saved.</value>
+  </data>
+  <data name="ラウンド/テラーBGM設定" xml:space="preserve">
+    <value>Round/Terror BGM Settings</value>
+  </data>
+  <data name="ラウンド/テラーごとのBGMを再生する" xml:space="preserve">
+    <value>Play BGM by round/terror</value>
+  </data>
+  <data name="ラウンドBGMを優先する" xml:space="preserve">
+    <value>Prioritize round BGM</value>
+  </data>
+  <data name="ラウンドタイプ" xml:space="preserve">
+    <value>Round Type</value>
+  </data>
+  <data name="ラウンドタイプごとの統計表示設定:" xml:space="preserve">
+    <value>Round type stats display:</value>
+  </data>
+  <data name="ラウンドタイプ推移を表示" xml:space="preserve">
+    <value>Show round type history</value>
+  </data>
+  <data name="ラウンドログ" xml:space="preserve">
+    <value>Round Log</value>
+  </data>
+  <data name="ラウンドログを表示する" xml:space="preserve">
+    <value>Show round log</value>
+  </data>
+  <data name="ラウンドログ背景色:" xml:space="preserve">
+    <value>Round log background:</value>
+  </data>
+  <data name="ラウンド名" xml:space="preserve">
+    <value>Round Name</value>
+  </data>
+  <data name="ラウンド状況を表示" xml:space="preserve">
+    <value>Show round status</value>
+  </data>
+  <data name="ラウンド結果をDiscordに送信するWebhook URLを設定します。空欄で無効化されます。" xml:space="preserve">
+    <value>Configure the Webhook URL to send round results to Discord. Leave blank to disable.</value>
+  </data>
+  <data name="ラウンド統計を表示" xml:space="preserve">
+    <value>Show round stats</value>
+  </data>
+  <data name="両方とも再生する" xml:space="preserve">
+    <value>Play both</value>
+  </data>
+  <data name="保存" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="再生する音声" xml:space="preserve">
+    <value>Audio to play</value>
+  </data>
+  <data name="出現回数" xml:space="preserve">
+    <value>Appearances</value>
+  </data>
+  <data name="削除" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="参照..." xml:space="preserve">
+    <value>Browse...</value>
+  </data>
+  <data name="固定する" xml:space="preserve">
+    <value>Pin on top</value>
+  </data>
+  <data name="固定解除" xml:space="preserve">
+    <value>Unpin</value>
+  </data>
+  <data name="外部アプリを自動起動する" xml:space="preserve">
+    <value>Launch external apps automatically</value>
+  </data>
+  <data name="実行ファイル" xml:space="preserve">
+    <value>Executable</value>
+  </data>
+  <data name="対象アイテム名" xml:space="preserve">
+    <value>Target item name</value>
+  </data>
+  <data name="履歴表示数:" xml:space="preserve">
+    <value>History count:</value>
+  </data>
+  <data name="引数" xml:space="preserve">
+    <value>Arguments</value>
+  </data>
+  <data name="情報" xml:space="preserve">
+    <value>Information</value>
+  </data>
+  <data name="情報表示欄背景色:" xml:space="preserve">
+    <value>Info panel background:</value>
+  </data>
+  <data name="時計を表示" xml:space="preserve">
+    <value>Show clock</value>
+  </data>
+  <data name="曖昧マッチング" xml:space="preserve">
+    <value>Fuzzy matching</value>
+  </data>
+  <data name="最大速度" xml:space="preserve">
+    <value>Max speed</value>
+  </data>
+  <data name="最小速度" xml:space="preserve">
+    <value>Min speed</value>
+  </data>
+  <data name="有効" xml:space="preserve">
+    <value>Enabled</value>
+  </data>
+  <data name="構文エラー" xml:space="preserve">
+    <value>Syntax error</value>
+  </data>
+  <data name="次ラウンド予測を表示" xml:space="preserve">
+    <value>Show next round prediction</value>
+  </data>
+  <data name="死亡回数" xml:space="preserve">
+    <value>Deaths</value>
+  </data>
+  <data name="滞在タイマーを表示" xml:space="preserve">
+    <value>Show dwell timer</value>
+  </data>
+  <data name="特定アイテムで音楽を再生する" xml:space="preserve">
+    <value>Play music for specific items</value>
+  </data>
+  <data name="現在の設定では自動自殺を行いません" xml:space="preserve">
+    <value>Auto-suicide will not run with the current settings.</value>
+  </data>
+  <data name="生存回数" xml:space="preserve">
+    <value>Survivals</value>
+  </data>
+  <data name="生存率" xml:space="preserve">
+    <value>Survival rate</value>
+  </data>
+  <data name="競合時の優先設定:" xml:space="preserve">
+    <value>Priority when conflicts occur:</value>
+  </data>
+  <data name="終了" xml:space="preserve">
+    <value>Exit</value>
+  </data>
+  <data name="統計情報を表示する" xml:space="preserve">
+    <value>Show statistics</value>
+  </data>
+  <data name="統計情報表示欄" xml:space="preserve">
+    <value>Statistics</value>
+  </data>
+  <data name="統計表示欄背景色:" xml:space="preserve">
+    <value>Stats panel background:</value>
+  </data>
+  <data name="背景色設定" xml:space="preserve">
+    <value>Background colors</value>
+  </data>
+  <data name="自動自殺は無効になっています" xml:space="preserve">
+    <value>Auto-suicide is disabled.</value>
+  </data>
+  <data name="自動自殺を有効にする" xml:space="preserve">
+    <value>Enable auto-suicide</value>
+  </data>
+  <data name="自動自殺モード" xml:space="preserve">
+    <value>Auto-suicide mode</value>
+  </data>
+  <data name="自動自殺対象ラウンド:" xml:space="preserve">
+    <value>Auto-suicide target rounds:</value>
+  </data>
+  <data name="自動起動設定" xml:space="preserve">
+    <value>Auto-launch settings</value>
+  </data>
+  <data name="色選択" xml:space="preserve">
+    <value>Choose color</value>
+  </data>
+  <data name="表示設定" xml:space="preserve">
+    <value>Display settings</value>
+  </data>
+  <data name="角度を表示" xml:space="preserve">
+    <value>Show angle</value>
+  </data>
+  <data name="解析できなかった行があります:" xml:space="preserve">
+    <value>Lines could not be parsed:</value>
+  </data>
+  <data name="言語" xml:space="preserve">
+    <value>Language</value>
+  </data>
+  <data name="設定" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="設定..." xml:space="preserve">
+    <value>Settings...</value>
+  </data>
+  <data name="設定内容" xml:space="preserve">
+    <value>Configuration</value>
+  </data>
+  <data name="設定内容確認" xml:space="preserve">
+    <value>Review configuration</value>
+  </data>
+  <data name="設定変更" xml:space="preserve">
+    <value>Change settings</value>
+  </data>
+  <data name="詳細設定を利用する" xml:space="preserve">
+    <value>Use advanced settings</value>
+  </data>
+  <data name="詳細設定ドキュメント" xml:space="preserve">
+    <value>Advanced settings docs</value>
+  </data>
+  <data name="読み込み" xml:space="preserve">
+    <value>Load</value>
+  </data>
+  <data name="警告" xml:space="preserve">
+    <value>Warning</value>
+  </data>
+  <data name="追加" xml:space="preserve">
+    <value>Add</value>
+  </data>
+  <data name="追加設定" xml:space="preserve">
+    <value>Additional settings</value>
+  </data>
+  <data name="透明度" xml:space="preserve">
+    <value>Opacity</value>
+  </data>
+  <data name="速度を表示" xml:space="preserve">
+    <value>Show speed</value>
+  </data>
+  <data name="Language_Danish" xml:space="preserve">
+    <value>Danish</value>
+  </data>
+  <data name="Language_German" xml:space="preserve">
+    <value>German</value>
+  </data>
+  <data name="Language_EnglishUnitedKingdom" xml:space="preserve">
+    <value>English (United Kingdom)</value>
+  </data>
+  <data name="Language_EnglishUnitedStates" xml:space="preserve">
+    <value>English (United States)</value>
+  </data>
+  <data name="Language_Spanish" xml:space="preserve">
+    <value>Spanish</value>
+  </data>
+  <data name="Language_SpanishLatinAmerica" xml:space="preserve">
+    <value>Spanish (Latin America)</value>
+  </data>
+  <data name="Language_French" xml:space="preserve">
+    <value>French</value>
+  </data>
+  <data name="Language_Croatian" xml:space="preserve">
+    <value>Croatian</value>
+  </data>
+  <data name="Language_Italian" xml:space="preserve">
+    <value>Italian</value>
+  </data>
+  <data name="Language_Lithuanian" xml:space="preserve">
+    <value>Lithuanian</value>
+  </data>
+  <data name="Language_Hungarian" xml:space="preserve">
+    <value>Hungarian</value>
+  </data>
+  <data name="Language_Dutch" xml:space="preserve">
+    <value>Dutch</value>
+  </data>
+  <data name="Language_Norwegian" xml:space="preserve">
+    <value>Norwegian</value>
+  </data>
+  <data name="Language_Polish" xml:space="preserve">
+    <value>Polish</value>
+  </data>
+  <data name="Language_PortugueseBrazil" xml:space="preserve">
+    <value>Portuguese (Brazil)</value>
+  </data>
+  <data name="Language_Romanian" xml:space="preserve">
+    <value>Romanian</value>
+  </data>
+  <data name="Language_Finnish" xml:space="preserve">
+    <value>Finnish</value>
+  </data>
+  <data name="Language_Swedish" xml:space="preserve">
+    <value>Swedish</value>
+  </data>
+  <data name="Language_Vietnamese" xml:space="preserve">
+    <value>Vietnamese</value>
+  </data>
+  <data name="Language_Turkish" xml:space="preserve">
+    <value>Turkish</value>
+  </data>
+  <data name="Language_Thai" xml:space="preserve">
+    <value>Thai</value>
+  </data>
+  <data name="Language_Greek" xml:space="preserve">
+    <value>Greek</value>
+  </data>
+  <data name="Language_Bulgarian" xml:space="preserve">
+    <value>Bulgarian</value>
+  </data>
+  <data name="Language_Russian" xml:space="preserve">
+    <value>Russian</value>
+  </data>
+  <data name="Language_Ukrainian" xml:space="preserve">
+    <value>Ukrainian</value>
   </data>
 </root>

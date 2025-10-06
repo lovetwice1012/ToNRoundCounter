@@ -20,6 +20,8 @@ namespace ToNRoundCounter.UI
         private readonly IAppSettings _settings;
 
 
+        private Label languageLabel = null!;
+        public ComboBox LanguageComboBox { get; private set; } = null!;
         public NumericUpDown oscPortNumericUpDown { get; private set; } = null!;
         public TextBox webSocketIpTextBox { get; private set; } = null!;
         // 統計情報表示・デバッグ情報チェック
@@ -124,6 +126,39 @@ namespace ToNRoundCounter.UI
         private const string RoundBgmTerrorColumnName = "RoundBgmTerror";
         private const string RoundBgmPathColumnName = "RoundBgmPath";
 
+        private static readonly (string Code, string ResourceKey)[] LanguageDisplayKeys = new[]
+        {
+            ("ja", "Language_Japanese"),
+            ("en", "Language_English"),
+            ("en-US", "Language_EnglishUnitedStates"),
+            ("en-GB", "Language_EnglishUnitedKingdom"),
+            ("ko", "Language_Korean"),
+            ("zh-Hans", "Language_ChineseSimplified"),
+            ("da", "Language_Danish"),
+            ("de", "Language_German"),
+            ("es", "Language_Spanish"),
+            ("es-419", "Language_SpanishLatinAmerica"),
+            ("fr", "Language_French"),
+            ("hr", "Language_Croatian"),
+            ("it", "Language_Italian"),
+            ("lt", "Language_Lithuanian"),
+            ("hu", "Language_Hungarian"),
+            ("nl", "Language_Dutch"),
+            ("nb", "Language_Norwegian"),
+            ("pl", "Language_Polish"),
+            ("pt-BR", "Language_PortugueseBrazil"),
+            ("ro", "Language_Romanian"),
+            ("fi", "Language_Finnish"),
+            ("sv", "Language_Swedish"),
+            ("vi", "Language_Vietnamese"),
+            ("tr", "Language_Turkish"),
+            ("th", "Language_Thai"),
+            ("el", "Language_Greek"),
+            ("bg", "Language_Bulgarian"),
+            ("ru", "Language_Russian"),
+            ("uk", "Language_Ukrainian"),
+        };
+
 
         public SettingsPanel(IAppSettings settings)
         {
@@ -142,6 +177,20 @@ namespace ToNRoundCounter.UI
             int thirdColumnY = margin;
             int thirdColumnX = margin * 3 + columnWidth * 2;
             int innerMargin = 10;
+
+            languageLabel = new Label();
+            languageLabel.Text = LanguageManager.Translate("言語");
+            languageLabel.AutoSize = true;
+            languageLabel.Location = new Point(margin, currentY + 4);
+            this.Controls.Add(languageLabel);
+
+            LanguageComboBox = new ComboBox();
+            LanguageComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            LanguageComboBox.Location = new Point(languageLabel.Right + 10, currentY);
+            LanguageComboBox.Width = columnWidth - (LanguageComboBox.Left - margin);
+            this.Controls.Add(LanguageComboBox);
+            LoadLanguageOptions(_settings.Language);
+            currentY += LanguageComboBox.Height + margin;
 
             Label themeLabel = new Label();
             themeLabel.Text = LanguageManager.Translate("テーマ");
@@ -1575,6 +1624,38 @@ namespace ToNRoundCounter.UI
 
         }
 
+        public void LoadLanguageOptions(string? selectedLanguage)
+        {
+            if (LanguageComboBox == null)
+            {
+                return;
+            }
+
+            var items = new List<LanguageOption>();
+            foreach (var (code, resourceKey) in LanguageDisplayKeys)
+            {
+                var displayName = LanguageManager.Translate(resourceKey);
+                items.Add(new LanguageOption(code, displayName));
+            }
+
+            LanguageComboBox.DisplayMember = nameof(LanguageOption.DisplayName);
+            LanguageComboBox.ValueMember = nameof(LanguageOption.Code);
+            LanguageComboBox.DataSource = items;
+
+            var normalized = LanguageManager.NormalizeCulture(selectedLanguage);
+            var selected = items.FirstOrDefault(i => string.Equals(i.Code, normalized, StringComparison.OrdinalIgnoreCase));
+            if (selected != null)
+            {
+                LanguageComboBox.SelectedValue = selected.Code;
+            }
+            else if (items.Count > 0)
+            {
+                LanguageComboBox.SelectedIndex = 0;
+            }
+        }
+
+        public string SelectedLanguage => LanguageComboBox?.SelectedValue as string ?? LanguageManager.DefaultCulture;
+
         public void LoadThemeOptions(IEnumerable<ThemeDescriptor> themes, string selectedThemeKey)
         {
             if (ThemeComboBox == null)
@@ -1715,6 +1796,21 @@ namespace ToNRoundCounter.UI
             }
 
             OverlayOpacityValueLabel.Text = $"{OverlayOpacityTrackBar.Value}%";
+        }
+
+        private sealed class LanguageOption
+        {
+            public LanguageOption(string code, string displayName)
+            {
+                Code = code;
+                DisplayName = displayName;
+            }
+
+            public string Code { get; }
+
+            public string DisplayName { get; }
+
+            public override string ToString() => DisplayName;
         }
 
         private sealed class ThemeListItem

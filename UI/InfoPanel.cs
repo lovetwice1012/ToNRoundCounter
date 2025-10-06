@@ -134,5 +134,14 @@ namespace ToNRoundCounter.UI
                 ctrl.ForeColor = Theme.Current.Foreground;
             }
         }
+
+        public void ApplyLanguage()
+        {
+            RoundTypeTitle.Text = LanguageManager.Translate("InfoPanel_RoundType");
+            MapTitle.Text = LanguageManager.Translate("InfoPanel_Map");
+            TerrorTitle.Text = LanguageManager.Translate("InfoPanel_Terror");
+            ItemTitle.Text = LanguageManager.Translate("InfoPanel_Item");
+            DamageTitle.Text = LanguageManager.Translate("InfoPanel_Damage");
+        }
     }
 }
