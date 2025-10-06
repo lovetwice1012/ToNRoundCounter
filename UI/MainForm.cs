@@ -2736,12 +2736,13 @@ namespace ToNRoundCounter.UI
 
             static string? NormalizeKey(string? value)
             {
-                if (string.IsNullOrWhiteSpace(value))
+                if (value is null)
                 {
                     return null;
                 }
 
-                return value.Trim();
+                var trimmed = value.Trim();
+                return trimmed.Length == 0 ? null : trimmed;
             }
 
             var comparer = StringComparer.OrdinalIgnoreCase;
