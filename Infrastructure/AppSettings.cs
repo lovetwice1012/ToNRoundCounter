@@ -79,6 +79,9 @@ namespace ToNRoundCounter.Infrastructure
         public string AutoLaunchArguments { get; set; } = string.Empty;
         public bool ItemMusicEnabled { get; set; }
         public List<ItemMusicEntry> ItemMusicEntries { get; set; } = new List<ItemMusicEntry>();
+        public bool RoundBgmEnabled { get; set; }
+        public List<RoundBgmEntry> RoundBgmEntries { get; set; } = new List<RoundBgmEntry>();
+        public RoundBgmItemConflictBehavior RoundBgmItemConflictBehavior { get; set; } = RoundBgmItemConflictBehavior.PlayBoth;
         public string ItemMusicItemName { get; set; } = string.Empty;
         public string ItemMusicSoundPath { get; set; } = string.Empty;
         public double ItemMusicMinSpeed { get; set; }
@@ -158,6 +161,8 @@ namespace ToNRoundCounter.Infrastructure
                 LastSaveCode ??= string.Empty;
                 NormalizeAutoLaunchEntries();
                 NormalizeItemMusicEntries();
+                NormalizeRoundBgmEntries();
+                NormalizeRoundBgmPreferences();
                 _logger.LogEvent("AppSettings", "Normalization of complex settings completed.");
                 success = true;
             }
@@ -262,6 +267,31 @@ namespace ToNRoundCounter.Infrastructure
             }
         }
 
+        private void NormalizeRoundBgmEntries()
+        {
+            RoundBgmEntries ??= new List<RoundBgmEntry>();
+
+            foreach (var entry in RoundBgmEntries)
+            {
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                entry.RoundType ??= string.Empty;
+                entry.TerrorType ??= string.Empty;
+                entry.SoundPath ??= string.Empty;
+            }
+        }
+
+        private void NormalizeRoundBgmPreferences()
+        {
+            if (!Enum.IsDefined(typeof(RoundBgmItemConflictBehavior), RoundBgmItemConflictBehavior))
+            {
+                RoundBgmItemConflictBehavior = RoundBgmItemConflictBehavior.PlayBoth;
+            }
+        }
+
         private static void NormalizeItemMusicSpeeds(ItemMusicEntry entry)
         {
             if (entry == null)
@@ -328,6 +358,8 @@ namespace ToNRoundCounter.Infrastructure
             _bus.Publish(new SettingsSaving(this));
             NormalizeAutoLaunchEntries();
             NormalizeItemMusicEntries();
+            NormalizeRoundBgmEntries();
+            NormalizeRoundBgmPreferences();
             OverlayOpacity = NormalizeOverlayOpacity(OverlayOpacity);
             var settings = new AppSettingsData
             {
@@ -377,6 +409,9 @@ namespace ToNRoundCounter.Infrastructure
                 AutoLaunchEntries = AutoLaunchEntries,
                 ItemMusicEnabled = ItemMusicEnabled,
                 ItemMusicEntries = ItemMusicEntries,
+                RoundBgmEnabled = RoundBgmEnabled,
+                RoundBgmEntries = RoundBgmEntries,
+                RoundBgmItemConflictBehavior = RoundBgmItemConflictBehavior,
                 DiscordWebhookUrl = DiscordWebhookUrl,
                 LastSaveCode = LastSaveCode,
                 AfkSoundCancelEnabled = AfkSoundCancelEnabled,
@@ -458,6 +493,9 @@ namespace ToNRoundCounter.Infrastructure
         public List<AutoLaunchEntry> AutoLaunchEntries { get; set; } = new List<AutoLaunchEntry>();
         public bool ItemMusicEnabled { get; set; }
         public List<ItemMusicEntry> ItemMusicEntries { get; set; } = new List<ItemMusicEntry>();
+        public bool RoundBgmEnabled { get; set; }
+        public List<RoundBgmEntry> RoundBgmEntries { get; set; } = new List<RoundBgmEntry>();
+        public RoundBgmItemConflictBehavior RoundBgmItemConflictBehavior { get; set; } = RoundBgmItemConflictBehavior.PlayBoth;
         public string DiscordWebhookUrl { get; set; } = string.Empty;
         public string LastSaveCode { get; set; } = string.Empty;
         public bool AfkSoundCancelEnabled { get; set; } = true;

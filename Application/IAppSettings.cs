@@ -58,6 +58,9 @@ namespace ToNRoundCounter.Application
         string AutoLaunchArguments { get; set; }
         bool ItemMusicEnabled { get; set; }
         List<ItemMusicEntry> ItemMusicEntries { get; set; }
+        bool RoundBgmEnabled { get; set; }
+        List<RoundBgmEntry> RoundBgmEntries { get; set; }
+        RoundBgmItemConflictBehavior RoundBgmItemConflictBehavior { get; set; }
         string ItemMusicItemName { get; set; }
         string ItemMusicSoundPath { get; set; }
         double ItemMusicMinSpeed { get; set; }
