@@ -71,6 +71,7 @@ namespace ToNRoundCounter.UI
         private readonly IReadOnlyList<IAfkWarningHandler> _afkWarningHandlers;
         private readonly IReadOnlyList<IOscRepeaterPolicy> _oscRepeaterPolicies;
         private readonly ModuleHost _moduleHost;
+        private readonly AutoRecordingService autoRecordingService;
 
         private Action<WebSocketConnected>? _wsConnectedHandler;
         private Action<WebSocketDisconnected>? _wsDisconnectedHandler;
@@ -152,8 +153,20 @@ namespace ToNRoundCounter.UI
             _logger?.LogEvent("MainForm", message, level);
         }
 
+        private void EvaluateAutoRecording(string reason)
+        {
+            try
+            {
+                autoRecordingService?.EvaluateRecordingState(reason);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogEvent("AutoRecordingError", () => $"Failed to evaluate auto recording after '{reason}': {ex}", LogEventLevel.Error);
+            }
+        }
 
-        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, IEnumerable<IOscRepeaterPolicy> oscRepeaterPolicies, ModuleHost moduleHost)
+
+        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, IEnumerable<IOscRepeaterPolicy> oscRepeaterPolicies, AutoRecordingService autoRecordingService, ModuleHost moduleHost)
         {
             InitializeSoundPlayers();
             this.Name = "MainForm";
@@ -163,6 +176,7 @@ namespace ToNRoundCounter.UI
             this.stateService = stateService;
             _settings = settings;
             _logger = logger;
+            this.autoRecordingService = autoRecordingService;
             LogUi("Constructing main form instance and wiring dependencies.");
             _presenter = presenter;
             _eventBus = eventBus;
@@ -181,6 +195,7 @@ namespace ToNRoundCounter.UI
             LoadTerrorInfo();
             _settings.Load();
             _lastSaveCode = _settings.LastSaveCode ?? string.Empty;
+            EvaluateAutoRecording("InitialLoad");
             UpdateItemMusicPlayer(null);
             LogUi("Initial settings and resources loaded.", LogEventLevel.Debug);
             _moduleHost.NotifyThemeCatalogBuilding(new ModuleThemeCatalogContext(Theme.RegisteredThemes, Theme.RegisterTheme, _moduleHost.CurrentServiceProvider));
@@ -644,6 +659,13 @@ namespace ToNRoundCounter.UI
                     _settings.AutoSuicideFuzzyMatch = settingsForm.SettingsPanel.autoSuicideFuzzyCheckBox.Checked;
                     _settings.AutoLaunchEnabled = settingsForm.SettingsPanel.AutoLaunchEnabledCheckBox.Checked;
                     _settings.AutoLaunchEntries = settingsForm.SettingsPanel.GetAutoLaunchEntries();
+                    _settings.AutoRecordingEnabled = settingsForm.SettingsPanel.AutoRecordingEnabledCheckBox.Checked;
+                    _settings.AutoRecordingWindowTitle = settingsForm.SettingsPanel.AutoRecordingWindowTitleTextBox.Text?.Trim() ?? string.Empty;
+                    _settings.AutoRecordingFrameRate = (int)settingsForm.SettingsPanel.AutoRecordingFrameRateNumeric.Value;
+                    _settings.AutoRecordingOutputDirectory = settingsForm.SettingsPanel.AutoRecordingOutputDirectoryTextBox.Text?.Trim() ?? string.Empty;
+                    _settings.AutoRecordingOutputExtension = settingsForm.SettingsPanel.GetAutoRecordingOutputExtension();
+                    _settings.AutoRecordingRoundTypes = settingsForm.SettingsPanel.GetAutoRecordingRoundTypes();
+                    _settings.AutoRecordingTerrors = settingsForm.SettingsPanel.GetAutoRecordingTerrors();
                     _settings.ItemMusicEnabled = settingsForm.SettingsPanel.ItemMusicEnabledCheckBox.Checked;
                     _settings.ItemMusicEntries = settingsForm.SettingsPanel.GetItemMusicEntries();
                     _settings.RoundBgmEnabled = settingsForm.SettingsPanel.RoundBgmEnabledCheckBox.Checked;
@@ -678,6 +700,7 @@ namespace ToNRoundCounter.UI
                         return;
                     }
 
+                    EvaluateAutoRecording("SettingsChanged");
                     RecomputeOverlayTerrorBase();
                     RefreshTerrorInfoOverlay();
 
@@ -1018,6 +1041,7 @@ namespace ToNRoundCounter.UI
                         ScheduleAutoSuicide(TimeSpan.FromSeconds(40), true);
                     }
 
+                    EvaluateAutoRecording("RoundTypeUpdated");
                 }
                 else if (eventType == "TRACKER")
                 {
@@ -1130,6 +1154,7 @@ namespace ToNRoundCounter.UI
                     {
                         string joinedNames = string.Join(" & ", namesForLogic);
                         activeRoundForNames.TerrorKey = joinedNames;
+                        EvaluateAutoRecording("TerrorUpdated");
                     }
 
                     _dispatcher.Invoke(() => { UpdateTerrorDisplay(displayName, color, terrors); });
@@ -1512,6 +1537,7 @@ namespace ToNRoundCounter.UI
                 }
 
                 stateService.UpdateCurrentRound(null);
+                EvaluateAutoRecording("RoundFinalized");
                 var roundForHistory = stateService.PreviousRound ?? round;
                 lastRoundTypeForHistory = roundForHistory?.RoundType ?? string.Empty;
 
@@ -1876,6 +1902,7 @@ namespace ToNRoundCounter.UI
                         InfoPanel.DamageValue.Text = "0";
                         UpdateOverlay(OverlaySection.Damage, form => form.SetValue(GetDamageOverlayText()));
                     });
+                    EvaluateAutoRecording("RoundActiveStarted");
                 }
 
                 var roundForAutoCheck = stateService.CurrentRound;

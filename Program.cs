@@ -106,6 +106,10 @@ namespace ToNRoundCounter
             services.AddSingleton(sp => new AutoSuicideService(sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<StateService>();
             services.AddSingleton<IAppSettings>(sp => new AppSettings(sp.GetRequiredService<IEventLogger>(), sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ISettingsRepository>()));
+            services.AddSingleton(sp => new AutoRecordingService(
+                sp.GetRequiredService<StateService>(),
+                sp.GetRequiredService<IAppSettings>(),
+                sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<IInputSender, NativeInputSender>();
             services.AddSingleton<IErrorReporter>(sp => new ErrorReporter(sp.GetRequiredService<IEventLogger>(), sp.GetRequiredService<IEventBus>()));
             services.AddSingleton<IHttpClient, HttpClientWrapper>();
@@ -131,6 +135,7 @@ namespace ToNRoundCounter
                 sp.GetRequiredService<IUiDispatcher>(),
                 sp.GetServices<IAfkWarningHandler>(),
                 sp.GetServices<IOscRepeaterPolicy>(),
+                sp.GetRequiredService<AutoRecordingService>(),
                 sp.GetRequiredService<ModuleHost>()));
 
             eventLogger.LogEvent("Bootstrap", "Building service provider (pre-build notifications).");

@@ -112,6 +112,14 @@ namespace ToNRoundCounter.UI
         private Label roundBgmConflictBehaviorLabel = null!;
         private List<RoundBgmConflictOption> roundBgmConflictOptions = new List<RoundBgmConflictOption>();
         public TextBox DiscordWebhookUrlTextBox { get; private set; } = null!;
+        public CheckBox AutoRecordingEnabledCheckBox { get; private set; } = null!;
+        public TextBox AutoRecordingWindowTitleTextBox { get; private set; } = null!;
+        public NumericUpDown AutoRecordingFrameRateNumeric { get; private set; } = null!;
+        public TextBox AutoRecordingOutputDirectoryTextBox { get; private set; } = null!;
+        public ComboBox AutoRecordingFormatComboBox { get; private set; } = null!;
+        public CheckedListBox AutoRecordingRoundTypesListBox { get; private set; } = null!;
+        public TextBox AutoRecordingTerrorNamesTextBox { get; private set; } = null!;
+        private Button autoRecordingBrowseOutputButton = null!;
 
         private const string AutoLaunchEnabledColumnName = "AutoLaunchEnabled";
         private const string AutoLaunchPathColumnName = "AutoLaunchPath";
@@ -157,6 +165,12 @@ namespace ToNRoundCounter.UI
             ("bg", "Language_Bulgarian"),
             ("ru", "Language_Russian"),
             ("uk", "Language_Ukrainian"),
+        };
+
+        private static readonly string[] KnownRoundTypes = new[]
+        {
+            "クラシック", "走れ！", "オルタネイト", "パニッシュ", "狂気", "サボタージュ", "霧", "ブラッドバス", "ダブルトラブル",
+            "EX", "ミッドナイト", "ゴースト", "8ページ", "アンバウンド", "寒い夜", "ミスティックムーン", "ブラッドムーン", "トワイライト", "ソルスティス"
         };
 
 
@@ -1122,6 +1136,161 @@ namespace ToNRoundCounter.UI
 
             rightColumnY += grpAutoLaunch.Height + margin;
 
+            GroupBox grpAutoRecording = new GroupBox();
+            grpAutoRecording.Text = LanguageManager.Translate("自動録画設定");
+            grpAutoRecording.Location = new Point(margin * 2 + columnWidth, rightColumnY);
+            grpAutoRecording.Size = new Size(columnWidth, 360);
+            this.Controls.Add(grpAutoRecording);
+
+            int autoRecordingInnerY = 25;
+
+            AutoRecordingEnabledCheckBox = new CheckBox();
+            AutoRecordingEnabledCheckBox.Text = LanguageManager.Translate("指定条件でVRChatを自動録画する");
+            AutoRecordingEnabledCheckBox.AutoSize = true;
+            AutoRecordingEnabledCheckBox.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(AutoRecordingEnabledCheckBox);
+
+            autoRecordingInnerY = AutoRecordingEnabledCheckBox.Bottom + 8;
+
+            Label autoRecordingWindowTitleLabel = new Label();
+            autoRecordingWindowTitleLabel.Text = LanguageManager.Translate("録画対象ウィンドウ");
+            autoRecordingWindowTitleLabel.AutoSize = true;
+            autoRecordingWindowTitleLabel.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(autoRecordingWindowTitleLabel);
+
+            AutoRecordingWindowTitleTextBox = new TextBox();
+            AutoRecordingWindowTitleTextBox.Location = new Point(innerMargin, autoRecordingWindowTitleLabel.Bottom + 4);
+            AutoRecordingWindowTitleTextBox.Width = columnWidth - innerMargin * 2;
+            grpAutoRecording.Controls.Add(AutoRecordingWindowTitleTextBox);
+
+            autoRecordingInnerY = AutoRecordingWindowTitleTextBox.Bottom + 4;
+
+            Label autoRecordingWindowHelpLabel = new Label();
+            autoRecordingWindowHelpLabel.Text = LanguageManager.Translate("ウィンドウ名またはプロセス名の一部を指定できます");
+            autoRecordingWindowHelpLabel.AutoSize = true;
+            autoRecordingWindowHelpLabel.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(autoRecordingWindowHelpLabel);
+
+            autoRecordingInnerY = autoRecordingWindowHelpLabel.Bottom + 8;
+
+            Label autoRecordingFrameRateLabel = new Label();
+            autoRecordingFrameRateLabel.Text = LanguageManager.Translate("録画フレームレート");
+            autoRecordingFrameRateLabel.AutoSize = true;
+            autoRecordingFrameRateLabel.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(autoRecordingFrameRateLabel);
+
+            AutoRecordingFrameRateNumeric = new NumericUpDown();
+            AutoRecordingFrameRateNumeric.Location = new Point(innerMargin, autoRecordingFrameRateLabel.Bottom + 4);
+            AutoRecordingFrameRateNumeric.Width = 80;
+            AutoRecordingFrameRateNumeric.Minimum = 5;
+            AutoRecordingFrameRateNumeric.Maximum = 60;
+            AutoRecordingFrameRateNumeric.Value = Math.Min(Math.Max(_settings.AutoRecordingFrameRate, 5), 60);
+            grpAutoRecording.Controls.Add(AutoRecordingFrameRateNumeric);
+
+            Label autoRecordingFpsLabel = new Label();
+            autoRecordingFpsLabel.Text = LanguageManager.Translate("fps");
+            autoRecordingFpsLabel.AutoSize = true;
+            autoRecordingFpsLabel.Location = new Point(AutoRecordingFrameRateNumeric.Right + 8, AutoRecordingFrameRateNumeric.Top + 4);
+            grpAutoRecording.Controls.Add(autoRecordingFpsLabel);
+
+            autoRecordingInnerY = AutoRecordingFrameRateNumeric.Bottom + 10;
+
+            Label autoRecordingOutputLabel = new Label();
+            autoRecordingOutputLabel.Text = LanguageManager.Translate("出力フォルダー");
+            autoRecordingOutputLabel.AutoSize = true;
+            autoRecordingOutputLabel.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(autoRecordingOutputLabel);
+
+            AutoRecordingOutputDirectoryTextBox = new TextBox();
+            AutoRecordingOutputDirectoryTextBox.Location = new Point(innerMargin, autoRecordingOutputLabel.Bottom + 4);
+            AutoRecordingOutputDirectoryTextBox.Width = columnWidth - innerMargin * 3 - 90;
+            grpAutoRecording.Controls.Add(AutoRecordingOutputDirectoryTextBox);
+
+            autoRecordingBrowseOutputButton = new Button();
+            autoRecordingBrowseOutputButton.Text = LanguageManager.Translate("参照...");
+            autoRecordingBrowseOutputButton.AutoSize = true;
+            autoRecordingBrowseOutputButton.Location = new Point(AutoRecordingOutputDirectoryTextBox.Right + 10, AutoRecordingOutputDirectoryTextBox.Top - 2);
+            autoRecordingBrowseOutputButton.Click += (s, e) =>
+            {
+                BrowseForAutoRecordingOutputDirectory();
+                RefreshAutoRecordingControlsState();
+            };
+            grpAutoRecording.Controls.Add(autoRecordingBrowseOutputButton);
+
+            autoRecordingInnerY = AutoRecordingOutputDirectoryTextBox.Bottom + 8;
+
+            Label autoRecordingFormatLabel = new Label();
+            autoRecordingFormatLabel.Text = LanguageManager.Translate("AutoRecording_FormatLabel");
+            autoRecordingFormatLabel.AutoSize = true;
+            autoRecordingFormatLabel.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(autoRecordingFormatLabel);
+
+            AutoRecordingFormatComboBox = new ComboBox();
+            AutoRecordingFormatComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            AutoRecordingFormatComboBox.Location = new Point(innerMargin, autoRecordingFormatLabel.Bottom + 4);
+            AutoRecordingFormatComboBox.Width = columnWidth - innerMargin * 2;
+            AutoRecordingFormatComboBox.DisplayMember = nameof(RecordingFormatOption.Display);
+            AutoRecordingFormatComboBox.ValueMember = nameof(RecordingFormatOption.Extension);
+            var autoRecordingFormatOptions = CreateAutoRecordingFormatOptions();
+            AutoRecordingFormatComboBox.Items.AddRange(autoRecordingFormatOptions.Cast<object>().ToArray());
+            grpAutoRecording.Controls.Add(AutoRecordingFormatComboBox);
+
+            Label autoRecordingFormatHelpLabel = new Label();
+            autoRecordingFormatHelpLabel.Text = LanguageManager.Translate("AutoRecording_FormatHelp");
+            autoRecordingFormatHelpLabel.AutoSize = true;
+            autoRecordingFormatHelpLabel.MaximumSize = new Size(columnWidth - innerMargin * 2, 0);
+            autoRecordingFormatHelpLabel.Location = new Point(innerMargin, AutoRecordingFormatComboBox.Bottom + 4);
+            grpAutoRecording.Controls.Add(autoRecordingFormatHelpLabel);
+
+            autoRecordingInnerY = autoRecordingFormatHelpLabel.Bottom + 10;
+
+            Label autoRecordingRoundsLabel = new Label();
+            autoRecordingRoundsLabel.Text = LanguageManager.Translate("録画開始ラウンド");
+            autoRecordingRoundsLabel.AutoSize = true;
+            autoRecordingRoundsLabel.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(autoRecordingRoundsLabel);
+
+            AutoRecordingRoundTypesListBox = new CheckedListBox();
+            AutoRecordingRoundTypesListBox.Location = new Point(innerMargin, autoRecordingRoundsLabel.Bottom + 4);
+            AutoRecordingRoundTypesListBox.Size = new Size(columnWidth - innerMargin * 2, 90);
+            AutoRecordingRoundTypesListBox.Items.AddRange(KnownRoundTypes);
+            grpAutoRecording.Controls.Add(AutoRecordingRoundTypesListBox);
+
+            autoRecordingInnerY = AutoRecordingRoundTypesListBox.Bottom + 8;
+
+            Label autoRecordingTerrorsLabel = new Label();
+            autoRecordingTerrorsLabel.Text = LanguageManager.Translate("録画開始テラー");
+            autoRecordingTerrorsLabel.AutoSize = true;
+            autoRecordingTerrorsLabel.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(autoRecordingTerrorsLabel);
+
+            AutoRecordingTerrorNamesTextBox = new TextBox();
+            AutoRecordingTerrorNamesTextBox.Location = new Point(innerMargin, autoRecordingTerrorsLabel.Bottom + 4);
+            AutoRecordingTerrorNamesTextBox.Width = columnWidth - innerMargin * 2;
+            AutoRecordingTerrorNamesTextBox.Height = 70;
+            AutoRecordingTerrorNamesTextBox.Multiline = true;
+            grpAutoRecording.Controls.Add(AutoRecordingTerrorNamesTextBox);
+
+            Label autoRecordingTerrorHelpLabel = new Label();
+            autoRecordingTerrorHelpLabel.Text = LanguageManager.Translate("複数テラーの入力説明");
+            autoRecordingTerrorHelpLabel.AutoSize = true;
+            autoRecordingTerrorHelpLabel.Location = new Point(innerMargin, AutoRecordingTerrorNamesTextBox.Bottom + 2);
+            grpAutoRecording.Controls.Add(autoRecordingTerrorHelpLabel);
+
+            grpAutoRecording.Height = autoRecordingTerrorHelpLabel.Bottom + 15;
+
+            AutoRecordingEnabledCheckBox.CheckedChanged += (s, e) => RefreshAutoRecordingControlsState();
+            AutoRecordingWindowTitleTextBox.Text = _settings.AutoRecordingWindowTitle;
+            AutoRecordingFrameRateNumeric.Value = Math.Min(Math.Max(_settings.AutoRecordingFrameRate, 5), 60);
+            AutoRecordingOutputDirectoryTextBox.Text = _settings.AutoRecordingOutputDirectory;
+            AutoRecordingEnabledCheckBox.Checked = _settings.AutoRecordingEnabled;
+            SetAutoRecordingFormat(_settings.AutoRecordingOutputExtension);
+            SetAutoRecordingRoundTypes(_settings.AutoRecordingRoundTypes);
+            SetAutoRecordingTerrors(_settings.AutoRecordingTerrors);
+            RefreshAutoRecordingControlsState();
+
+            rightColumnY += grpAutoRecording.Height + margin;
+
             GroupBox grpItemMusic = new GroupBox();
             grpItemMusic.Text = LanguageManager.Translate("アイテム音楽ギミック");
             grpItemMusic.Location = new Point(margin * 2 + columnWidth, rightColumnY);
@@ -1892,6 +2061,114 @@ namespace ToNRoundCounter.UI
             return result;
         }
 
+        private RecordingFormatOption[] CreateAutoRecordingFormatOptions()
+        {
+            return new[]
+            {
+                new RecordingFormatOption("avi", LanguageManager.Translate("AutoRecording_FormatOption_AVI")),
+                new RecordingFormatOption("mp4", LanguageManager.Translate("AutoRecording_FormatOption_MP4")),
+                new RecordingFormatOption("mov", LanguageManager.Translate("AutoRecording_FormatOption_MOV")),
+                new RecordingFormatOption("wmv", LanguageManager.Translate("AutoRecording_FormatOption_WMV")),
+                new RecordingFormatOption("mpg", LanguageManager.Translate("AutoRecording_FormatOption_MPG")),
+                new RecordingFormatOption("mkv", LanguageManager.Translate("AutoRecording_FormatOption_MKV")),
+                new RecordingFormatOption("flv", LanguageManager.Translate("AutoRecording_FormatOption_FLV")),
+                new RecordingFormatOption("asf", LanguageManager.Translate("AutoRecording_FormatOption_ASF")),
+                new RecordingFormatOption("vob", LanguageManager.Translate("AutoRecording_FormatOption_VOB")),
+                new RecordingFormatOption("gif", LanguageManager.Translate("AutoRecording_FormatOption_GIF")),
+            };
+        }
+
+        private void SetAutoRecordingFormat(string? extension)
+        {
+            if (AutoRecordingFormatComboBox == null)
+            {
+                return;
+            }
+
+            string normalized = (extension ?? string.Empty).Trim().TrimStart('.');
+            foreach (var option in AutoRecordingFormatComboBox.Items.OfType<RecordingFormatOption>())
+            {
+                if (string.Equals(option.Extension, normalized, StringComparison.OrdinalIgnoreCase))
+                {
+                    AutoRecordingFormatComboBox.SelectedItem = option;
+                    return;
+                }
+            }
+
+            if (AutoRecordingFormatComboBox.Items.Count > 0)
+            {
+                AutoRecordingFormatComboBox.SelectedIndex = 0;
+            }
+        }
+
+        public string GetAutoRecordingOutputExtension()
+        {
+            if (AutoRecordingFormatComboBox?.SelectedItem is RecordingFormatOption option)
+            {
+                return option.Extension;
+            }
+
+            return AutoRecordingService.SupportedExtensions[0];
+        }
+
+        public void SetAutoRecordingRoundTypes(IEnumerable<string>? roundTypes)
+        {
+            if (AutoRecordingRoundTypesListBox == null)
+            {
+                return;
+            }
+
+            var selections = new HashSet<string>(roundTypes ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < AutoRecordingRoundTypesListBox.Items.Count; i++)
+            {
+                string item = Convert.ToString(AutoRecordingRoundTypesListBox.Items[i]) ?? string.Empty;
+                AutoRecordingRoundTypesListBox.SetItemChecked(i, selections.Contains(item));
+            }
+        }
+
+        public List<string> GetAutoRecordingRoundTypes()
+        {
+            if (AutoRecordingRoundTypesListBox == null)
+            {
+                return new List<string>();
+            }
+
+            return AutoRecordingRoundTypesListBox.CheckedItems.Cast<object>()
+                .Select(item => Convert.ToString(item) ?? string.Empty)
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .ToList();
+        }
+
+        public void SetAutoRecordingTerrors(IEnumerable<string>? terrors)
+        {
+            if (AutoRecordingTerrorNamesTextBox == null)
+            {
+                return;
+            }
+
+            if (terrors == null)
+            {
+                AutoRecordingTerrorNamesTextBox.Text = string.Empty;
+                return;
+            }
+
+            AutoRecordingTerrorNamesTextBox.Text = string.Join(Environment.NewLine,
+                terrors.Select(t => t ?? string.Empty).Where(t => !string.IsNullOrWhiteSpace(t)));
+        }
+
+        public List<string> GetAutoRecordingTerrors()
+        {
+            if (AutoRecordingTerrorNamesTextBox == null)
+            {
+                return new List<string>();
+            }
+
+            return (AutoRecordingTerrorNamesTextBox.Lines ?? Array.Empty<string>())
+                .Select(line => (line ?? string.Empty).Trim())
+                .Where(line => !string.IsNullOrWhiteSpace(line))
+                .ToList();
+        }
+
         public void LoadItemMusicEntries(IEnumerable<ItemMusicEntry> entries)
         {
             if (itemMusicEntriesGrid == null)
@@ -2133,6 +2410,28 @@ namespace ToNRoundCounter.UI
             }
         }
 
+        private void BrowseForAutoRecordingOutputDirectory()
+        {
+            if (AutoRecordingOutputDirectoryTextBox == null)
+            {
+                return;
+            }
+
+            using (var dialog = new FolderBrowserDialog())
+            {
+                string current = AutoRecordingOutputDirectoryTextBox.Text ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(current) && Directory.Exists(current))
+                {
+                    dialog.SelectedPath = current;
+                }
+
+                if (dialog.ShowDialog() == DialogResult.OK)
+                {
+                    AutoRecordingOutputDirectoryTextBox.Text = dialog.SelectedPath;
+                }
+            }
+        }
+
         private void RefreshAutoLaunchControlsState()
         {
             bool enabled = AutoLaunchEnabledCheckBox?.Checked ?? false;
@@ -2155,6 +2454,39 @@ namespace ToNRoundCounter.UI
             if (autoLaunchBrowseButton != null)
             {
                 autoLaunchBrowseButton.Enabled = enabled && hasSelection;
+            }
+        }
+
+        private void RefreshAutoRecordingControlsState()
+        {
+            bool enabled = AutoRecordingEnabledCheckBox?.Checked ?? false;
+            if (AutoRecordingWindowTitleTextBox != null)
+            {
+                AutoRecordingWindowTitleTextBox.Enabled = enabled;
+            }
+            if (AutoRecordingFrameRateNumeric != null)
+            {
+                AutoRecordingFrameRateNumeric.Enabled = enabled;
+            }
+            if (AutoRecordingOutputDirectoryTextBox != null)
+            {
+                AutoRecordingOutputDirectoryTextBox.Enabled = enabled;
+            }
+            if (AutoRecordingFormatComboBox != null)
+            {
+                AutoRecordingFormatComboBox.Enabled = enabled;
+            }
+            if (autoRecordingBrowseOutputButton != null)
+            {
+                autoRecordingBrowseOutputButton.Enabled = enabled;
+            }
+            if (AutoRecordingRoundTypesListBox != null)
+            {
+                AutoRecordingRoundTypesListBox.Enabled = enabled;
+            }
+            if (AutoRecordingTerrorNamesTextBox != null)
+            {
+                AutoRecordingTerrorNamesTextBox.Enabled = enabled;
             }
         }
 
@@ -2247,6 +2579,19 @@ namespace ToNRoundCounter.UI
             }
 
             return fallback;
+        }
+
+        private sealed class RecordingFormatOption
+        {
+            public RecordingFormatOption(string extension, string display)
+            {
+                Extension = extension;
+                Display = display;
+            }
+
+            public string Extension { get; }
+
+            public string Display { get; }
         }
 
         private sealed class RoundBgmConflictOption

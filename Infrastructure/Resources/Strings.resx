@@ -221,8 +221,89 @@ Please obtain an API key from the website.</value>
   <data name="固定解除" xml:space="preserve">
     <value>Unpin</value>
   </data>
+  <data name="出力フォルダー" xml:space="preserve">
+    <value>Output folder</value>
+  </data>
+  <data name="出力拡張子" xml:space="preserve">
+    <value>Output extension</value>
+  </data>
+  <data name="自動録画設定" xml:space="preserve">
+    <value>Auto recording</value>
+  </data>
+  <data name="指定条件でVRChatを自動録画する" xml:space="preserve">
+    <value>Record VRChat automatically when triggers match</value>
+  </data>
   <data name="外部アプリを自動起動する" xml:space="preserve">
     <value>Launch external apps automatically</value>
+  </data>
+  <data name="録画コマンド" xml:space="preserve">
+    <value>Recording executable</value>
+  </data>
+  <data name="録画引数" xml:space="preserve">
+    <value>Recording arguments</value>
+  </data>
+  <data name="録画引数の説明" xml:space="preserve">
+    <value>Use {output} for the file path and {window} for the window title.</value>
+  </data>
+  <data name="ウィンドウタイトル" xml:space="preserve">
+    <value>Window title</value>
+  </data>
+  <data name="録画対象ウィンドウ" xml:space="preserve">
+    <value>Target window</value>
+  </data>
+  <data name="ウィンドウ名またはプロセス名の一部を指定できます" xml:space="preserve">
+    <value>You can specify part of the window title or process name.</value>
+  </data>
+  <data name="録画フレームレート" xml:space="preserve">
+    <value>Frame rate</value>
+  </data>
+  <data name="fps" xml:space="preserve">
+    <value>fps</value>
+  </data>
+  <data name="AutoRecording_FormatLabel" xml:space="preserve">
+    <value>Output format</value>
+  </data>
+  <data name="AutoRecording_FormatOption_AVI" xml:space="preserve">
+    <value>AVI (uncompressed video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MP4" xml:space="preserve">
+    <value>MP4 (H.264 video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MOV" xml:space="preserve">
+    <value>MOV (H.264 video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_WMV" xml:space="preserve">
+    <value>WMV (Windows Media Video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MPG" xml:space="preserve">
+    <value>MPEG-2 (Program Stream)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MKV" xml:space="preserve">
+    <value>MKV (H.264 video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_FLV" xml:space="preserve">
+    <value>FLV (H.264 video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_ASF" xml:space="preserve">
+    <value>ASF (Windows Media container)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_VOB" xml:space="preserve">
+    <value>VOB (MPEG-2 program stream)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_GIF" xml:space="preserve">
+    <value>GIF (animated image)</value>
+  </data>
+  <data name="AutoRecording_FormatHelp" xml:space="preserve">
+    <value>AVI creates lossless recordings but results in large files. MP4, MOV, MKV, and FLV use H.264 to balance size and compatibility. WMV and ASF produce Windows Media Video files. MPG and VOB generate MPEG-2 program streams. GIF produces lightweight animated images with limited colors and frame rate.</value>
+  </data>
+  <data name="録画開始テラー" xml:space="preserve">
+    <value>Trigger terror names</value>
+  </data>
+  <data name="録画開始ラウンド" xml:space="preserve">
+    <value>Trigger round types</value>
+  </data>
+  <data name="複数テラーの入力説明" xml:space="preserve">
+    <value>Enter one terror name per line. Matching is case-insensitive.</value>
   </data>
   <data name="実行ファイル" xml:space="preserve">
     <value>Executable</value>

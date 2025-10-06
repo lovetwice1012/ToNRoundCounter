@@ -66,6 +66,13 @@ namespace ToNRoundCounter.Application
         string ItemMusicSoundPath { get; set; }
         double ItemMusicMinSpeed { get; set; }
         double ItemMusicMaxSpeed { get; set; }
+        bool AutoRecordingEnabled { get; set; }
+        string AutoRecordingWindowTitle { get; set; }
+        int AutoRecordingFrameRate { get; set; }
+        string AutoRecordingOutputDirectory { get; set; }
+        string AutoRecordingOutputExtension { get; set; }
+        List<string> AutoRecordingRoundTypes { get; set; }
+        List<string> AutoRecordingTerrors { get; set; }
         string DiscordWebhookUrl { get; set; }
         string LastSaveCode { get; set; }
         bool AfkSoundCancelEnabled { get; set; }
