@@ -100,6 +100,7 @@
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="7.0.15" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="SharpDX" Version="4.2.0" />
     <PackageReference Include="SharpDX.Direct2D1" Version="4.2.0" />
@@ -115,6 +116,7 @@
     <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
     <PackageReference Include="System.Threading.Channels" Version="8.0.0" />
     <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.5.4" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.5" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="UI\MainForm.cs">
@@ -206,12 +208,15 @@
     <Compile Include="Application\IMainView.cs" />
     <Compile Include="Application\MainPresenter.cs" />
     <Compile Include="Application\IEventLogger.cs" />
+    <Compile Include="Application\IEventLogRepository.cs" />
     <Compile Include="Application\ICancellationProvider.cs" />
     <Compile Include="Application\IEventBus.cs" />
     <Compile Include="Application\Events.cs" />
     <Compile Include="Application\IWebSocketClient.cs" />
     <Compile Include="Application\IOSCListener.cs" />
     <Compile Include="Application\IAppSettings.cs" />
+    <Compile Include="Application\IRoundDataRepository.cs" />
+    <Compile Include="Application\ISettingsRepository.cs" />
     <Compile Include="Application\IInputSender.cs" />
     <Compile Include="Application\IOscRepeaterPolicy.cs" />
     <Compile Include="Application\IAfkWarningHandler.cs" />
@@ -224,6 +229,9 @@
     <Compile Include="Infrastructure\OSCListener.cs" />
     <Compile Include="Infrastructure\AppSettings.cs" />
     <Compile Include="Infrastructure\EventLogger.cs" />
+    <Compile Include="Infrastructure\Sqlite\SqliteEventLogRepository.cs" />
+    <Compile Include="Infrastructure\Sqlite\SqliteRoundDataRepository.cs" />
+    <Compile Include="Infrastructure\Sqlite\SqliteSettingsRepository.cs" />
     <Compile Include="Infrastructure\CancellationProvider.cs" />
     <Compile Include="Infrastructure\LanguageManager.cs" />
     <Compile Include="Infrastructure\NativeInputSender.cs" />

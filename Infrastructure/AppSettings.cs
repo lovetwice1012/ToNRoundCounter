@@ -16,11 +16,13 @@ namespace ToNRoundCounter.Infrastructure
         private readonly string settingsFile = "appsettings.json";
         private readonly IEventLogger _logger;
         private readonly IEventBus _bus;
+        private readonly ISettingsRepository? _settingsRepository;
 
-        public AppSettings(IEventLogger logger, IEventBus bus)
+        public AppSettings(IEventLogger logger, IEventBus bus, ISettingsRepository? settingsRepository = null)
         {
             _logger = logger;
             _bus = bus;
+            _settingsRepository = settingsRepository;
             Load();
         }
 
@@ -97,12 +99,37 @@ namespace ToNRoundCounter.Infrastructure
             _bus.Publish(new SettingsLoading(this));
             bool success = false;
             var validationErrors = new List<string>();
+            string? json = null;
+            bool loadedFromRepository = false;
+
             try
             {
                 if (File.Exists(settingsFile))
                 {
                     _logger.LogEvent("AppSettings", "Settings file found. Reading contents.");
-                    var json = File.ReadAllText(settingsFile);
+                    json = File.ReadAllText(settingsFile);
+                }
+                else
+                {
+                    _logger.LogEvent("AppSettings", "Settings file not found. Attempting to load from SQLite snapshot.", Serilog.Events.LogEventLevel.Warning);
+                    if (_settingsRepository != null)
+                    {
+                        json = _settingsRepository.LoadLatest();
+                        if (!string.IsNullOrWhiteSpace(json))
+                        {
+                            loadedFromRepository = true;
+                            _logger.LogEvent("AppSettings", "Settings snapshot loaded from SQLite repository.");
+                        }
+                    }
+
+                    if (string.IsNullOrWhiteSpace(json))
+                    {
+                        _logger.LogEvent("AppSettings", "No persisted settings snapshot found. Using defaults.", Serilog.Events.LogEventLevel.Warning);
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(json))
+                {
                     try
                     {
                         var token = JObject.Parse(json);
@@ -121,11 +148,17 @@ namespace ToNRoundCounter.Infrastructure
                     }
 
                     JsonConvert.PopulateObject(json, this);
+
+                    if (loadedFromRepository && !File.Exists(settingsFile))
+                    {
+                        TryRegenerateSettingsFile(json);
+                    }
+                    else if (!loadedFromRepository)
+                    {
+                        PersistSettingsSnapshot(json);
+                    }
                 }
-                else
-                {
-                    _logger.LogEvent("AppSettings", "Settings file not found. Using defaults.", Serilog.Events.LogEventLevel.Warning);
-                }
+
                 ThemeKey = NormalizeThemeKey(ThemeKey);
                 _logger.LogEvent("AppSettings", $"Theme normalized to '{ThemeKey}'.");
                 _bus.Publish(new SettingsValidating(this, validationErrors));
@@ -178,6 +211,36 @@ namespace ToNRoundCounter.Infrastructure
                 {
                     _bus.Publish(new SettingsLoaded(this));
                 }
+            }
+        }
+
+        private void PersistSettingsSnapshot(string json)
+        {
+            if (_settingsRepository == null)
+            {
+                return;
+            }
+
+            try
+            {
+                _settingsRepository.SaveSnapshot(json, DateTime.UtcNow);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogEvent("AppSettings", $"Failed to persist settings snapshot: {ex.Message}", Serilog.Events.LogEventLevel.Warning);
+            }
+        }
+
+        private void TryRegenerateSettingsFile(string json)
+        {
+            try
+            {
+                File.WriteAllText(settingsFile, json);
+                _logger.LogEvent("AppSettings", "Settings file regenerated from SQLite snapshot.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogEvent("AppSettings", $"Failed to regenerate settings file from SQLite snapshot: {ex.Message}", Serilog.Events.LogEventLevel.Warning);
             }
         }
 
@@ -427,6 +490,7 @@ namespace ToNRoundCounter.Infrastructure
                 {
                     await writer.WriteAsync(json).ConfigureAwait(false);
                 }
+                PersistSettingsSnapshot(json);
                 success = true;
             }
             catch (Exception ex)
