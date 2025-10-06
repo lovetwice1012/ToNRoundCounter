@@ -21,6 +21,35 @@ namespace ToNRoundCounter
         [STAThread]
         static void Main(string[] args)
         {
+            if (RoundLogExportOptions.TryCreate(args, out var exportOptions, out var exportError))
+            {
+                if (exportError != null)
+                {
+                    Console.Error.WriteLine(exportError);
+                    Environment.ExitCode = 1;
+                    return;
+                }
+
+                Log.Logger = new LoggerConfiguration()
+                    .MinimumLevel.Information()
+                    .WriteTo.Console()
+                    .CreateLogger();
+
+                try
+                {
+                    var exporter = new RoundLogExporter(Log.Logger);
+                    Task.Run(() => exporter.ExportAsync(exportOptions!)).GetAwaiter().GetResult();
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    Log.Logger = Log.Logger ?? new LoggerConfiguration().WriteTo.Console().CreateLogger();
+                    Log.Logger.Error(ex, "Failed to export round logs.");
+                    Environment.ExitCode = 1;
+                    return;
+                }
+            }
+
             WinFormsApp.EnableVisualStyles();
             WinFormsApp.SetCompatibleTextRenderingDefault(false);
 

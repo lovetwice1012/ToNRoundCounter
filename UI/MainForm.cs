@@ -1062,6 +1062,29 @@ namespace ToNRoundCounter.UI
                             trackerRound.Damage = 0;
                         }
                     }
+                    else if (trackerEvent == "round_killers")
+                    {
+                        var args = json.Value<JArray>("args");
+                        var activeRound = stateService.CurrentRound;
+                        if (args != null && activeRound != null)
+                        {
+                            if (activeRound.TerrorIds == null || activeRound.TerrorIds.Length < 3)
+                            {
+                                activeRound.TerrorIds = new int[3];
+                            }
+
+                            for (int index = 0; index < activeRound.TerrorIds.Length; index++)
+                            {
+                                activeRound.TerrorIds[index] = 0;
+                            }
+
+                            for (int i = 0; i < Math.Min(3, args.Count); i++)
+                            {
+                                int? terrorId = TryConvertToInt(args[i]);
+                                activeRound.TerrorIds[i] = terrorId ?? 0;
+                            }
+                        }
+                    }
                     else if (trackerEvent == "round_won")
                     {
                         var existingRound = stateService.CurrentRound;
@@ -1243,14 +1266,35 @@ namespace ToNRoundCounter.UI
                 }
                 else if (eventType == "STATS")
                 {
-                    /*
                     string statName = json.Value<string>("Name") ?? string.Empty;
-                    JToken valueToken = json["Value"];
-                    if (!string.IsNullOrEmpty(statName) && valueToken != null)
+                    JToken? valueToken = json["Value"];
+
+                    if (string.IsNullOrWhiteSpace(statName) || valueToken == null)
                     {
-                        stateService.UpdateStat(statName, valueToken.ToObject<object>());
+                        continue;
                     }
-                    */
+
+                    var statValue = valueToken.Type == JTokenType.Null ? null : valueToken.ToObject<object>();
+                    if (statValue != null)
+                    {
+                        stateService.UpdateStat(statName, statValue);
+                    }
+
+                    int? numericValue = TryConvertToInt(valueToken);
+                    if (numericValue.HasValue && stateService.CurrentRound != null)
+                    {
+                        if (string.Equals(statName, "RoundInt", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(statName, "RoundID", StringComparison.OrdinalIgnoreCase))
+                        {
+                            stateService.CurrentRound.RoundNumber = numericValue.Value;
+                        }
+                        else if (string.Equals(statName, "MapInt", StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(statName, "MapID", StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(statName, "MapId", StringComparison.OrdinalIgnoreCase))
+                        {
+                            stateService.CurrentRound.MapId = numericValue.Value;
+                        }
+                    }
                 }
                 else if (eventType == "ALIVE")
                 {
@@ -2264,6 +2308,41 @@ namespace ToNRoundCounter.UI
                 terrorCountdownLastDisplayedValue = displayValue;
                 RefreshTerrorDisplays();
             }
+        }
+
+        private static int? TryConvertToInt(JToken? token)
+        {
+            if (token == null)
+            {
+                return null;
+            }
+
+            if (token.Type == JTokenType.Integer)
+            {
+                return token.Value<int>();
+            }
+
+            if (token.Type == JTokenType.Float)
+            {
+                return (int)Math.Round(token.Value<double>(), MidpointRounding.AwayFromZero);
+            }
+
+            if (token.Type == JTokenType.Boolean)
+            {
+                return token.Value<bool>() ? 1 : 0;
+            }
+
+            if (token.Type == JTokenType.String)
+            {
+                var value = token.Value<string>();
+                if (!string.IsNullOrWhiteSpace(value) &&
+                    int.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed))
+                {
+                    return parsed;
+                }
+            }
+
+            return null;
         }
 
         private void UpdateTerrorDisplay(string displayName, Color color, List<(string name, int count)>? terrors)
