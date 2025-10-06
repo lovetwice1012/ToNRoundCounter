@@ -122,6 +122,8 @@ namespace ToNRoundCounter.UI
             int columnWidth = 540;
             int totalWidth = columnWidth * 3 + margin * 4;
             this.Size = new Size(totalWidth, 1100);
+            this.AutoScroll = true;
+            this.AutoScrollMinSize = new Size(totalWidth, 1100);
 
             int currentY = margin;
             int rightColumnY = margin;
