@@ -443,4 +443,85 @@ Krijg een API -sleutel van de website.</value>
   <data name="Language_Ukrainian" xml:space="preserve">
     <value>Oekraïens</value>
   </data>
+  <data name="出力フォルダー" xml:space="preserve">
+    <value>Uitvoermap</value>
+  </data>
+  <data name="出力拡張子" xml:space="preserve">
+    <value>Uitvoerverlenging</value>
+  </data>
+  <data name="自動録画設定" xml:space="preserve">
+    <value>Auto -opname</value>
+  </data>
+  <data name="指定条件でVRChatを自動録画する" xml:space="preserve">
+    <value>Noteer VRChat automatisch wanneer triggers overeenkomen</value>
+  </data>
+  <data name="録画コマンド" xml:space="preserve">
+    <value>Uitschakeling uitvoerbaar</value>
+  </data>
+  <data name="録画引数" xml:space="preserve">
+    <value>Opname argumenten</value>
+  </data>
+  <data name="録画引数の説明" xml:space="preserve">
+    <value>Gebruik {output} voor het bestandspad en {window} voor de venstertitel.</value>
+  </data>
+  <data name="ウィンドウタイトル" xml:space="preserve">
+    <value>Raamtitel</value>
+  </data>
+  <data name="録画対象ウィンドウ" xml:space="preserve">
+    <value>Doelvenster</value>
+  </data>
+  <data name="ウィンドウ名またはプロセス名の一部を指定できます" xml:space="preserve">
+    <value>U kunt een deel van de venstertitel of procesnaam opgeven.</value>
+  </data>
+  <data name="録画フレームレート" xml:space="preserve">
+    <value>Framesnelheid</value>
+  </data>
+  <data name="fps" xml:space="preserve">
+    <value>fps</value>
+  </data>
+  <data name="AutoRecording_FormatLabel" xml:space="preserve">
+    <value>Uitvoerformaat</value>
+  </data>
+  <data name="AutoRecording_FormatOption_AVI" xml:space="preserve">
+    <value>AVI (niet -gecomprimeerde video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MP4" xml:space="preserve">
+    <value>MP4 (H.264 video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MOV" xml:space="preserve">
+    <value>MOV (h.264 video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_WMV" xml:space="preserve">
+    <value>WMV (Windows Media Video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MPG" xml:space="preserve">
+    <value>MPEG-2 (programmastream)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MKV" xml:space="preserve">
+    <value>MKV (H.264 video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_FLV" xml:space="preserve">
+    <value>FLV (H.264 video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_ASF" xml:space="preserve">
+    <value>ASF (Windows Media Container)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_VOB" xml:space="preserve">
+    <value>VOB (MPEG-2-programmastream)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_GIF" xml:space="preserve">
+    <value>GIF (geanimeerde afbeelding)</value>
+  </data>
+  <data name="AutoRecording_FormatHelp" xml:space="preserve">
+    <value>AVI maakt verliesloze opnames maar resulteert in grote bestanden. MP4, MOV, MKV en FLV gebruiken H.264 om de grootte en compatibiliteit in evenwicht te brengen. WMV en ASF produceren Windows Media -videobestanden. MPG en VOB genereren MPEG-2-programmastreams. GIF produceert lichtgewicht geanimeerde afbeeldingen met beperkte kleuren en framesnelheid.</value>
+  </data>
+  <data name="録画開始テラー" xml:space="preserve">
+    <value>Trigger terreurnamen</value>
+  </data>
+  <data name="録画開始ラウンド" xml:space="preserve">
+    <value>Trigger round types</value>
+  </data>
+  <data name="複数テラーの入力説明" xml:space="preserve">
+    <value>Voer één terreurnaam per regel in. Matching is case-ongevoelig.</value>
+  </data>
 </root>

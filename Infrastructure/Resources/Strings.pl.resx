@@ -443,4 +443,85 @@ Uzyskaj klucz API ze strony internetowej.</value>
   <data name="Language_Ukrainian" xml:space="preserve">
     <value>ukraiński</value>
   </data>
+  <data name="出力フォルダー" xml:space="preserve">
+    <value>Folder wyjściowy</value>
+  </data>
+  <data name="出力拡張子" xml:space="preserve">
+    <value>Rozszerzenie wyjściowe</value>
+  </data>
+  <data name="自動録画設定" xml:space="preserve">
+    <value>Nagrywanie samochodów</value>
+  </data>
+  <data name="指定条件でVRChatを自動録画する" xml:space="preserve">
+    <value>Nagrywać VRChat automatycznie, gdy wyzwalacze pasują</value>
+  </data>
+  <data name="録画コマンド" xml:space="preserve">
+    <value>Nagrywanie wykonywalne</value>
+  </data>
+  <data name="録画引数" xml:space="preserve">
+    <value>Rejestrowanie argumentów</value>
+  </data>
+  <data name="録画引数の説明" xml:space="preserve">
+    <value>Użyj {output} dla ścieżki pliku i {window} dla tytułu okna.</value>
+  </data>
+  <data name="ウィンドウタイトル" xml:space="preserve">
+    <value>Tytuł okna</value>
+  </data>
+  <data name="録画対象ウィンドウ" xml:space="preserve">
+    <value>Okno docelowe</value>
+  </data>
+  <data name="ウィンドウ名またはプロセス名の一部を指定できます" xml:space="preserve">
+    <value>Możesz określić część tytułu lub nazwy procesu okna.</value>
+  </data>
+  <data name="録画フレームレート" xml:space="preserve">
+    <value>Ramka klatek</value>
+  </data>
+  <data name="fps" xml:space="preserve">
+    <value>fps</value>
+  </data>
+  <data name="AutoRecording_FormatLabel" xml:space="preserve">
+    <value>Format wyjściowy</value>
+  </data>
+  <data name="AutoRecording_FormatOption_AVI" xml:space="preserve">
+    <value>AVI (nieskompresowane wideo)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MP4" xml:space="preserve">
+    <value>MP4 (wideo H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MOV" xml:space="preserve">
+    <value>MOV (H.264 Video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_WMV" xml:space="preserve">
+    <value>WMV (Windows Media Video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MPG" xml:space="preserve">
+    <value>MPEG-2 (strumień programu)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MKV" xml:space="preserve">
+    <value>MKV (wideo H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_FLV" xml:space="preserve">
+    <value>FLV (wideo H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_ASF" xml:space="preserve">
+    <value>ASF (kontener multimedialny)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_VOB" xml:space="preserve">
+    <value>VOB (strumień programu MPEG-2)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_GIF" xml:space="preserve">
+    <value>GIF (obraz animowany)</value>
+  </data>
+  <data name="AutoRecording_FormatHelp" xml:space="preserve">
+    <value>AVI tworzy bezstratne nagrania, ale daje duże pliki. MP4, MOV, MKV i FLV Użyj H.264 do równowagi wielkości i kompatybilności. WMV i ASF produkują pliki wideo Windows Media. MPG i VOB generują strumienie programu MPEG-2. GIF wytwarza lekkie animowane obrazy o ograniczonej kolorze i szybkości klatek na sekundę.</value>
+  </data>
+  <data name="録画開始テラー" xml:space="preserve">
+    <value>Wywołuj nazwy terroru</value>
+  </data>
+  <data name="録画開始ラウンド" xml:space="preserve">
+    <value>Wyzwalają typy okrągłych</value>
+  </data>
+  <data name="複数テラーの入力説明" xml:space="preserve">
+    <value>Wprowadź jedną nazwę terroru na wiersz. Dopasowanie jest wrażliwe na przypadek.</value>
+  </data>
 </root>

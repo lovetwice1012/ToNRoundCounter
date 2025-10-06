@@ -1,0 +1,96 @@
+<?xml version='1.0' encoding='utf-8'?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="出力フォルダー" xml:space="preserve">
+    <value>आउटपुट फ़ोल्डर</value>
+  </data>
+  <data name="出力拡張子" xml:space="preserve">
+    <value>आउटपुट फ़ाइल एक्सटेंशन</value>
+  </data>
+  <data name="自動録画設定" xml:space="preserve">
+    <value>स्वचालित रिकॉर्डिंग सेटिंग</value>
+  </data>
+  <data name="指定条件でVRChatを自動録画する" xml:space="preserve">
+    <value>जब ट्रिगर शर्तें मेल खाएँ तो VRChat को स्वतः रिकॉर्ड करें</value>
+  </data>
+  <data name="録画コマンド" xml:space="preserve">
+    <value>रिकॉर्डिंग एक्ज़िक्यूटेबल</value>
+  </data>
+  <data name="録画引数" xml:space="preserve">
+    <value>रिकॉर्डिंग आर्ग्युमेंट्स</value>
+  </data>
+  <data name="録画引数の説明" xml:space="preserve">
+    <value>फ़ाइल पथ के लिए {output} और विंडो शीर्षक के लिए {window} का उपयोग करें।</value>
+  </data>
+  <data name="ウィンドウタイトル" xml:space="preserve">
+    <value>विंडो शीर्षक</value>
+  </data>
+  <data name="録画対象ウィンドウ" xml:space="preserve">
+    <value>लक्ष्य विंडो</value>
+  </data>
+  <data name="ウィンドウ名またはプロセス名の一部を指定できます" xml:space="preserve">
+    <value>आप विंडो शीर्षक या प्रोसेस नाम का कुछ हिस्सा निर्दिष्ट कर सकते हैं।</value>
+  </data>
+  <data name="録画フレームレート" xml:space="preserve">
+    <value>रिकॉर्डिंग फ़्रेम दर</value>
+  </data>
+  <data name="fps" xml:space="preserve">
+    <value>fps</value>
+  </data>
+  <data name="AutoRecording_FormatLabel" xml:space="preserve">
+    <value>आउटपुट फ़ॉर्मेट</value>
+  </data>
+  <data name="AutoRecording_FormatOption_AVI" xml:space="preserve">
+    <value>AVI (असंपीडित वीडियो)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MP4" xml:space="preserve">
+    <value>MP4 (H.264 वीडियो)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MOV" xml:space="preserve">
+    <value>MOV (H.264 वीडियो)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_WMV" xml:space="preserve">
+    <value>WMV (विंडोज मीडिया वीडियो)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MPG" xml:space="preserve">
+    <value>MPEG-2 (प्रोग्राम स्ट्रीम)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MKV" xml:space="preserve">
+    <value>MKV (H.264 वीडियो)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_FLV" xml:space="preserve">
+    <value>FLV (H.264 वीडियो)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_ASF" xml:space="preserve">
+    <value>ASF (विंडोज मीडिया कंटेनर)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_VOB" xml:space="preserve">
+    <value>VOB (MPEG-2 प्रोग्राम स्ट्रीम)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_GIF" xml:space="preserve">
+    <value>GIF (एनिमेटेड छवि)</value>
+  </data>
+  <data name="AutoRecording_FormatHelp" xml:space="preserve">
+    <value>AVI निर्लॉस रिकॉर्डिंग बनाता है लेकिन फ़ाइलें बड़ी होती हैं। MP4, MOV, MKV और FLV H.264 का उपयोग करके आकार और अनुकूलता में संतुलन रखते हैं। WMV और ASF विंडोज मीडिया वीडियो फ़ाइलें बनाते हैं। MPG और VOB MPEG-2 प्रोग्राम स्ट्रीम तैयार करते हैं। GIF सीमित रंगों और फ़्रेम दर वाली हल्की एनिमेटेड छवियाँ बनाता है।</value>
+  </data>
+  <data name="録画開始テラー" xml:space="preserve">
+    <value>रिकॉर्डिंग शुरू करने वाले टेरर के नाम</value>
+  </data>
+  <data name="録画開始ラウンド" xml:space="preserve">
+    <value>रिकॉर्डिंग शुरू करने वाले राउंड के प्रकार</value>
+  </data>
+  <data name="複数テラーの入力説明" xml:space="preserve">
+    <value>प्रत्येक पंक्ति में एक टेरर का नाम दर्ज करें। मिलान केस-संवेदी नहीं है।</value>
+  </data>
+</root>

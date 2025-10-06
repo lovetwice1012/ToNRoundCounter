@@ -443,4 +443,85 @@ Vă rugăm să obțineți o cheie API de pe site -ul web.</value>
   <data name="Language_Ukrainian" xml:space="preserve">
     <value>ucrainean</value>
   </data>
+  <data name="出力フォルダー" xml:space="preserve">
+    <value>Folder de ieșire</value>
+  </data>
+  <data name="出力拡張子" xml:space="preserve">
+    <value>Extensie de ieșire</value>
+  </data>
+  <data name="自動録画設定" xml:space="preserve">
+    <value>Înregistrare automată</value>
+  </data>
+  <data name="指定条件でVRChatを自動録画する" xml:space="preserve">
+    <value>Înregistrați automat VRChat atunci când declanșatorii se potrivesc</value>
+  </data>
+  <data name="録画コマンド" xml:space="preserve">
+    <value>Înregistrarea executabilă</value>
+  </data>
+  <data name="録画引数" xml:space="preserve">
+    <value>Argumente de înregistrare</value>
+  </data>
+  <data name="録画引数の説明" xml:space="preserve">
+    <value>Utilizați {output} pentru calea fișierului și {window} pentru titlul ferestrei.</value>
+  </data>
+  <data name="ウィンドウタイトル" xml:space="preserve">
+    <value>Titlul ferestrei</value>
+  </data>
+  <data name="録画対象ウィンドウ" xml:space="preserve">
+    <value>Fereastra țintă</value>
+  </data>
+  <data name="ウィンドウ名またはプロセス名の一部を指定できます" xml:space="preserve">
+    <value>Puteți specifica o parte din titlul ferestrei sau numele procesului.</value>
+  </data>
+  <data name="録画フレームレート" xml:space="preserve">
+    <value>Rata cadrului</value>
+  </data>
+  <data name="fps" xml:space="preserve">
+    <value>fps</value>
+  </data>
+  <data name="AutoRecording_FormatLabel" xml:space="preserve">
+    <value>Format de ieșire</value>
+  </data>
+  <data name="AutoRecording_FormatOption_AVI" xml:space="preserve">
+    <value>AVI (videoclip necomprimat)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MP4" xml:space="preserve">
+    <value>MP4 (video H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MOV" xml:space="preserve">
+    <value>MOV (video H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_WMV" xml:space="preserve">
+    <value>WMV (Windows Media Video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MPG" xml:space="preserve">
+    <value>MPEG-2 (flux de programe)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MKV" xml:space="preserve">
+    <value>MKV (video H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_FLV" xml:space="preserve">
+    <value>FLV (video H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_ASF" xml:space="preserve">
+    <value>ASF (Windows Media Container)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_VOB" xml:space="preserve">
+    <value>VOB (flux de program MPEG-2)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_GIF" xml:space="preserve">
+    <value>GIF (imagine animată)</value>
+  </data>
+  <data name="AutoRecording_FormatHelp" xml:space="preserve">
+    <value>AVI creează înregistrări fără pierderi, dar are ca rezultat fișiere mari. MP4, MOV, MKV și FLV utilizează H.264 pentru a echilibra dimensiunea și compatibilitatea. WMV și ASF produc fișiere video Windows Media. MPG și VOB generează fluxuri de programe MPEG-2. GIF produce imagini animate ușoare, cu culori limitate și rată de cadru.</value>
+  </data>
+  <data name="録画開始テラー" xml:space="preserve">
+    <value>Declanșează numele de teroare</value>
+  </data>
+  <data name="録画開始ラウンド" xml:space="preserve">
+    <value>Tipuri rotunde de declanșare</value>
+  </data>
+  <data name="複数テラーの入力説明" xml:space="preserve">
+    <value>Introduceți un nume de teroare pe linie. Potrivirea este insensibilă la caz.</value>
+  </data>
 </root>

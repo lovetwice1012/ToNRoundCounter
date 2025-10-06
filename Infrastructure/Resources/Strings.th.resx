@@ -443,4 +443,85 @@
   <data name="Language_Ukrainian" xml:space="preserve">
     <value>ชาวยูเครน</value>
   </data>
+  <data name="出力フォルダー" xml:space="preserve">
+    <value>โฟลเดอร์เอาต์พุต</value>
+  </data>
+  <data name="出力拡張子" xml:space="preserve">
+    <value>นามสกุลไฟล์เอาต์พุต</value>
+  </data>
+  <data name="自動録画設定" xml:space="preserve">
+    <value>การตั้งค่าการบันทึกอัตโนมัติ</value>
+  </data>
+  <data name="指定条件でVRChatを自動録画する" xml:space="preserve">
+    <value>บันทึก VRChat โดยอัตโนมัติเมื่อเงื่อนไขทริกเกอร์ตรงกัน</value>
+  </data>
+  <data name="録画コマンド" xml:space="preserve">
+    <value>ไฟล์ปฏิบัติการสำหรับบันทึก</value>
+  </data>
+  <data name="録画引数" xml:space="preserve">
+    <value>อาร์กิวเมนต์คำสั่งสำหรับการบันทึก</value>
+  </data>
+  <data name="録画引数の説明" xml:space="preserve">
+    <value>ใช้ {output} สำหรับเส้นทางไฟล์ และ {window} สำหรับชื่อหน้าต่าง</value>
+  </data>
+  <data name="ウィンドウタイトル" xml:space="preserve">
+    <value>ชื่อหน้าต่าง</value>
+  </data>
+  <data name="録画対象ウィンドウ" xml:space="preserve">
+    <value>หน้าต่างเป้าหมาย</value>
+  </data>
+  <data name="ウィンドウ名またはプロセス名の一部を指定できます" xml:space="preserve">
+    <value>สามารถระบุส่วนหนึ่งของชื่อหน้าต่างหรือชื่อโพรเซสได้</value>
+  </data>
+  <data name="録画フレームレート" xml:space="preserve">
+    <value>อัตราเฟรมของการบันทึก</value>
+  </data>
+  <data name="fps" xml:space="preserve">
+    <value>fps</value>
+  </data>
+  <data name="AutoRecording_FormatLabel" xml:space="preserve">
+    <value>รูปแบบเอาต์พุต</value>
+  </data>
+  <data name="AutoRecording_FormatOption_AVI" xml:space="preserve">
+    <value>AVI (วิดีโอไม่บีบอัด)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MP4" xml:space="preserve">
+    <value>MP4 (วิดีโอ H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MOV" xml:space="preserve">
+    <value>MOV (วิดีโอ H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_WMV" xml:space="preserve">
+    <value>WMV (วิดีโอ Windows Media)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MPG" xml:space="preserve">
+    <value>MPEG-2 (สตรีมของโปรแกรม)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MKV" xml:space="preserve">
+    <value>MKV (วิดีโอ H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_FLV" xml:space="preserve">
+    <value>FLV (วิดีโอ H.264)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_ASF" xml:space="preserve">
+    <value>ASF (คอนเทนเนอร์ Windows Media)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_VOB" xml:space="preserve">
+    <value>VOB (สตรีมของโปรแกรม MPEG-2)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_GIF" xml:space="preserve">
+    <value>GIF (ภาพเคลื่อนไหว)</value>
+  </data>
+  <data name="AutoRecording_FormatHelp" xml:space="preserve">
+    <value>AVI สร้างไฟล์ที่ไม่สูญเสียคุณภาพแต่มีขนาดใหญ่ MP4, MOV, MKV และ FLV ใช้ H.264 เพื่อรักษาสมดุลระหว่างขนาดไฟล์และความเข้ากันได้ WMV และ ASF สร้างไฟล์วิดีโอแบบ Windows Media MPG และ VOB สร้างสตรีมของโปรแกรมแบบ MPEG-2 GIF สร้างภาพเคลื่อนไหวขนาดเล็กที่มีจำนวนสีและอัตราเฟรมจำกัด</value>
+  </data>
+  <data name="録画開始テラー" xml:space="preserve">
+    <value>ชื่อเทอร์เรอร์สำหรับเริ่มการบันทึก</value>
+  </data>
+  <data name="録画開始ラウンド" xml:space="preserve">
+    <value>ประเภทของรอบที่จะเริ่มบันทึก</value>
+  </data>
+  <data name="複数テラーの入力説明" xml:space="preserve">
+    <value>ใส่ชื่อเทอร์เรอร์หนึ่งรายการต่อบรรทัด โดยไม่แยกแยะตัวพิมพ์เล็กใหญ่</value>
+  </data>
 </root>

@@ -443,4 +443,85 @@ Gaukite API raktą iš svetainės.</value>
   <data name="Language_Ukrainian" xml:space="preserve">
     <value>Ukrainos</value>
   </data>
+  <data name="出力フォルダー" xml:space="preserve">
+    <value>Išvesties aplankas</value>
+  </data>
+  <data name="出力拡張子" xml:space="preserve">
+    <value>Išvesties pratęsimas</value>
+  </data>
+  <data name="自動録画設定" xml:space="preserve">
+    <value>Automatinis įrašymas</value>
+  </data>
+  <data name="指定条件でVRChatを自動録画する" xml:space="preserve">
+    <value>Įrašykite „VRChat“ automatiškai, kai paleidimo sutapimai</value>
+  </data>
+  <data name="録画コマンド" xml:space="preserve">
+    <value>Įrašymas vykdomas</value>
+  </data>
+  <data name="録画引数" xml:space="preserve">
+    <value>Įrašyti argumentus</value>
+  </data>
+  <data name="録画引数の説明" xml:space="preserve">
+    <value>Failo keliui ir {window} naudokite {output}.</value>
+  </data>
+  <data name="ウィンドウタイトル" xml:space="preserve">
+    <value>Lango pavadinimas</value>
+  </data>
+  <data name="録画対象ウィンドウ" xml:space="preserve">
+    <value>Tikslo langas</value>
+  </data>
+  <data name="ウィンドウ名またはプロセス名の一部を指定できます" xml:space="preserve">
+    <value>Galite nurodyti lango pavadinimo dalį arba proceso pavadinimą.</value>
+  </data>
+  <data name="録画フレームレート" xml:space="preserve">
+    <value>Kadrų dažnis</value>
+  </data>
+  <data name="fps" xml:space="preserve">
+    <value>fps</value>
+  </data>
+  <data name="AutoRecording_FormatLabel" xml:space="preserve">
+    <value>Išvesties formatas</value>
+  </data>
+  <data name="AutoRecording_FormatOption_AVI" xml:space="preserve">
+    <value>AVI (nesuspaustas vaizdo įrašas)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MP4" xml:space="preserve">
+    <value>MP4 (H.264 vaizdo įrašas)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MOV" xml:space="preserve">
+    <value>MOV (H.264 vaizdo įrašas)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_WMV" xml:space="preserve">
+    <value>WMV („Windows Media“ vaizdo įrašas)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MPG" xml:space="preserve">
+    <value>MPEG-2 (programos srautas)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MKV" xml:space="preserve">
+    <value>MKV (H.264 vaizdo įrašas)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_FLV" xml:space="preserve">
+    <value>FLV (H.264 vaizdo įrašas)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_ASF" xml:space="preserve">
+    <value>ASF („Windows Media“ konteineris)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_VOB" xml:space="preserve">
+    <value>VOB (MPEG-2 programos srautas)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_GIF" xml:space="preserve">
+    <value>GIF (animacinis vaizdas)</value>
+  </data>
+  <data name="AutoRecording_FormatHelp" xml:space="preserve">
+    <value>AVI sukuria be nuostolių įrašus, tačiau lemia didelius failus. MP4, MOV, MKV ir FLV naudoja H.264, kad subalansuotų dydį ir suderinamumą. WMV ir ASF gamina „Windows Media“ vaizdo failus. MPG ir VOB generuoja MPEG-2 programos srautus. GIF sukuria lengvus animacinius vaizdus su ribotomis spalvomis ir kadrų dažniu.</value>
+  </data>
+  <data name="録画開始テラー" xml:space="preserve">
+    <value>Suaktyvinti teroro pavadinimus</value>
+  </data>
+  <data name="録画開始ラウンド" xml:space="preserve">
+    <value>Triggerio apvalių tipai</value>
+  </data>
+  <data name="複数テラーの入力説明" xml:space="preserve">
+    <value>Įveskite vieną teroro vardą vienoje eilutėje. Atitikimas yra nejautrus atvejams.</value>
+  </data>
 </root>

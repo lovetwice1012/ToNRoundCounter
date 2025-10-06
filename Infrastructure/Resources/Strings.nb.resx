@@ -443,4 +443,85 @@ Vennligst skaff deg en API -nøkkel fra nettstedet.</value>
   <data name="Language_Ukrainian" xml:space="preserve">
     <value>Ukrainsk</value>
   </data>
+  <data name="出力フォルダー" xml:space="preserve">
+    <value>Utgangsmappe</value>
+  </data>
+  <data name="出力拡張子" xml:space="preserve">
+    <value>Utforlengelse</value>
+  </data>
+  <data name="自動録画設定" xml:space="preserve">
+    <value>Autoopptak</value>
+  </data>
+  <data name="指定条件でVRChatを自動録画する" xml:space="preserve">
+    <value>Registrer VRChat automatisk når utløser samsvarer</value>
+  </data>
+  <data name="録画コマンド" xml:space="preserve">
+    <value>Innspilling av kjørbar</value>
+  </data>
+  <data name="録画引数" xml:space="preserve">
+    <value>Innspilling av argumenter</value>
+  </data>
+  <data name="録画引数の説明" xml:space="preserve">
+    <value>Bruk {output} for filstien og {window} for vindusittelen.</value>
+  </data>
+  <data name="ウィンドウタイトル" xml:space="preserve">
+    <value>Vinduetittel</value>
+  </data>
+  <data name="録画対象ウィンドウ" xml:space="preserve">
+    <value>Målvindu</value>
+  </data>
+  <data name="ウィンドウ名またはプロセス名の一部を指定できます" xml:space="preserve">
+    <value>Du kan spesifisere en del av vinduetittelen eller prosessnavnet.</value>
+  </data>
+  <data name="録画フレームレート" xml:space="preserve">
+    <value>Bildefrekvens</value>
+  </data>
+  <data name="fps" xml:space="preserve">
+    <value>fps</value>
+  </data>
+  <data name="AutoRecording_FormatLabel" xml:space="preserve">
+    <value>Utgangsformat</value>
+  </data>
+  <data name="AutoRecording_FormatOption_AVI" xml:space="preserve">
+    <value>AVI (ukomprimert video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MP4" xml:space="preserve">
+    <value>MP4 (H.264 Video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MOV" xml:space="preserve">
+    <value>MOV (H.264 Video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_WMV" xml:space="preserve">
+    <value>WMV (Windows Media Video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MPG" xml:space="preserve">
+    <value>MPEG-2 (programstrøm)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MKV" xml:space="preserve">
+    <value>MKV (H.264 Video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_FLV" xml:space="preserve">
+    <value>FLV (H.264 Video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_ASF" xml:space="preserve">
+    <value>ASF (Windows Media Container)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_VOB" xml:space="preserve">
+    <value>VOB (MPEG-2 Programstrøm)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_GIF" xml:space="preserve">
+    <value>GIF (animert bilde)</value>
+  </data>
+  <data name="AutoRecording_FormatHelp" xml:space="preserve">
+    <value>AVI oppretter tapsfrie opptak, men resulterer i store filer. MP4, MOV, MKV og FLV bruker H.264 for å balansere størrelse og kompatibilitet. WMV og ASF produserer Windows Media -videofiler. MPG og VOB genererer MPEG-2-programstrømmer. GIF produserer lette animerte bilder med begrensede farger og bildefrekvens.</value>
+  </data>
+  <data name="録画開始テラー" xml:space="preserve">
+    <value>Utløser terrornavn</value>
+  </data>
+  <data name="録画開始ラウンド" xml:space="preserve">
+    <value>Utløs runde typer</value>
+  </data>
+  <data name="複数テラーの入力説明" xml:space="preserve">
+    <value>Skriv inn ett terrornavn per linje. Matching er case-ufølsom.</value>
+  </data>
 </root>

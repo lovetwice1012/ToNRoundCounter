@@ -443,4 +443,85 @@ Kérjük, szerezzen egy API -kulcsot a weboldalról.</value>
   <data name="Language_Ukrainian" xml:space="preserve">
     <value>ukrán</value>
   </data>
+  <data name="出力フォルダー" xml:space="preserve">
+    <value>Kimeneti mappa</value>
+  </data>
+  <data name="出力拡張子" xml:space="preserve">
+    <value>Kimeneti kiterjesztés</value>
+  </data>
+  <data name="自動録画設定" xml:space="preserve">
+    <value>Autófelvétel</value>
+  </data>
+  <data name="指定条件でVRChatを自動録画する" xml:space="preserve">
+    <value>Rögzítse a VRChat -t automatikusan, amikor a Triggers egyezik</value>
+  </data>
+  <data name="録画コマンド" xml:space="preserve">
+    <value>Felvétel végrehajtható</value>
+  </data>
+  <data name="録画引数" xml:space="preserve">
+    <value>Érvek rögzítése</value>
+  </data>
+  <data name="録画引数の説明" xml:space="preserve">
+    <value>Használja a {output} fájlt elérési úthoz és a {window} -hez az ablak címéhez.</value>
+  </data>
+  <data name="ウィンドウタイトル" xml:space="preserve">
+    <value>Ablakcím</value>
+  </data>
+  <data name="録画対象ウィンドウ" xml:space="preserve">
+    <value>Célablak</value>
+  </data>
+  <data name="ウィンドウ名またはプロセス名の一部を指定できます" xml:space="preserve">
+    <value>Megadhatja az ablakcím vagy a folyamat nevének egy részét.</value>
+  </data>
+  <data name="録画フレームレート" xml:space="preserve">
+    <value>Képkaparék</value>
+  </data>
+  <data name="fps" xml:space="preserve">
+    <value>fps</value>
+  </data>
+  <data name="AutoRecording_FormatLabel" xml:space="preserve">
+    <value>Kimeneti formátum</value>
+  </data>
+  <data name="AutoRecording_FormatOption_AVI" xml:space="preserve">
+    <value>AVI (tömörítetlen videó)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MP4" xml:space="preserve">
+    <value>MP4 (H.264 videó)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MOV" xml:space="preserve">
+    <value>MOV (H.264 videó)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_WMV" xml:space="preserve">
+    <value>WMV (Windows Media Video)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MPG" xml:space="preserve">
+    <value>MPEG-2 (Program Stream)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_MKV" xml:space="preserve">
+    <value>MKV (H.264 videó)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_FLV" xml:space="preserve">
+    <value>FLV (H.264 videó)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_ASF" xml:space="preserve">
+    <value>ASF (Windows Media Container)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_VOB" xml:space="preserve">
+    <value>VOB (MPEG-2 programfolyam)</value>
+  </data>
+  <data name="AutoRecording_FormatOption_GIF" xml:space="preserve">
+    <value>GIF (animációs kép)</value>
+  </data>
+  <data name="AutoRecording_FormatHelp" xml:space="preserve">
+    <value>Az AVI veszteségmentes felvételeket hoz létre, de nagy fájlokat eredményez. MP4, MOV, MKV és FLV használja a H.264 -et az egyensúly és a kompatibilitás érdekében. A WMV és az ASF Windows Media videofájlokat állít elő. Az MPG és a VOB MPEG-2 programfolyamokat generál. A GIF könnyű animált képeket állít elő, korlátozott színekkel és képkockasebességgel.</value>
+  </data>
+  <data name="録画開始テラー" xml:space="preserve">
+    <value>Terrornevek kiváltása</value>
+  </data>
+  <data name="録画開始ラウンド" xml:space="preserve">
+    <value>Kerek típusok kiváltása</value>
+  </data>
+  <data name="複数テラーの入力説明" xml:space="preserve">
+    <value>Írjon be egy terrornevet vonalonként. Az illesztés eset nem érzékeny.</value>
+  </data>
 </root>
