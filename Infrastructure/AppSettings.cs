@@ -89,6 +89,13 @@ namespace ToNRoundCounter.Infrastructure
         public string ItemMusicSoundPath { get; set; } = string.Empty;
         public double ItemMusicMinSpeed { get; set; }
         public double ItemMusicMaxSpeed { get; set; }
+        public bool AutoRecordingEnabled { get; set; }
+        public string AutoRecordingWindowTitle { get; set; } = "VRChat";
+        public int AutoRecordingFrameRate { get; set; } = 30;
+        public string AutoRecordingOutputDirectory { get; set; } = "recordings";
+        public string AutoRecordingOutputExtension { get; set; } = "avi";
+        public List<string> AutoRecordingRoundTypes { get; set; } = new List<string>();
+        public List<string> AutoRecordingTerrors { get; set; } = new List<string>();
         public string DiscordWebhookUrl { get; set; } = string.Empty;
         public string LastSaveCode { get; set; } = string.Empty;
         public bool AfkSoundCancelEnabled { get; set; } = true;
@@ -199,6 +206,7 @@ namespace ToNRoundCounter.Infrastructure
                 NormalizeItemMusicEntries();
                 NormalizeRoundBgmEntries();
                 NormalizeRoundBgmPreferences();
+                NormalizeAutoRecordingSettings();
                 _logger.LogEvent("AppSettings", "Normalization of complex settings completed.");
                 success = true;
             }
@@ -358,6 +366,66 @@ namespace ToNRoundCounter.Infrastructure
             }
         }
 
+        private void NormalizeAutoRecordingSettings()
+        {
+            AutoRecordingWindowTitle = string.IsNullOrWhiteSpace(AutoRecordingWindowTitle)
+                ? "VRChat"
+                : AutoRecordingWindowTitle.Trim();
+            AutoRecordingFrameRate = NormalizeRecordingFrameRate(AutoRecordingFrameRate);
+            AutoRecordingOutputDirectory = string.IsNullOrWhiteSpace(AutoRecordingOutputDirectory)
+                ? "recordings"
+                : AutoRecordingOutputDirectory.Trim();
+            AutoRecordingOutputExtension = NormalizeRecordingExtension(AutoRecordingOutputExtension);
+            AutoRecordingRoundTypes = NormalizeStringList(AutoRecordingRoundTypes);
+            AutoRecordingTerrors = NormalizeStringList(AutoRecordingTerrors);
+        }
+
+        private static string NormalizeRecordingExtension(string? extension)
+        {
+            var trimmed = string.IsNullOrWhiteSpace(extension)
+                ? AutoRecordingService.SupportedExtensions[0]
+                : extension.Trim().TrimStart('.');
+
+            foreach (var candidate in AutoRecordingService.SupportedExtensions)
+            {
+                if (trimmed.Equals(candidate, StringComparison.OrdinalIgnoreCase))
+                {
+                    return candidate;
+                }
+            }
+
+            return AutoRecordingService.SupportedExtensions[0];
+        }
+
+        private static int NormalizeRecordingFrameRate(int frameRate)
+        {
+            if (frameRate < 5)
+            {
+                return 5;
+            }
+
+            if (frameRate > 60)
+            {
+                return 60;
+            }
+
+            return frameRate;
+        }
+
+        private static List<string> NormalizeStringList(IEnumerable<string>? values)
+        {
+            if (values == null)
+            {
+                return new List<string>();
+            }
+
+            return values
+                .Select(v => (v ?? string.Empty).Trim())
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
         private static void NormalizeItemMusicSpeeds(ItemMusicEntry entry)
         {
             if (entry == null)
@@ -426,6 +494,7 @@ namespace ToNRoundCounter.Infrastructure
             NormalizeItemMusicEntries();
             NormalizeRoundBgmEntries();
             NormalizeRoundBgmPreferences();
+            NormalizeAutoRecordingSettings();
             OverlayOpacity = NormalizeOverlayOpacity(OverlayOpacity);
             var settings = new AppSettingsData
             {
@@ -479,6 +548,13 @@ namespace ToNRoundCounter.Infrastructure
                 RoundBgmEnabled = RoundBgmEnabled,
                 RoundBgmEntries = RoundBgmEntries,
                 RoundBgmItemConflictBehavior = RoundBgmItemConflictBehavior,
+                AutoRecordingEnabled = AutoRecordingEnabled,
+                AutoRecordingWindowTitle = AutoRecordingWindowTitle,
+                AutoRecordingFrameRate = AutoRecordingFrameRate,
+                AutoRecordingOutputDirectory = AutoRecordingOutputDirectory,
+                AutoRecordingOutputExtension = AutoRecordingOutputExtension,
+                AutoRecordingRoundTypes = AutoRecordingRoundTypes,
+                AutoRecordingTerrors = AutoRecordingTerrors,
                 DiscordWebhookUrl = DiscordWebhookUrl,
                 LastSaveCode = LastSaveCode,
                 AfkSoundCancelEnabled = AfkSoundCancelEnabled,
@@ -565,6 +641,13 @@ namespace ToNRoundCounter.Infrastructure
         public bool RoundBgmEnabled { get; set; }
         public List<RoundBgmEntry> RoundBgmEntries { get; set; } = new List<RoundBgmEntry>();
         public RoundBgmItemConflictBehavior RoundBgmItemConflictBehavior { get; set; } = RoundBgmItemConflictBehavior.PlayBoth;
+        public bool AutoRecordingEnabled { get; set; }
+        public string AutoRecordingWindowTitle { get; set; } = "VRChat";
+        public int AutoRecordingFrameRate { get; set; } = 30;
+        public string AutoRecordingOutputDirectory { get; set; } = "recordings";
+        public string AutoRecordingOutputExtension { get; set; } = "avi";
+        public List<string> AutoRecordingRoundTypes { get; set; } = new List<string>();
+        public List<string> AutoRecordingTerrors { get; set; } = new List<string>();
         public string DiscordWebhookUrl { get; set; } = string.Empty;
         public string LastSaveCode { get; set; } = string.Empty;
         public bool AfkSoundCancelEnabled { get; set; } = true;

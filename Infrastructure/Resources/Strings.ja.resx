@@ -221,8 +221,65 @@ APIキーはwebサイトから取得してください。</value>
   <data name="固定解除" xml:space="preserve">
     <value>固定解除</value>
   </data>
+  <data name="出力フォルダー" xml:space="preserve">
+    <value>出力フォルダー</value>
+  </data>
+  <data name="出力拡張子" xml:space="preserve">
+    <value>出力拡張子</value>
+  </data>
+  <data name="自動録画設定" xml:space="preserve">
+    <value>自動録画設定</value>
+  </data>
+  <data name="指定条件でVRChatを自動録画する" xml:space="preserve">
+    <value>指定条件でVRChatを自動録画する</value>
+  </data>
   <data name="外部アプリを自動起動する" xml:space="preserve">
     <value>外部アプリを自動起動する</value>
+  </data>
+  <data name="録画コマンド" xml:space="preserve">
+    <value>録画コマンド</value>
+  </data>
+  <data name="録画引数" xml:space="preserve">
+    <value>録画引数</value>
+  </data>
+  <data name="録画引数の説明" xml:space="preserve">
+    <value>出力ファイルは {output}、ウィンドウタイトルは {window} を使用してください。</value>
+  </data>
+  <data name="ウィンドウタイトル" xml:space="preserve">
+    <value>ウィンドウタイトル</value>
+  </data>
+  <data name="録画対象ウィンドウ" xml:space="preserve">
+    <value>録画対象ウィンドウ</value>
+  </data>
+  <data name="ウィンドウ名またはプロセス名の一部を指定できます" xml:space="preserve">
+    <value>ウィンドウ名またはプロセス名の一部を指定できます</value>
+  </data>
+  <data name="録画フレームレート" xml:space="preserve">
+    <value>録画フレームレート</value>
+  </data>
+  <data name="fps" xml:space="preserve">
+    <value>fps</value>
+  </data>
+  <data name="AutoRecording_FormatLabel" xml:space="preserve">
+    <value>出力形式</value>
+  </data>
+  <data name="AutoRecording_FormatOption_AVI" xml:space="preserve">
+    <value>AVI（非圧縮動画）</value>
+  </data>
+  <data name="AutoRecording_FormatOption_GIF" xml:space="preserve">
+    <value>GIF（アニメーション画像）</value>
+  </data>
+  <data name="AutoRecording_FormatHelp" xml:space="preserve">
+    <value>AVIは非圧縮で高品質ですがファイルサイズが大きくなります。GIFはアニメーション画像で、ファイルサイズは小さくなりますが色数やフレームレートに制限があります。</value>
+  </data>
+  <data name="録画開始テラー" xml:space="preserve">
+    <value>録画開始テラー</value>
+  </data>
+  <data name="録画開始ラウンド" xml:space="preserve">
+    <value>録画開始ラウンド</value>
+  </data>
+  <data name="複数テラーの入力説明" xml:space="preserve">
+    <value>テラー名を1行に1つ入力してください（大文字小文字は区別されません）。</value>
   </data>
   <data name="実行ファイル" xml:space="preserve">
     <value>実行ファイル</value>
