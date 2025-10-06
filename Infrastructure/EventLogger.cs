@@ -16,13 +16,41 @@ namespace ToNRoundCounter.Infrastructure
             _repository = repository;
         }
 
+        public bool IsEnabled(LogEventLevel level)
+        {
+            return _logger.IsEnabled(level);
+        }
+
         public void LogEvent(string eventType, string message, LogEventLevel level = LogEventLevel.Information)
         {
-            _logger.Write(level, "{EventType} - {Message}", eventType, message);
+            LogEvent(eventType, () => message, level);
+        }
+
+        public void LogEvent(string eventType, Func<string> messageFactory, LogEventLevel level = LogEventLevel.Information)
+        {
+            if (messageFactory == null)
+            {
+                throw new ArgumentNullException(nameof(messageFactory));
+            }
+
+            string? message = null;
+            if (_logger.IsEnabled(level))
+            {
+                message = messageFactory();
+                _logger.Write(level, "{EventType} - {Message}", eventType, message);
+            }
+            else if (_repository != null)
+            {
+                message = messageFactory();
+            }
 
             try
             {
-                _repository?.WriteLog(eventType, message, level, DateTime.UtcNow);
+                if (_repository != null)
+                {
+                    message ??= messageFactory();
+                    _repository.WriteLog(eventType, message, level, DateTime.UtcNow);
+                }
             }
             catch
             {

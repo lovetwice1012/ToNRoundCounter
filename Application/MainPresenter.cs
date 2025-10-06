@@ -27,12 +27,15 @@ namespace ToNRoundCounter.Application
             _settings = settings;
             _logger = logger;
             _httpClient = httpClient;
+            _stateService.RoundLogAdded += OnRoundLogAdded;
         }
 
         public void AttachView(IMainView view)
         {
             _view = view;
-            _logger.LogEvent("MainPresenter", $"View attached: {view.GetType().FullName}");
+            _logger.LogEvent("MainPresenter", () => $"View attached: {view.GetType().FullName}");
+            var history = _stateService.GetRoundLogHistory().Select(e => e.Item2);
+            _view.UpdateRoundLog(history);
         }
 
         public void AppendRoundLog(Round round, string status)
@@ -79,13 +82,12 @@ namespace ToNRoundCounter.Application
             string logEntry = string.Format("ラウンドタイプ: {0}, テラー: {1}, MAP: {2}, アイテム: {3}, ダメージ: {4}, 生死: {5}",
                 round.RoundType, round.TerrorKey, displayMapName, items, round.Damage, status);
             _stateService.AddRoundLog(round, logEntry);
-            _view?.UpdateRoundLog(_stateService.GetRoundLogHistory().Select(e => e.Item2));
-            _logger.LogEvent("MainPresenter", $"Round log appended: {round.RoundType} ({status}).");
+            _logger.LogEvent("MainPresenter", () => $"Round log appended: {round.RoundType} ({status}).");
         }
 
         public async Task UploadRoundLogAsync(Round round, string status)
         {
-            _logger.LogEvent("MainPresenter", $"Initiating round log upload for {round.RoundType} ({status}).");
+            _logger.LogEvent("MainPresenter", () => $"Initiating round log upload for {round.RoundType} ({status}).");
             await TryUploadRoundLogToCloudAsync(round, status).ConfigureAwait(false);
             await SendDiscordWebhookAsync(round, status).ConfigureAwait(false);
             _logger.LogEvent("MainPresenter", "Round log upload operations completed.");
@@ -124,15 +126,15 @@ namespace ToNRoundCounter.Application
                 }
                 else
                 {
-                    _logger.LogEvent("RoundLogUploadError", $"ラウンドログのアップロードに失敗しました: {response.StatusCode}");
+                    _logger.LogEvent("RoundLogUploadError", () => $"ラウンドログのアップロードに失敗しました: {response.StatusCode}");
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogEvent("RoundLogUploadError", $"ラウンドログアップロード中にエラーが発生しました: {ex.Message}");
+                _logger.LogEvent("RoundLogUploadError", () => $"ラウンドログアップロード中にエラーが発生しました: {ex.Message}");
             }
 
-            _logger.LogEvent("RoundLogUpload", $"Round: {round.RoundType}, Status: {status}, Map: {round.MapName}");
+            _logger.LogEvent("RoundLogUpload", () => $"Round: {round.RoundType}, Status: {status}, Map: {round.MapName}");
         }
 
         private async Task SendDiscordWebhookAsync(Round round, string status)
@@ -195,17 +197,35 @@ namespace ToNRoundCounter.Application
                 }
                 else
                 {
-                    _logger.LogEvent("DiscordWebhookError", $"Discordへの送信に失敗しました: {response.StatusCode}");
+                    _logger.LogEvent("DiscordWebhookError", () => $"Discordへの送信に失敗しました: {response.StatusCode}");
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogEvent("DiscordWebhookError", $"Discord送信中にエラーが発生しました: {ex.Message}");
+                _logger.LogEvent("DiscordWebhookError", () => $"Discord送信中にエラーが発生しました: {ex.Message}");
             }
+
+            _logger.LogEvent("DiscordWebhook", () => $"Webhook payload sent. Round: {round.RoundType}, Status: {status}");
+        }
+
+        private void OnRoundLogAdded(Round round, string logEntry)
+        {
+            var view = _view;
+            if (view == null)
+            {
+                return;
+            }
+
+            view.AppendRoundLogEntry(logEntry);
         }
 
         private void LogMapResolutionDebug(Round round, string? initialMapName, string? terrorMapCandidate, string? roundTypeMapCandidate, string? previousRoundMapName, string? finalMapName)
         {
+            if (!_logger.IsEnabled(LogEventLevel.Debug))
+            {
+                return;
+            }
+
             try
             {
                 var builder = new StringBuilder();
@@ -237,7 +257,7 @@ namespace ToNRoundCounter.Application
             }
             catch (Exception ex)
             {
-                _logger.LogEvent("MainPresenter", $"Failed to record map resolution debug information: {ex}", LogEventLevel.Debug);
+                _logger.LogEvent("MainPresenter", () => $"Failed to record map resolution debug information: {ex}", LogEventLevel.Debug);
             }
         }
     }

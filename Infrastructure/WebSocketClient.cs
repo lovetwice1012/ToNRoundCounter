@@ -14,13 +14,17 @@ namespace ToNRoundCounter.Infrastructure
     /// </summary>
     public class WebSocketClient : IWebSocketClient, IDisposable
     {
+        private const int ReceiveBufferSize = 8192;
+        private const int MaxMessagePreviewLength = 200;
+        private const int MessageChannelCapacity = 256;
+
         private readonly Uri _uri;
         private ClientWebSocket? _socket;
         private CancellationTokenSource? _cts;
         private readonly IEventBus _bus;
         private readonly ICancellationProvider _cancellation;
         private readonly IEventLogger _logger;
-        private readonly Channel<string> _channel = Channel.CreateUnbounded<string>();
+        private readonly Channel<string> _channel;
         private Task? _processingTask;
         private int _connectionAttempts;
         private long _receivedMessages;
@@ -31,11 +35,17 @@ namespace ToNRoundCounter.Infrastructure
             _bus = bus;
             _cancellation = cancellation;
             _logger = logger;
+            _channel = Channel.CreateBounded<string>(new BoundedChannelOptions(MessageChannelCapacity)
+            {
+                SingleReader = true,
+                SingleWriter = true,
+                FullMode = BoundedChannelFullMode.Wait
+            });
         }
 
         public async Task StartAsync()
         {
-            _logger.LogEvent("WebSocket", $"Starting client for {_uri}.");
+            _logger.LogEvent("WebSocket", () => $"Starting client for {_uri}.");
             _connectionAttempts = 0;
             _receivedMessages = 0;
             _cts?.Dispose();
@@ -50,25 +60,25 @@ namespace ToNRoundCounter.Infrastructure
                     try
                     {
                         _connectionAttempts++;
-                        _logger.LogEvent("WebSocket", $"Attempt {_connectionAttempts}: connecting to {_uri}.");
+                        _logger.LogEvent("WebSocket", () => $"Attempt {_connectionAttempts}: connecting to {_uri}.");
                         _bus.Publish(new WebSocketConnecting(_uri));
-                        await _socket.ConnectAsync(_uri, token);
+                        await _socket.ConnectAsync(_uri, token).ConfigureAwait(false);
                         _logger.LogEvent("WebSocket", "Connection established.");
                         _bus.Publish(new WebSocketConnected(_uri));
                         _processingTask ??= Task.Run(() => ProcessMessagesAsync(token), token);
-                        await ReceiveLoopAsync(token);
+                        await ReceiveLoopAsync(token).ConfigureAwait(false);
                         _logger.LogEvent("WebSocket", "Receive loop completed.");
                         _bus.Publish(new WebSocketDisconnected(_uri));
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogEvent("WebSocket", ex.Message, Serilog.Events.LogEventLevel.Error);
+                        _logger.LogEvent("WebSocket", () => ex.Message, Serilog.Events.LogEventLevel.Error);
                         _bus.Publish(new WebSocketDisconnected(_uri, ex));
                         if (!token.IsCancellationRequested)
                         {
                             _bus.Publish(new WebSocketReconnecting(_uri, ex));
                             _logger.LogEvent("WebSocket", "Scheduling reconnect in 300ms.");
-                            await Task.Delay(300, token);
+                            await Task.Delay(300, token).ConfigureAwait(false);
                         }
                     }
                     finally
@@ -93,68 +103,92 @@ namespace ToNRoundCounter.Infrastructure
             {
                 return;
             }
-            var buffer = ArrayPool<byte>.Shared.Rent(8192);
+
+            var receiveBuffer = ArrayPool<byte>.Shared.Rent(ReceiveBufferSize);
+            byte[]? messageBuffer = null;
+            var messageOffset = 0;
+
             try
             {
                 while (socket.State == WebSocketState.Open && !token.IsCancellationRequested)
                 {
-                    var segment = new ArraySegment<byte>(buffer);
-                    var result = await socket.ReceiveAsync(segment, token);
-                    if (result.MessageType == WebSocketMessageType.Close)
+                    var segment = new ArraySegment<byte>(receiveBuffer);
+                    WebSocketReceiveResult result;
+                    try
                     {
-                        _logger.LogEvent("WebSocket", $"Close message received: {result.CloseStatus} {result.CloseStatusDescription}");
-                        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", token);
+                        result = await socket.ReceiveAsync(segment, token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
                         break;
                     }
-                    string message;
+
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        _logger.LogEvent("WebSocket", () => $"Close message received: {result.CloseStatus} {result.CloseStatusDescription}");
+                        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", token).ConfigureAwait(false);
+                        break;
+                    }
+
+                    if (result.EndOfMessage && messageOffset == 0)
+                    {
+                        var message = Encoding.UTF8.GetString(receiveBuffer, 0, result.Count);
+                        await DispatchMessageAsync(message, token).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    messageBuffer ??= ArrayPool<byte>.Shared.Rent(Math.Max(ReceiveBufferSize, result.Count));
+                    EnsureBufferCapacity(ref messageBuffer, messageOffset + result.Count, messageOffset);
+                    Buffer.BlockCopy(receiveBuffer, 0, messageBuffer, messageOffset, result.Count);
+                    messageOffset += result.Count;
+
                     if (result.EndOfMessage)
                     {
-                        message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                        var message = Encoding.UTF8.GetString(messageBuffer, 0, messageOffset);
+                        messageOffset = 0;
+                        await DispatchMessageAsync(message, token).ConfigureAwait(false);
                     }
-                    else
-                    {
-                        var totalBytes = result.Count;
-                        byte[] currentMessageBuffer = ArrayPool<byte>.Shared.Rent(Math.Max(totalBytes, buffer.Length));
-                        try
-                        {
-                            Buffer.BlockCopy(buffer, 0, currentMessageBuffer, 0, result.Count);
-
-                            while (!result.EndOfMessage)
-                            {
-                                result = await socket.ReceiveAsync(segment, token);
-                                var requiredLength = totalBytes + result.Count;
-                                if (requiredLength > currentMessageBuffer.Length)
-                                {
-                                    var newBuffer = ArrayPool<byte>.Shared.Rent(Math.Max(currentMessageBuffer.Length * 2, requiredLength));
-                                    Buffer.BlockCopy(currentMessageBuffer, 0, newBuffer, 0, totalBytes);
-                                    ArrayPool<byte>.Shared.Return(currentMessageBuffer);
-                                    currentMessageBuffer = newBuffer;
-                                }
-
-                                Buffer.BlockCopy(buffer, 0, currentMessageBuffer, totalBytes, result.Count);
-                                totalBytes += result.Count;
-                            }
-
-                            message = Encoding.UTF8.GetString(currentMessageBuffer, 0, totalBytes);
-                        }
-                        finally
-                        {
-                            ArrayPool<byte>.Shared.Return(currentMessageBuffer);
-                        }
-                    }
-                    await _channel.Writer.WriteAsync(message, token);
-                    _receivedMessages++;
-                    _logger.LogEvent("WebSocket", $"Received message #{_receivedMessages}: {Truncate(message, 200)}");
                 }
+            }
+            catch (OperationCanceledException)
+            {
             }
             catch (Exception ex)
             {
-                _logger.LogEvent("WebSocketReceive", ex.Message, Serilog.Events.LogEventLevel.Error);
+                _logger.LogEvent("WebSocketReceive", () => ex.Message, Serilog.Events.LogEventLevel.Error);
             }
             finally
             {
-                ArrayPool<byte>.Shared.Return(buffer);
+                ArrayPool<byte>.Shared.Return(receiveBuffer);
+                if (messageBuffer != null)
+                {
+                    ArrayPool<byte>.Shared.Return(messageBuffer);
+                }
             }
+        }
+
+        private async ValueTask DispatchMessageAsync(string message, CancellationToken token)
+        {
+            await _channel.Writer.WriteAsync(message, token).ConfigureAwait(false);
+            var messageNumber = Interlocked.Increment(ref _receivedMessages);
+            _logger.LogEvent("WebSocket", () => $"Received message #{messageNumber}: {Truncate(message, MaxMessagePreviewLength)}");
+        }
+
+        private static void EnsureBufferCapacity(ref byte[] buffer, int requiredLength, int preservedLength)
+        {
+            if (buffer.Length >= requiredLength)
+            {
+                return;
+            }
+
+            var newBuffer = ArrayPool<byte>.Shared.Rent(Math.Max(buffer.Length * 2, requiredLength));
+            if (preservedLength > 0)
+            {
+                Buffer.BlockCopy(buffer, 0, newBuffer, 0, preservedLength);
+            }
+
+            ArrayPool<byte>.Shared.Return(buffer);
+            buffer = newBuffer;
         }
 
         private async Task ProcessMessagesAsync(CancellationToken token)
@@ -166,7 +200,7 @@ namespace ToNRoundCounter.Infrastructure
                 {
                     _bus.Publish(new WebSocketMessageReceived(msg));
                     dispatched++;
-                    _logger.LogEvent("WebSocket", $"Dispatched message #{dispatched} to event bus.");
+                    _logger.LogEvent("WebSocket", () => $"Dispatched message #{dispatched} to event bus.");
                 }
             }
             catch (OperationCanceledException) { }
@@ -189,7 +223,7 @@ namespace ToNRoundCounter.Infrastructure
             }
             catch (Exception ex)
             {
-                _logger.LogEvent("WebSocket", $"Stop error: {ex.Message}", Serilog.Events.LogEventLevel.Error);
+                _logger.LogEvent("WebSocket", () => $"Stop error: {ex.Message}", Serilog.Events.LogEventLevel.Error);
             }
             finally
             {
