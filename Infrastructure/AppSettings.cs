@@ -141,7 +141,7 @@ namespace ToNRoundCounter.Infrastructure
                 {
                     try
                     {
-                        var token = JObject.Parse(json);
+                        var token = JObject.Parse(json!);
                         if (token.TryGetValue("ThemeKey", out var themeKeyToken))
                         {
                             ThemeKey = NormalizeThemeKey(themeKeyToken?.Value<string>());
@@ -156,7 +156,7 @@ namespace ToNRoundCounter.Infrastructure
                         // Ignore malformed theme information and fall back to defaults.
                     }
 
-                    JsonConvert.PopulateObject(json, this);
+                    JsonConvert.PopulateObject(json!, this);
 
                     if (loadedFromRepository && !File.Exists(settingsFile))
                     {

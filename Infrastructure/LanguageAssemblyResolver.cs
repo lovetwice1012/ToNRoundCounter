@@ -229,7 +229,7 @@ namespace ToNRoundCounter.Infrastructure
             return null;
         }
 
-        private static IEnumerable<string> BuildCandidateCultures(string cultureName)
+        private static IEnumerable<string> BuildCandidateCultures(string? cultureName)
         {
             var candidates = new LinkedList<string>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -242,6 +242,11 @@ namespace ToNRoundCounter.Infrastructure
                 }
 
                 candidates.AddLast(candidate);
+            }
+
+            if (string.IsNullOrEmpty(cultureName))
+            {
+                return candidates;
             }
 
             TryAdd(cultureName);
