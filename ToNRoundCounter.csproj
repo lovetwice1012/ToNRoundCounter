@@ -210,6 +210,8 @@
     <Compile Include="Application\StateService.cs" />
     <Compile Include="Application\IMainView.cs" />
     <Compile Include="Application\MainPresenter.cs" />
+    <Compile Include="Application\RoundLogExportOptions.cs" />
+    <Compile Include="Application\RoundLogExporter.cs" />
     <Compile Include="Application\IEventLogger.cs" />
     <Compile Include="Application\IEventLogRepository.cs" />
     <Compile Include="Application\ICancellationProvider.cs" />
