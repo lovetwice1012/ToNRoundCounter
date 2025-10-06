@@ -115,6 +115,15 @@ namespace ToNRoundCounter.UI
         private DateTime itemMusicMatchStart = DateTime.MinValue;
         private string lastLoadedItemMusicPath = string.Empty;
         private ItemMusicEntry? activeItemMusicEntry;
+        private MediaPlayer? roundBgmPlayer;
+        private bool roundBgmLoopRequested;
+        private bool roundBgmActive;
+        private DateTime roundBgmMatchStart = DateTime.MinValue;
+        private string lastLoadedRoundBgmPath = string.Empty;
+        private RoundBgmEntry? activeRoundBgmEntry;
+        private string? roundBgmSelectionRoundType;
+        private string? roundBgmSelectionTerrorType;
+        private readonly Random roundBgmRandom = new Random(Guid.NewGuid().GetHashCode());
         private string currentTerrorBaseText = string.Empty;
         private string currentOverlayTerrorBaseText = string.Empty;
         private string currentTerrorCountdownSuffix = string.Empty;
@@ -516,6 +525,9 @@ namespace ToNRoundCounter.UI
                 settingsForm.SettingsPanel.LoadAutoLaunchEntries(_settings.AutoLaunchEntries);
                 settingsForm.SettingsPanel.ItemMusicEnabledCheckBox.Checked = _settings.ItemMusicEnabled;
                 settingsForm.SettingsPanel.LoadItemMusicEntries(_settings.ItemMusicEntries);
+                settingsForm.SettingsPanel.RoundBgmEnabledCheckBox.Checked = _settings.RoundBgmEnabled;
+                settingsForm.SettingsPanel.LoadRoundBgmEntries(_settings.RoundBgmEntries);
+                settingsForm.SettingsPanel.SetRoundBgmItemConflictBehavior(_settings.RoundBgmItemConflictBehavior);
                 settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text = _settings.DiscordWebhookUrl;
 
                 var openedContext = new ModuleSettingsViewLifecycleContext(settingsForm, settingsForm.SettingsPanel, _settings, ModuleSettingsViewStage.Opened, null, _moduleHost.CurrentServiceProvider);
@@ -580,6 +592,9 @@ namespace ToNRoundCounter.UI
                     _settings.AutoLaunchEntries = settingsForm.SettingsPanel.GetAutoLaunchEntries();
                     _settings.ItemMusicEnabled = settingsForm.SettingsPanel.ItemMusicEnabledCheckBox.Checked;
                     _settings.ItemMusicEntries = settingsForm.SettingsPanel.GetItemMusicEntries();
+                    _settings.RoundBgmEnabled = settingsForm.SettingsPanel.RoundBgmEnabledCheckBox.Checked;
+                    _settings.RoundBgmEntries = settingsForm.SettingsPanel.GetRoundBgmEntries();
+                    _settings.RoundBgmItemConflictBehavior = settingsForm.SettingsPanel.GetRoundBgmItemConflictBehavior();
                     _settings.AutoLaunchExecutablePath = string.Empty;
                     _settings.AutoLaunchArguments = string.Empty;
                     _settings.ItemMusicItemName = string.Empty;
@@ -595,6 +610,8 @@ namespace ToNRoundCounter.UI
                     }
                     UpdateItemMusicPlayer(null);
                     ResetItemMusicTracking();
+                    UpdateRoundBgmPlayer(null);
+                    ResetRoundBgmTracking();
 
                     _settings.apikey = settingsForm.SettingsPanel.apiKeyTextBox.Text.Trim();
                     if (string.IsNullOrEmpty(_settings.apikey))
@@ -1367,6 +1384,7 @@ namespace ToNRoundCounter.UI
             var round = stateService.CurrentRound;
             if (round != null)
             {
+                ResetRoundBgmTracking();
                 string roundType = round.RoundType ?? string.Empty;
 
                 if (string.IsNullOrWhiteSpace(round.MapName))
@@ -1546,6 +1564,8 @@ namespace ToNRoundCounter.UI
 
             lastIdleSeconds = idleSecondsForDisplay;
             UpdateVelocityOverlay();
+
+            UpdateRoundBgmState();
 
             string currentItemText = InfoPanel.ItemValue.Text ?? string.Empty;
 
@@ -2466,6 +2486,198 @@ namespace ToNRoundCounter.UI
                 }
                 throw;
             }
+        }
+
+        private void UpdateRoundBgmState()
+        {
+            if (!_settings.RoundBgmEnabled)
+            {
+                ResetRoundBgmTracking();
+                return;
+            }
+
+            var currentRound = stateService.CurrentRound;
+            if (currentRound == null)
+            {
+                ResetRoundBgmTracking();
+                return;
+            }
+
+            var matchingEntry = FindMatchingRoundBgmEntry(currentRound.RoundType, currentRound.TerrorKey);
+            if (matchingEntry != null)
+            {
+                if (!ReferenceEquals(activeRoundBgmEntry, matchingEntry))
+                {
+                    roundBgmMatchStart = DateTime.Now;
+                    UpdateRoundBgmPlayer(matchingEntry);
+                }
+                else
+                {
+                    EnsureRoundBgmPlayer(matchingEntry);
+                }
+
+                if (roundBgmMatchStart == DateTime.MinValue)
+                {
+                    roundBgmMatchStart = DateTime.Now;
+                }
+                else if ((DateTime.Now - roundBgmMatchStart).TotalSeconds >= 0.5)
+                {
+                    if (!roundBgmActive)
+                    {
+                        StartRoundBgm(matchingEntry);
+                    }
+                }
+            }
+            else
+            {
+                ResetRoundBgmTracking();
+            }
+        }
+
+        private RoundBgmEntry? FindMatchingRoundBgmEntry(string? roundType, string? terrorType)
+        {
+            if (!_settings.RoundBgmEnabled || _settings.RoundBgmEntries == null || _settings.RoundBgmEntries.Count == 0)
+            {
+                return null;
+            }
+
+            static string? NormalizeKey(string? value)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return null;
+                }
+
+                return value.Trim();
+            }
+
+            var comparer = StringComparer.OrdinalIgnoreCase;
+            string? normalizedRound = NormalizeKey(roundType);
+            string? normalizedTerror = NormalizeKey(terrorType);
+
+            bool StringsEqual(string? left, string? right)
+            {
+                if (left == null && right == null)
+                {
+                    return true;
+                }
+
+                if (left == null || right == null)
+                {
+                    return false;
+                }
+
+                return comparer.Equals(left, right);
+            }
+
+            bool EntryMatches(RoundBgmEntry entry)
+            {
+                string? entryRound = NormalizeKey(entry.RoundType);
+                string? entryTerror = NormalizeKey(entry.TerrorType);
+                bool hasRound = entryRound != null;
+                bool hasTerror = entryTerror != null;
+
+                bool matchesRound = hasRound && normalizedRound != null && comparer.Equals(entryRound, normalizedRound);
+                bool matchesTerror = hasTerror && normalizedTerror != null && comparer.Equals(entryTerror, normalizedTerror);
+
+                if (hasRound && hasTerror)
+                {
+                    return matchesRound && matchesTerror;
+                }
+
+                if (hasRound && !hasTerror)
+                {
+                    return matchesRound;
+                }
+
+                if (!hasRound && hasTerror)
+                {
+                    return matchesTerror;
+                }
+
+                return !hasRound && !hasTerror;
+            }
+
+            bool combinationChanged = !StringsEqual(roundBgmSelectionRoundType, normalizedRound) ||
+                                      !StringsEqual(roundBgmSelectionTerrorType, normalizedTerror);
+
+            if (!combinationChanged && activeRoundBgmEntry != null && EntryMatches(activeRoundBgmEntry))
+            {
+                return activeRoundBgmEntry;
+            }
+
+            var matchesRoundAndTerror = new List<RoundBgmEntry>();
+            var matchesRoundOnly = new List<RoundBgmEntry>();
+            var matchesTerrorOnly = new List<RoundBgmEntry>();
+            var matchesWildcard = new List<RoundBgmEntry>();
+
+            foreach (var entry in _settings.RoundBgmEntries)
+            {
+                if (entry == null || !entry.Enabled)
+                {
+                    continue;
+                }
+
+                string? entryRound = NormalizeKey(entry.RoundType);
+                string? entryTerror = NormalizeKey(entry.TerrorType);
+                bool hasRound = entryRound != null;
+                bool hasTerror = entryTerror != null;
+
+                bool matchesRound = hasRound && normalizedRound != null && comparer.Equals(entryRound, normalizedRound);
+                bool matchesTerror = hasTerror && normalizedTerror != null && comparer.Equals(entryTerror, normalizedTerror);
+
+                if (hasRound && hasTerror)
+                {
+                    if (matchesRound && matchesTerror)
+                    {
+                        matchesRoundAndTerror.Add(entry);
+                    }
+                }
+                else if (hasRound)
+                {
+                    if (matchesRound)
+                    {
+                        matchesRoundOnly.Add(entry);
+                    }
+                }
+                else if (hasTerror)
+                {
+                    if (matchesTerror)
+                    {
+                        matchesTerrorOnly.Add(entry);
+                    }
+                }
+                else
+                {
+                    matchesWildcard.Add(entry);
+                }
+            }
+
+            RoundBgmEntry? SelectEntry(List<RoundBgmEntry> candidates)
+            {
+                if (candidates.Count == 0)
+                {
+                    return null;
+                }
+
+                var selected = candidates[roundBgmRandom.Next(candidates.Count)];
+                roundBgmSelectionRoundType = normalizedRound;
+                roundBgmSelectionTerrorType = normalizedTerror;
+                return selected;
+            }
+
+            var selection = SelectEntry(matchesRoundAndTerror)
+                            ?? SelectEntry(matchesRoundOnly)
+                            ?? SelectEntry(matchesTerrorOnly)
+                            ?? SelectEntry(matchesWildcard);
+
+            if (selection == null)
+            {
+                roundBgmSelectionRoundType = normalizedRound;
+                roundBgmSelectionTerrorType = normalizedTerror;
+            }
+
+            return selection;
         }
 
         private ItemMusicEntry? FindMatchingItemMusicEntry(string text, double velocity)

@@ -8,6 +8,12 @@ namespace ToNRoundCounter.UI
 {
     public partial class MainForm
     {
+        private enum SoundConflictSource
+        {
+            ItemMusic,
+            RoundBgm
+        }
+
         private static MediaPlayer CreatePlayer(string path)
         {
             var player = new MediaPlayer();
@@ -42,6 +48,7 @@ namespace ToNRoundCounter.UI
             tester_BATOU_02Player.Stop();
             tester_BATOU_03Player.Stop();
             StopItemMusic();
+            StopRoundBgm();
         }
 
         private void StartItemMusic(ItemMusicEntry? entry)
@@ -49,6 +56,11 @@ namespace ToNRoundCounter.UI
             if (!_settings.ItemMusicEnabled || entry == null || !entry.Enabled)
             {
                 LogUi("Item music playback skipped due to settings or entry state.", LogEventLevel.Debug);
+                return;
+            }
+
+            if (!HandleSoundConflictBeforePlayback(SoundConflictSource.ItemMusic))
+            {
                 return;
             }
 
@@ -194,6 +206,241 @@ namespace ToNRoundCounter.UI
             _logger.LogEvent("ItemMusic", $"Failed to play sound: {e.ErrorException?.Message}", LogEventLevel.Error);
             LogUi($"Item music playback failure: {e.ErrorException?.Message}", LogEventLevel.Error);
             StopItemMusic();
+        }
+
+        private void StartRoundBgm(RoundBgmEntry? entry)
+        {
+            if (!_settings.RoundBgmEnabled || entry == null || !entry.Enabled)
+            {
+                LogUi("Round BGM playback skipped due to settings or entry state.", LogEventLevel.Debug);
+                return;
+            }
+
+            if (!HandleSoundConflictBeforePlayback(SoundConflictSource.RoundBgm))
+            {
+                return;
+            }
+
+            EnsureRoundBgmPlayer(entry);
+
+            if (roundBgmPlayer != null)
+            {
+                roundBgmLoopRequested = true;
+                roundBgmActive = true;
+                PlayFromStart(roundBgmPlayer);
+                string roundName = entry.RoundType ?? string.Empty;
+                string terrorName = entry.TerrorType ?? string.Empty;
+                string displayName;
+                if (!string.IsNullOrWhiteSpace(roundName) && !string.IsNullOrWhiteSpace(terrorName))
+                {
+                    displayName = $"{roundName} / {terrorName}";
+                }
+                else if (!string.IsNullOrWhiteSpace(roundName))
+                {
+                    displayName = roundName;
+                }
+                else if (!string.IsNullOrWhiteSpace(terrorName))
+                {
+                    displayName = terrorName;
+                }
+                else
+                {
+                    displayName = "Default";
+                }
+
+                LogUi($"Round BGM started for '{displayName}'.");
+            }
+        }
+
+        private void StopRoundBgm()
+        {
+            roundBgmLoopRequested = false;
+            roundBgmActive = false;
+            roundBgmPlayer?.Stop();
+            LogUi("Round BGM playback stopped.", LogEventLevel.Debug);
+        }
+
+        private void ResetRoundBgmTracking()
+        {
+            LogUi("Resetting round BGM tracking state.", LogEventLevel.Debug);
+            roundBgmMatchStart = DateTime.MinValue;
+            roundBgmLoopRequested = false;
+            roundBgmSelectionRoundType = null;
+            roundBgmSelectionTerrorType = null;
+            if (roundBgmActive)
+            {
+                StopRoundBgm();
+            }
+        }
+
+        private bool HandleSoundConflictBeforePlayback(SoundConflictSource source)
+        {
+            var behavior = _settings.RoundBgmItemConflictBehavior;
+
+            if (behavior == RoundBgmItemConflictBehavior.PlayBoth)
+            {
+                return true;
+            }
+
+            if (behavior == RoundBgmItemConflictBehavior.ItemMusicPriority)
+            {
+                if (source == SoundConflictSource.ItemMusic)
+                {
+                    if (roundBgmActive)
+                    {
+                        LogUi("Stopping round BGM due to item music priority preference.", LogEventLevel.Debug);
+                        StopRoundBgm();
+                    }
+
+                    return true;
+                }
+
+                if (itemMusicActive)
+                {
+                    LogUi("Round BGM start skipped because item music is prioritized.", LogEventLevel.Debug);
+                    return false;
+                }
+
+                return true;
+            }
+
+            if (behavior == RoundBgmItemConflictBehavior.RoundBgmPriority)
+            {
+                if (source == SoundConflictSource.RoundBgm)
+                {
+                    if (itemMusicActive)
+                    {
+                        LogUi("Stopping item music due to round BGM priority preference.", LogEventLevel.Debug);
+                        StopItemMusic();
+                    }
+
+                    return true;
+                }
+
+                if (roundBgmActive)
+                {
+                    LogUi("Item music start skipped because round BGM is prioritized.", LogEventLevel.Debug);
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private void EnsureRoundBgmPlayer(RoundBgmEntry? entry)
+        {
+            if (!_settings.RoundBgmEnabled || entry == null || !entry.Enabled)
+            {
+                LogUi("EnsureRoundBgmPlayer skipped due to configuration.", LogEventLevel.Debug);
+                return;
+            }
+
+            bool needsReload = roundBgmPlayer == null ||
+                               !ReferenceEquals(activeRoundBgmEntry, entry) ||
+                               string.IsNullOrEmpty(lastLoadedRoundBgmPath) ||
+                               !File.Exists(lastLoadedRoundBgmPath);
+
+            if (needsReload)
+            {
+                LogUi("Reloading round BGM player due to configuration change.", LogEventLevel.Debug);
+                UpdateRoundBgmPlayer(entry);
+            }
+        }
+
+        private void UpdateRoundBgmPlayer(RoundBgmEntry? entry = null)
+        {
+            try
+            {
+                DisposeRoundBgmPlayer();
+
+                if (!_settings.RoundBgmEnabled)
+                {
+                    LogUi("Round BGM disabled. Skipping player update.", LogEventLevel.Debug);
+                    return;
+                }
+
+                activeRoundBgmEntry = entry;
+
+                if (entry == null || !entry.Enabled)
+                {
+                    LogUi("No active round BGM entry. Player not updated.", LogEventLevel.Debug);
+                    return;
+                }
+
+                string configuredPath = entry.SoundPath ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(configuredPath))
+                {
+                    LogUi("Round BGM entry has no configured path.", LogEventLevel.Warning);
+                    return;
+                }
+
+                string fullPath = Path.GetFullPath(configuredPath);
+                if (!File.Exists(fullPath))
+                {
+                    _logger.LogEvent("RoundBgm", $"Sound file not found: {fullPath}", LogEventLevel.Warning);
+                    LogUi($"Configured round BGM file not found: {fullPath}.", LogEventLevel.Warning);
+                    return;
+                }
+
+                roundBgmPlayer = new MediaPlayer();
+                roundBgmPlayer.Open(new Uri(fullPath));
+                roundBgmPlayer.MediaEnded += RoundBgmPlayer_MediaEnded;
+                roundBgmPlayer.MediaFailed += RoundBgmPlayer_MediaFailed;
+                lastLoadedRoundBgmPath = fullPath;
+                _logger.LogEvent("RoundBgm", $"Loaded sound file: {fullPath}");
+                LogUi($"Round BGM player loaded file '{fullPath}'.", LogEventLevel.Debug);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogEvent("RoundBgm", ex.ToString(), LogEventLevel.Error);
+                LogUi($"Failed to update round BGM player: {ex.Message}", LogEventLevel.Error);
+            }
+        }
+
+        private void DisposeRoundBgmPlayer()
+        {
+            if (roundBgmPlayer != null)
+            {
+                try
+                {
+                    roundBgmPlayer.MediaEnded -= RoundBgmPlayer_MediaEnded;
+                    roundBgmPlayer.MediaFailed -= RoundBgmPlayer_MediaFailed;
+                    roundBgmPlayer.Stop();
+                    roundBgmPlayer.Close();
+                }
+                catch
+                {
+                }
+                finally
+                {
+                    roundBgmPlayer = null;
+                    LogUi("Round BGM player disposed.", LogEventLevel.Debug);
+                }
+            }
+
+            lastLoadedRoundBgmPath = string.Empty;
+            roundBgmLoopRequested = false;
+            roundBgmActive = false;
+            roundBgmMatchStart = DateTime.MinValue;
+            activeRoundBgmEntry = null;
+            roundBgmSelectionRoundType = null;
+            roundBgmSelectionTerrorType = null;
+        }
+
+        private void RoundBgmPlayer_MediaEnded(object sender, EventArgs e)
+        {
+            if (roundBgmLoopRequested && roundBgmPlayer != null)
+            {
+                LogUi("Round BGM track ended. Loop restart requested.", LogEventLevel.Debug);
+                PlayFromStart(roundBgmPlayer);
+            }
+        }
+
+        private void RoundBgmPlayer_MediaFailed(object sender, ExceptionEventArgs e)
+        {
+            _logger.LogEvent("RoundBgm", $"Failed to play sound: {e.ErrorException?.Message}", LogEventLevel.Error);
+            LogUi($"Round BGM playback failure: {e.ErrorException?.Message}", LogEventLevel.Error);
+            StopRoundBgm();
         }
     }
 }

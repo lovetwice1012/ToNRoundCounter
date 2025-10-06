@@ -101,6 +101,14 @@ namespace ToNRoundCounter.UI
         private Button itemMusicAddButton = null!;
         private Button itemMusicRemoveButton = null!;
         private Button itemMusicBrowseButton = null!;
+        public CheckBox RoundBgmEnabledCheckBox { get; private set; } = null!;
+        private DataGridView roundBgmEntriesGrid = null!;
+        private Button roundBgmAddButton = null!;
+        private Button roundBgmRemoveButton = null!;
+        private Button roundBgmBrowseButton = null!;
+        private ComboBox roundBgmConflictBehaviorComboBox = null!;
+        private Label roundBgmConflictBehaviorLabel = null!;
+        private List<RoundBgmConflictOption> roundBgmConflictOptions = new List<RoundBgmConflictOption>();
         public TextBox DiscordWebhookUrlTextBox { get; private set; } = null!;
 
         private const string AutoLaunchEnabledColumnName = "AutoLaunchEnabled";
@@ -111,6 +119,10 @@ namespace ToNRoundCounter.UI
         private const string ItemMusicPathColumnName = "ItemMusicPath";
         private const string ItemMusicMinSpeedColumnName = "ItemMusicMinSpeed";
         private const string ItemMusicMaxSpeedColumnName = "ItemMusicMaxSpeed";
+        private const string RoundBgmEnabledColumnName = "RoundBgmEnabled";
+        private const string RoundBgmRoundColumnName = "RoundBgmRound";
+        private const string RoundBgmTerrorColumnName = "RoundBgmTerror";
+        private const string RoundBgmPathColumnName = "RoundBgmPath";
 
 
         public SettingsPanel(IAppSettings settings)
@@ -1179,6 +1191,139 @@ namespace ToNRoundCounter.UI
             rightColumnY += grpItemMusic.Height + margin;
 
 
+            GroupBox grpRoundBgm = new GroupBox();
+            grpRoundBgm.Text = LanguageManager.Translate("ラウンド/テラーBGM設定");
+            grpRoundBgm.Location = new Point(margin * 2 + columnWidth, rightColumnY);
+            grpRoundBgm.Size = new Size(columnWidth, 260);
+            this.Controls.Add(grpRoundBgm);
+
+            int roundBgmInnerY = 25;
+
+            RoundBgmEnabledCheckBox = new CheckBox();
+            RoundBgmEnabledCheckBox.Text = LanguageManager.Translate("ラウンド/テラーごとのBGMを再生する");
+            RoundBgmEnabledCheckBox.AutoSize = true;
+            RoundBgmEnabledCheckBox.Location = new Point(innerMargin, roundBgmInnerY);
+            grpRoundBgm.Controls.Add(RoundBgmEnabledCheckBox);
+
+            roundBgmInnerY = RoundBgmEnabledCheckBox.Bottom + 10;
+
+            roundBgmEntriesGrid = new DataGridView();
+            roundBgmEntriesGrid.Name = "RoundBgmEntriesGrid";
+            roundBgmEntriesGrid.Location = new Point(innerMargin, roundBgmInnerY);
+            roundBgmEntriesGrid.Size = new Size(columnWidth - innerMargin * 2, 150);
+            roundBgmEntriesGrid.AllowUserToAddRows = false;
+            roundBgmEntriesGrid.AllowUserToResizeRows = false;
+            roundBgmEntriesGrid.RowHeadersVisible = false;
+            roundBgmEntriesGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            roundBgmEntriesGrid.MultiSelect = false;
+            roundBgmEntriesGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+
+            var roundBgmEnabledColumn = new DataGridViewCheckBoxColumn();
+            roundBgmEnabledColumn.Name = RoundBgmEnabledColumnName;
+            roundBgmEnabledColumn.HeaderText = LanguageManager.Translate("有効");
+            roundBgmEnabledColumn.Width = 45;
+            roundBgmEnabledColumn.FillWeight = 15;
+            roundBgmEntriesGrid.Columns.Add(roundBgmEnabledColumn);
+
+            var roundBgmRoundColumn = new DataGridViewTextBoxColumn();
+            roundBgmRoundColumn.Name = RoundBgmRoundColumnName;
+            roundBgmRoundColumn.HeaderText = LanguageManager.Translate("ラウンド名");
+            roundBgmRoundColumn.FillWeight = 30;
+            roundBgmEntriesGrid.Columns.Add(roundBgmRoundColumn);
+
+            var roundBgmTerrorColumn = new DataGridViewTextBoxColumn();
+            roundBgmTerrorColumn.Name = RoundBgmTerrorColumnName;
+            roundBgmTerrorColumn.HeaderText = LanguageManager.Translate("テラー名");
+            roundBgmTerrorColumn.FillWeight = 30;
+            roundBgmEntriesGrid.Columns.Add(roundBgmTerrorColumn);
+
+            var roundBgmPathColumn = new DataGridViewTextBoxColumn();
+            roundBgmPathColumn.Name = RoundBgmPathColumnName;
+            roundBgmPathColumn.HeaderText = LanguageManager.Translate("再生する音声");
+            roundBgmPathColumn.FillWeight = 40;
+            roundBgmEntriesGrid.Columns.Add(roundBgmPathColumn);
+
+            grpRoundBgm.Controls.Add(roundBgmEntriesGrid);
+
+            roundBgmAddButton = new Button();
+            roundBgmAddButton.Text = LanguageManager.Translate("追加");
+            roundBgmAddButton.AutoSize = true;
+            roundBgmAddButton.Location = new Point(innerMargin, roundBgmEntriesGrid.Bottom + 10);
+            roundBgmAddButton.Click += (s, e) =>
+            {
+                roundBgmEntriesGrid.Rows.Add(true, string.Empty, string.Empty, string.Empty);
+                if (roundBgmEntriesGrid.Rows.Count > 0)
+                {
+                    roundBgmEntriesGrid.ClearSelection();
+                    roundBgmEntriesGrid.Rows[roundBgmEntriesGrid.Rows.Count - 1].Selected = true;
+                }
+                RefreshRoundBgmControlsState();
+            };
+            grpRoundBgm.Controls.Add(roundBgmAddButton);
+
+            roundBgmRemoveButton = new Button();
+            roundBgmRemoveButton.Text = LanguageManager.Translate("削除");
+            roundBgmRemoveButton.AutoSize = true;
+            roundBgmRemoveButton.Location = new Point(roundBgmAddButton.Right + 10, roundBgmEntriesGrid.Bottom + 10);
+            roundBgmRemoveButton.Click += (s, e) =>
+            {
+                foreach (DataGridViewRow row in roundBgmEntriesGrid.SelectedRows)
+                {
+                    if (!row.IsNewRow)
+                    {
+                        roundBgmEntriesGrid.Rows.Remove(row);
+                    }
+                }
+                RefreshRoundBgmControlsState();
+            };
+            grpRoundBgm.Controls.Add(roundBgmRemoveButton);
+
+            roundBgmBrowseButton = new Button();
+            roundBgmBrowseButton.Text = LanguageManager.Translate("参照...");
+            roundBgmBrowseButton.AutoSize = true;
+            roundBgmBrowseButton.Location = new Point(roundBgmRemoveButton.Right + 10, roundBgmEntriesGrid.Bottom + 10);
+            roundBgmBrowseButton.Click += (s, e) =>
+            {
+                BrowseForRoundBgmSound();
+                RefreshRoundBgmControlsState();
+            };
+            grpRoundBgm.Controls.Add(roundBgmBrowseButton);
+
+            int conflictLabelY = roundBgmBrowseButton.Bottom + 15;
+
+            roundBgmConflictBehaviorLabel = new Label();
+            roundBgmConflictBehaviorLabel.AutoSize = true;
+            roundBgmConflictBehaviorLabel.Text = LanguageManager.Translate("競合時の優先設定:");
+            roundBgmConflictBehaviorLabel.Location = new Point(innerMargin, conflictLabelY);
+            grpRoundBgm.Controls.Add(roundBgmConflictBehaviorLabel);
+
+            roundBgmConflictOptions = new List<RoundBgmConflictOption>
+            {
+                new RoundBgmConflictOption(RoundBgmItemConflictBehavior.ItemMusicPriority, LanguageManager.Translate("アイテムサウンドを優先する")),
+                new RoundBgmConflictOption(RoundBgmItemConflictBehavior.RoundBgmPriority, LanguageManager.Translate("ラウンドBGMを優先する")),
+                new RoundBgmConflictOption(RoundBgmItemConflictBehavior.PlayBoth, LanguageManager.Translate("両方とも再生する"))
+            };
+
+            roundBgmConflictBehaviorComboBox = new ComboBox();
+            roundBgmConflictBehaviorComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            roundBgmConflictBehaviorComboBox.DisplayMember = nameof(RoundBgmConflictOption.DisplayName);
+            roundBgmConflictBehaviorComboBox.ValueMember = nameof(RoundBgmConflictOption.Behavior);
+            roundBgmConflictBehaviorComboBox.DataSource = roundBgmConflictOptions;
+            roundBgmConflictBehaviorComboBox.Location = new Point(innerMargin, roundBgmConflictBehaviorLabel.Bottom + 5);
+            roundBgmConflictBehaviorComboBox.Width = columnWidth - innerMargin * 2;
+            grpRoundBgm.Controls.Add(roundBgmConflictBehaviorComboBox);
+
+            grpRoundBgm.Height = roundBgmConflictBehaviorComboBox.Bottom + 15;
+
+            RoundBgmEnabledCheckBox.CheckedChanged += (s, e) => RefreshRoundBgmControlsState();
+            roundBgmEntriesGrid.SelectionChanged += (s, e) => RefreshRoundBgmControlsState();
+            RoundBgmEnabledCheckBox.Checked = _settings.RoundBgmEnabled;
+            LoadRoundBgmEntries(_settings.RoundBgmEntries);
+            SetRoundBgmItemConflictBehavior(_settings.RoundBgmItemConflictBehavior);
+
+            rightColumnY += grpRoundBgm.Height + margin;
+
+
 
             // 追加設定グループ
             GroupBox grpAdditional = new GroupBox();
@@ -1680,6 +1825,60 @@ namespace ToNRoundCounter.UI
             RefreshItemMusicControlsState();
         }
 
+        public void LoadRoundBgmEntries(IEnumerable<RoundBgmEntry> entries)
+        {
+            if (roundBgmEntriesGrid == null)
+            {
+                return;
+            }
+
+            roundBgmEntriesGrid.Rows.Clear();
+
+            if (entries != null)
+            {
+                foreach (var entry in entries)
+                {
+                    if (entry == null)
+                    {
+                        continue;
+                    }
+
+                    roundBgmEntriesGrid.Rows.Add(entry.Enabled,
+                        entry.RoundType ?? string.Empty,
+                        entry.TerrorType ?? string.Empty,
+                        entry.SoundPath ?? string.Empty);
+                }
+            }
+
+            RefreshRoundBgmControlsState();
+        }
+
+        public void SetRoundBgmItemConflictBehavior(RoundBgmItemConflictBehavior behavior)
+        {
+            if (roundBgmConflictBehaviorComboBox == null || roundBgmConflictOptions == null || roundBgmConflictOptions.Count == 0)
+            {
+                return;
+            }
+
+            var option = roundBgmConflictOptions.FirstOrDefault(o => o.Behavior == behavior)
+                         ?? roundBgmConflictOptions.FirstOrDefault(o => o.Behavior == RoundBgmItemConflictBehavior.PlayBoth);
+
+            if (option != null)
+            {
+                roundBgmConflictBehaviorComboBox.SelectedItem = option;
+            }
+        }
+
+        public RoundBgmItemConflictBehavior GetRoundBgmItemConflictBehavior()
+        {
+            if (roundBgmConflictBehaviorComboBox?.SelectedItem is RoundBgmConflictOption option)
+            {
+                return option.Behavior;
+            }
+
+            return RoundBgmItemConflictBehavior.PlayBoth;
+        }
+
         public List<ItemMusicEntry> GetItemMusicEntries()
         {
             var result = new List<ItemMusicEntry>();
@@ -1719,6 +1918,44 @@ namespace ToNRoundCounter.UI
                     SoundPath = soundPath?.Trim() ?? string.Empty,
                     MinSpeed = minSpeed,
                     MaxSpeed = maxSpeed
+                });
+            }
+
+            return result;
+        }
+
+        public List<RoundBgmEntry> GetRoundBgmEntries()
+        {
+            var result = new List<RoundBgmEntry>();
+
+            if (roundBgmEntriesGrid == null)
+            {
+                return result;
+            }
+
+            foreach (DataGridViewRow row in roundBgmEntriesGrid.Rows)
+            {
+                if (row.IsNewRow)
+                {
+                    continue;
+                }
+
+                bool enabled = row.Cells[RoundBgmEnabledColumnName].Value is bool b && b;
+                string roundName = Convert.ToString(row.Cells[RoundBgmRoundColumnName].Value) ?? string.Empty;
+                string terrorName = Convert.ToString(row.Cells[RoundBgmTerrorColumnName].Value) ?? string.Empty;
+                string soundPath = Convert.ToString(row.Cells[RoundBgmPathColumnName].Value) ?? string.Empty;
+
+                if (string.IsNullOrWhiteSpace(roundName) && string.IsNullOrWhiteSpace(terrorName) && string.IsNullOrWhiteSpace(soundPath))
+                {
+                    continue;
+                }
+
+                result.Add(new RoundBgmEntry
+                {
+                    Enabled = enabled,
+                    RoundType = roundName?.Trim() ?? string.Empty,
+                    TerrorType = terrorName?.Trim() ?? string.Empty,
+                    SoundPath = soundPath?.Trim() ?? string.Empty
                 });
             }
 
@@ -1775,6 +2012,31 @@ namespace ToNRoundCounter.UI
             }
         }
 
+        private void BrowseForRoundBgmSound()
+        {
+            if (roundBgmEntriesGrid == null || roundBgmEntriesGrid.SelectedRows.Count == 0)
+            {
+                return;
+            }
+
+            var row = roundBgmEntriesGrid.SelectedRows[0];
+
+            using (OpenFileDialog dialog = new OpenFileDialog())
+            {
+                dialog.Filter = "音声ファイル|*.mp3;*.wav;*.ogg;*.flac;*.wma;*.aac;*.m4a|すべてのファイル|*.*";
+                string current = Convert.ToString(row.Cells[RoundBgmPathColumnName].Value) ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(current))
+                {
+                    dialog.FileName = current;
+                }
+
+                if (dialog.ShowDialog() == DialogResult.OK)
+                {
+                    row.Cells[RoundBgmPathColumnName].Value = dialog.FileName;
+                }
+            }
+        }
+
         private void RefreshAutoLaunchControlsState()
         {
             bool enabled = AutoLaunchEnabledCheckBox?.Checked ?? false;
@@ -1825,6 +2087,42 @@ namespace ToNRoundCounter.UI
             }
         }
 
+        private void RefreshRoundBgmControlsState()
+        {
+            bool enabled = RoundBgmEnabledCheckBox?.Checked ?? false;
+            if (roundBgmEntriesGrid != null)
+            {
+                roundBgmEntriesGrid.Enabled = enabled;
+            }
+
+            if (roundBgmAddButton != null)
+            {
+                roundBgmAddButton.Enabled = enabled;
+            }
+
+            bool hasSelection = roundBgmEntriesGrid != null && roundBgmEntriesGrid.SelectedRows.Count > 0;
+
+            if (roundBgmRemoveButton != null)
+            {
+                roundBgmRemoveButton.Enabled = enabled && hasSelection;
+            }
+
+            if (roundBgmBrowseButton != null)
+            {
+                roundBgmBrowseButton.Enabled = enabled && hasSelection;
+            }
+
+            if (roundBgmConflictBehaviorComboBox != null)
+            {
+                roundBgmConflictBehaviorComboBox.Enabled = enabled;
+            }
+
+            if (roundBgmConflictBehaviorLabel != null)
+            {
+                roundBgmConflictBehaviorLabel.Enabled = enabled;
+            }
+        }
+
         private static double GetDoubleFromCell(object value, double fallback)
         {
             if (value == null)
@@ -1853,6 +2151,19 @@ namespace ToNRoundCounter.UI
             }
 
             return fallback;
+        }
+
+        private sealed class RoundBgmConflictOption
+        {
+            public RoundBgmConflictOption(RoundBgmItemConflictBehavior behavior, string displayName)
+            {
+                Behavior = behavior;
+                DisplayName = displayName;
+            }
+
+            public RoundBgmItemConflictBehavior Behavior { get; }
+
+            public string DisplayName { get; }
         }
 
         private string[] GenerateAutoSuicideLines()
