@@ -299,6 +299,12 @@ Please obtain an API key from the website.</value>
   <data name="AutoRecording_FormatHelp" xml:space="preserve">
     <value>AVI creates lossless recordings but results in large files. MP4, MOV, MKV, and FLV use H.264 to balance size and compatibility. WMV and ASF produce Windows Media Video files. MPG and VOB generate MPEG-2 program streams. GIF produces lightweight animated images with limited colors and frame rate.</value>
   </data>
+  <data name="AutoRecording_AdminElevationPrompt" xml:space="preserve">
+    <value>Capturing VRChat audio requires administrator privileges. Restart ToNRoundCounter with elevated permissions now?</value>
+  </data>
+  <data name="AutoRecording_AdminElevationTitle" xml:space="preserve">
+    <value>Administrator privileges required</value>
+  </data>
   <data name="録画開始テラー" xml:space="preserve">
     <value>Trigger terror names</value>
   </data>

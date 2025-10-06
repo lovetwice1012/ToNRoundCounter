@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
@@ -13,6 +14,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Security.Principal;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Rug.Osc;
@@ -657,6 +659,8 @@ namespace ToNRoundCounter.UI
                     settingsForm.SettingsPanel.CleanAutoSuicideDetailRules();
                     _settings.AutoSuicideDetailCustom = settingsForm.SettingsPanel.GetCustomAutoSuicideLines();
                     _settings.AutoSuicideFuzzyMatch = settingsForm.SettingsPanel.autoSuicideFuzzyCheckBox.Checked;
+                    bool autoRecordingPreviouslyEnabled = _settings.AutoRecordingEnabled;
+
                     _settings.AutoLaunchEnabled = settingsForm.SettingsPanel.AutoLaunchEnabledCheckBox.Checked;
                     _settings.AutoLaunchEntries = settingsForm.SettingsPanel.GetAutoLaunchEntries();
                     _settings.AutoRecordingEnabled = settingsForm.SettingsPanel.AutoRecordingEnabledCheckBox.Checked;
@@ -667,6 +671,17 @@ namespace ToNRoundCounter.UI
                     _settings.AutoRecordingOutputExtension = settingsForm.SettingsPanel.GetAutoRecordingOutputExtension();
                     _settings.AutoRecordingRoundTypes = settingsForm.SettingsPanel.GetAutoRecordingRoundTypes();
                     _settings.AutoRecordingTerrors = settingsForm.SettingsPanel.GetAutoRecordingTerrors();
+
+                    bool autoRecordingEnabledNow = _settings.AutoRecordingEnabled;
+                    if (!autoRecordingPreviouslyEnabled && autoRecordingEnabledNow && !IsRunningAsAdministrator())
+                    {
+                        if (PromptForElevatedRestart())
+                        {
+                            await _settings.SaveAsync();
+                            RestartAsAdministratorForRecording();
+                            return;
+                        }
+                    }
                     _settings.ItemMusicEnabled = settingsForm.SettingsPanel.ItemMusicEnabledCheckBox.Checked;
                     _settings.ItemMusicEntries = settingsForm.SettingsPanel.GetItemMusicEntries();
                     _settings.RoundBgmEnabled = settingsForm.SettingsPanel.RoundBgmEnabledCheckBox.Checked;
@@ -728,6 +743,106 @@ namespace ToNRoundCounter.UI
                 var closedContext = new ModuleSettingsViewLifecycleContext(settingsForm, settingsForm.SettingsPanel, _settings, ModuleSettingsViewStage.Closed, dialogResult, _moduleHost.CurrentServiceProvider);
                 _moduleHost.NotifySettingsViewClosed(closedContext);
             }
+        }
+
+        private static bool IsRunningAsAdministrator()
+        {
+            try
+            {
+                using var identity = WindowsIdentity.GetCurrent();
+                if (identity == null)
+                {
+                    return false;
+                }
+
+                var principal = new WindowsPrincipal(identity);
+                return principal.IsInRole(WindowsBuiltInRole.Administrator);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool PromptForElevatedRestart()
+        {
+            string message = LanguageManager.Translate("AutoRecording_AdminElevationPrompt");
+            string title = LanguageManager.Translate("AutoRecording_AdminElevationTitle");
+            var result = MessageBox.Show(this, message, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (result == DialogResult.Yes)
+            {
+                _logger?.LogEvent("AutoRecording", "Administrator restart accepted for audio capture.");
+                return true;
+            }
+
+            _logger?.LogEvent("AutoRecording", "Administrator restart declined by user.", LogEventLevel.Warning);
+            return false;
+        }
+
+        private void RestartAsAdministratorForRecording()
+        {
+            try
+            {
+                string exePath = WinFormsApp.ExecutablePath;
+                if (string.IsNullOrEmpty(exePath))
+                {
+                    exePath = Process.GetCurrentProcess().MainModule?.FileName ?? string.Empty;
+                }
+
+                if (string.IsNullOrEmpty(exePath))
+                {
+                    throw new InvalidOperationException("Unable to determine executable path for restart.");
+                }
+
+                var startInfo = new ProcessStartInfo(exePath)
+                {
+                    UseShellExecute = true,
+                    Verb = "runas",
+                    Arguments = BuildRestartArguments()
+                };
+
+                Process.Start(startInfo);
+                _logger?.LogEvent("AutoRecording", "Restarting ToNRoundCounter with administrator privileges for audio capture.");
+                WinFormsApp.Exit();
+            }
+            catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
+            {
+                _logger?.LogEvent("AutoRecording", () => $"Administrator restart canceled by user: {ex.Message}", LogEventLevel.Warning);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogEvent("AutoRecording", () => $"Failed to restart with administrator privileges: {ex.Message}", LogEventLevel.Error);
+            }
+        }
+
+        private static string BuildRestartArguments()
+        {
+            var args = Environment.GetCommandLineArgs();
+            if (args.Length <= 1)
+            {
+                return string.Empty;
+            }
+
+            var builder = new StringBuilder();
+            for (int i = 1; i < args.Length; i++)
+            {
+                var argument = args[i];
+                if (string.IsNullOrWhiteSpace(argument))
+                {
+                    continue;
+                }
+
+                if (builder.Length > 0)
+                {
+                    builder.Append(' ');
+                }
+
+                builder.Append('"');
+                builder.Append(argument.Replace("\"", "\"\""));
+                builder.Append('"');
+            }
+
+            return builder.ToString();
         }
 
         private void BuildAuxiliaryWindowsMenu()

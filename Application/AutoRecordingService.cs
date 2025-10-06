@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -326,8 +327,8 @@ namespace ToNRoundCounter.Application
 
         internal static readonly string[] SupportedExtensions = new[]
         {
-            "avi",
             "mp4",
+            "avi",
             "mov",
             "wmv",
             "mpg",
@@ -337,6 +338,49 @@ namespace ToNRoundCounter.Application
             "vob",
             "gif",
         };
+
+        private readonly struct AudioFormat
+        {
+            public AudioFormat(int sampleRate, int channels, int bitsPerSample, int blockAlign, Guid subFormat, bool isFloat, int validBitsPerSample, uint channelMask)
+            {
+                SampleRate = sampleRate;
+                Channels = channels;
+                BitsPerSample = bitsPerSample;
+                BlockAlign = blockAlign;
+                SubFormat = subFormat;
+                IsFloat = isFloat;
+                ValidBitsPerSample = validBitsPerSample;
+                ChannelMask = channelMask;
+            }
+
+            public int SampleRate { get; }
+
+            public int Channels { get; }
+
+            public int BitsPerSample { get; }
+
+            public int BlockAlign { get; }
+
+            public Guid SubFormat { get; }
+
+            public bool IsFloat { get; }
+
+            public int ValidBitsPerSample { get; }
+
+            public uint ChannelMask { get; }
+
+            public int BytesPerSecond => SampleRate * BlockAlign;
+
+            public long FramesToDurationHns(int frames)
+            {
+                if (SampleRate <= 0)
+                {
+                    return 0;
+                }
+
+                return (long)Math.Round(frames * 10_000_000d / SampleRate);
+            }
+        }
 
         private static int NormalizeFrameRate(int frameRate)
         {
@@ -434,10 +478,14 @@ namespace ToNRoundCounter.Application
             private readonly Rectangle _bounds;
             private readonly int _frameRate;
             private readonly bool _includeOverlay;
-            private readonly IFrameWriter _writer;
+            private readonly IMediaWriter _writer;
+            private readonly WasapiAudioCapture? _audioCapture;
             private readonly CancellationTokenSource _cts;
-            private readonly Task _captureTask;
+            private readonly Task _videoTask;
+            private readonly Task? _audioTask;
+            private readonly Task _completionTask;
             private readonly object _stateLock = new object();
+            private readonly object _audioLock = new object();
             private string _stopReason = "Completed";
             private bool _stopReasonSet;
             private bool _hasError;
@@ -445,7 +493,7 @@ namespace ToNRoundCounter.Application
             private bool _disposed;
             private readonly bool _isHardwareAccelerated;
 
-            private InternalScreenRecorder(IntPtr windowHandle, Rectangle bounds, int frameRate, bool includeOverlay, IFrameWriter writer)
+            private InternalScreenRecorder(IntPtr windowHandle, Rectangle bounds, int frameRate, bool includeOverlay, IMediaWriter writer, WasapiAudioCapture? audioCapture)
             {
                 _windowHandle = windowHandle;
                 _bounds = bounds;
@@ -453,11 +501,19 @@ namespace ToNRoundCounter.Application
                 _includeOverlay = includeOverlay;
                 _cts = new CancellationTokenSource();
                 _writer = writer;
+                _audioCapture = audioCapture;
                 _isHardwareAccelerated = writer.IsHardwareAccelerated;
-                _captureTask = Task.Run(() => CaptureLoopAsync(_cts.Token));
+                _videoTask = Task.Run(() => CaptureVideoLoopAsync(_cts.Token));
+
+                if (_audioCapture != null)
+                {
+                    _audioTask = Task.Run(() => CaptureAudioLoopAsync(_cts.Token));
+                }
+
+                _completionTask = _audioTask != null ? Task.WhenAll(_videoTask, _audioTask) : _videoTask;
             }
 
-            public Task Completion => _captureTask;
+            public Task Completion => _completionTask;
 
             public string StopReason
             {
@@ -523,34 +579,55 @@ namespace ToNRoundCounter.Application
 
                 var bounds = Rectangle.FromLTRB(rect.Left, rect.Top, rect.Right, rect.Bottom);
 
-                IFrameWriter? writer = null;
+                IMediaWriter? writer = null;
+                WasapiAudioCapture? audioCapture = null;
 
                 try
                 {
-                    writer = CreateWriter(extension, outputPath, bounds.Width, bounds.Height, frameRate);
-                    recorder = new InternalScreenRecorder(handle, bounds, frameRate, includeOverlay, writer);
+                    if (!WasapiAudioCapture.TryCreateForWindow(handle, out audioCapture, out var audioError))
+                    {
+                        failureReason = string.IsNullOrEmpty(audioError)
+                            ? "Failed to initialize audio capture for the target window."
+                            : audioError;
+                        return false;
+                    }
+
+                    writer = CreateWriter(extension, outputPath, bounds.Width, bounds.Height, frameRate, audioCapture?.Format);
+                    recorder = new InternalScreenRecorder(handle, bounds, frameRate, includeOverlay, writer, audioCapture);
+                    audioCapture = null;
                     return true;
                 }
                 catch (Exception ex)
                 {
                     failureReason = ex.Message;
                     writer?.Dispose();
+                    audioCapture?.Dispose();
                     recorder?.Dispose();
                     recorder = null;
                     return false;
                 }
             }
 
-            private static IFrameWriter CreateWriter(string extension, string outputPath, int width, int height, int frameRate)
+            private static IMediaWriter CreateWriter(string extension, string outputPath, int width, int height, int frameRate, AudioFormat? audioFormat)
             {
                 switch ((extension ?? string.Empty).ToLowerInvariant())
                 {
                     case "gif":
+                        if (audioFormat.HasValue)
+                        {
+                            throw new NotSupportedException("Audio capture is not supported for GIF recordings.");
+                        }
+
                         return new GifFrameWriter(outputPath, width, height, frameRate);
                     case "avi":
+                        if (audioFormat.HasValue)
+                        {
+                            throw new NotSupportedException("Audio capture is not supported for AVI recordings.");
+                        }
+
                         return new SimpleAviWriter(outputPath, width, height, frameRate);
                     default:
-                        return MediaFoundationFrameWriter.Create(extension!, outputPath, width, height, frameRate);
+                        return MediaFoundationFrameWriter.Create(extension!, outputPath, width, height, frameRate, audioFormat);
                 }
             }
 
@@ -571,7 +648,7 @@ namespace ToNRoundCounter.Application
 
                 try
                 {
-                    _captureTask.Wait();
+                    _completionTask.Wait();
                 }
                 catch (AggregateException ex)
                 {
@@ -582,7 +659,7 @@ namespace ToNRoundCounter.Application
                 }
             }
 
-            private async Task CaptureLoopAsync(CancellationToken token)
+            private async Task CaptureVideoLoopAsync(CancellationToken token)
             {
                 var frameInterval = TimeSpan.FromSeconds(1d / Math.Max(1, _frameRate));
                 var nextFrame = DateTime.UtcNow;
@@ -633,7 +710,7 @@ namespace ToNRoundCounter.Application
                             }
                         }
 
-                        _writer.WriteFrame(outputFrame);
+                        _writer.WriteVideoFrame(outputFrame);
                     }
                     catch (Exception ex)
                     {
@@ -668,6 +745,54 @@ namespace ToNRoundCounter.Application
                 finally
                 {
                     captureFrame?.Dispose();
+                }
+            }
+
+            private async Task CaptureAudioLoopAsync(CancellationToken token)
+            {
+                var capture = _audioCapture;
+                if (capture == null)
+                {
+                    return;
+                }
+
+                try
+                {
+                    await capture.CaptureAsync((buffer, frames) =>
+                    {
+                        try
+                        {
+                            lock (_audioLock)
+                            {
+                                _writer.WriteAudioSample(buffer, frames);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            SetStopReason($"Audio capture error: {ex.Message}", true);
+                            throw;
+                        }
+                    }, token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    SetStopReason($"Audio capture error: {ex.Message}", true);
+                }
+                finally
+                {
+                    try
+                    {
+                        lock (_audioLock)
+                        {
+                            _writer.CompleteAudio();
+                        }
+                    }
+                    catch
+                    {
+                    }
                 }
             }
 
@@ -715,6 +840,7 @@ namespace ToNRoundCounter.Application
                 }
 
                 _cts.Dispose();
+                _audioCapture?.Dispose();
                 _writer.Dispose();
             }
 
@@ -1088,14 +1214,20 @@ namespace ToNRoundCounter.Application
             private const uint DWMWA_EXTENDED_FRAME_BOUNDS = 9;
         }
 
-        private interface IFrameWriter : IDisposable
+        private interface IMediaWriter : IDisposable
         {
-            void WriteFrame(Bitmap frame);
-
             bool IsHardwareAccelerated { get; }
+
+            bool SupportsAudio { get; }
+
+            void WriteVideoFrame(Bitmap frame);
+
+            void WriteAudioSample(ReadOnlySpan<byte> data, int frames);
+
+            void CompleteAudio();
         }
 
-        private sealed class SimpleAviWriter : IFrameWriter
+        private sealed class SimpleAviWriter : IMediaWriter
         {
             private readonly int _width;
             private readonly int _height;
@@ -1185,7 +1317,9 @@ namespace ToNRoundCounter.Application
 
             public bool IsHardwareAccelerated => false;
 
-            public void WriteFrame(Bitmap frame)
+            public bool SupportsAudio => false;
+
+            public void WriteVideoFrame(Bitmap frame)
             {
                 if (_disposed)
                 {
@@ -1207,6 +1341,15 @@ namespace ToNRoundCounter.Application
                 {
                     frame.UnlockBits(data);
                 }
+            }
+
+            public void WriteAudioSample(ReadOnlySpan<byte> data, int frames)
+            {
+                throw new NotSupportedException("Audio capture is not supported for AVI recordings.");
+            }
+
+            public void CompleteAudio()
+            {
             }
 
             private void WriteFrameInternal(IntPtr buffer, int stride)
@@ -1346,18 +1489,536 @@ namespace ToNRoundCounter.Application
             private static extern void AVIFileExit();
         }
 
-        private sealed class MediaFoundationFrameWriter : IFrameWriter
+        private sealed class WasapiAudioCapture : IDisposable
+        {
+            private readonly CoreAudioInterop.IMMDeviceEnumerator _enumerator;
+            private readonly CoreAudioInterop.IMMDevice _device;
+            private readonly CoreAudioInterop.IAudioClient _audioClient;
+            private readonly CoreAudioInterop.IAudioCaptureClient _captureClient;
+            private readonly IntPtr _eventHandle;
+            private readonly AudioFormat _format;
+            private readonly object _disposeSync = new object();
+            private byte[]? _transferBuffer;
+            private byte[]? _silenceBuffer;
+            private bool _disposed;
+
+            private WasapiAudioCapture(
+                CoreAudioInterop.IMMDeviceEnumerator enumerator,
+                CoreAudioInterop.IMMDevice device,
+                CoreAudioInterop.IAudioClient audioClient,
+                CoreAudioInterop.IAudioCaptureClient captureClient,
+                IntPtr eventHandle,
+                AudioFormat format)
+            {
+                _enumerator = enumerator;
+                _device = device;
+                _audioClient = audioClient;
+                _captureClient = captureClient;
+                _eventHandle = eventHandle;
+                _format = format;
+            }
+
+            public AudioFormat Format => _format;
+
+            public static bool TryCreateForWindow(IntPtr windowHandle, out WasapiAudioCapture? capture, out string? failureReason)
+            {
+                capture = null;
+                failureReason = null;
+
+                CoreAudioInterop.IMMDeviceEnumerator? enumerator = null;
+                CoreAudioInterop.IMMDevice? device = null;
+                CoreAudioInterop.IAudioClient? audioClient = null;
+                CoreAudioInterop.IAudioCaptureClient? captureClient = null;
+                IntPtr eventHandle = IntPtr.Zero;
+
+                try
+                {
+                    enumerator = (CoreAudioInterop.IMMDeviceEnumerator)new CoreAudioInterop.MMDeviceEnumeratorComObject();
+                    CoreAudioInterop.CheckHr(
+                        enumerator.GetDefaultAudioEndpoint(CoreAudioInterop.EDataFlow.Render, CoreAudioInterop.ERole.Console, out device),
+                        "IMMDeviceEnumerator.GetDefaultAudioEndpoint");
+
+                    CoreAudioInterop.CheckHr(
+                        device.Activate(typeof(CoreAudioInterop.IAudioClient).GUID, CoreAudioInterop.CLSCTX_ALL, IntPtr.Zero, out var audioClientObj),
+                        "IMMDevice.Activate(IAudioClient)");
+                    audioClient = (CoreAudioInterop.IAudioClient)audioClientObj;
+
+                    CoreAudioInterop.CheckHr(audioClient.GetMixFormat(out var mixFormatPtr), "IAudioClient.GetMixFormat");
+                    try
+                    {
+                        var formatInfo = CoreAudioInterop.ParseWaveFormat(mixFormatPtr);
+                        long bufferDuration = 10_000_000; // 1 second
+
+                        CoreAudioInterop.CheckHr(
+                            audioClient.Initialize(
+                                CoreAudioInterop.AUDCLNT_SHAREMODE_SHARED,
+                                CoreAudioInterop.AUDCLNT_STREAMFLAGS_LOOPBACK | CoreAudioInterop.AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+                                bufferDuration,
+                                0,
+                                mixFormatPtr,
+                                Guid.Empty),
+                            "IAudioClient.Initialize");
+
+                        CoreAudioInterop.CheckHr(audioClient.GetBufferSize(out _), "IAudioClient.GetBufferSize");
+
+                        eventHandle = CoreAudioInterop.CreateEvent();
+                        if (eventHandle == IntPtr.Zero)
+                        {
+                            throw new InvalidOperationException("Failed to create audio capture event handle.");
+                        }
+
+                        CoreAudioInterop.CheckHr(audioClient.SetEventHandle(eventHandle), "IAudioClient.SetEventHandle");
+
+                        Guid iid = typeof(CoreAudioInterop.IAudioCaptureClient).GUID;
+                        CoreAudioInterop.CheckHr(
+                            audioClient.GetService(ref iid, out var captureObj),
+                            "IAudioClient.GetService(IAudioCaptureClient)");
+                        captureClient = (CoreAudioInterop.IAudioCaptureClient)captureObj;
+
+                        capture = new WasapiAudioCapture(enumerator, device, audioClient, captureClient, eventHandle, formatInfo.AudioFormat);
+                        enumerator = null;
+                        device = null;
+                        audioClient = null;
+                        captureClient = null;
+                        eventHandle = IntPtr.Zero;
+                        return true;
+                    }
+                    finally
+                    {
+                        if (mixFormatPtr != IntPtr.Zero)
+                        {
+                            Marshal.FreeCoTaskMem(mixFormatPtr);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    failureReason = ex.Message;
+                    capture?.Dispose();
+                    capture = null;
+                    return false;
+                }
+                finally
+                {
+                    if (eventHandle != IntPtr.Zero)
+                    {
+                        CoreAudioInterop.CloseHandle(eventHandle);
+                    }
+
+                    if (captureClient != null)
+                    {
+                        Marshal.ReleaseComObject(captureClient);
+                    }
+
+                    if (audioClient != null)
+                    {
+                        Marshal.ReleaseComObject(audioClient);
+                    }
+
+                    if (device != null)
+                    {
+                        Marshal.ReleaseComObject(device);
+                    }
+
+                    if (enumerator != null)
+                    {
+                        Marshal.ReleaseComObject(enumerator);
+                    }
+                }
+            }
+
+            public Task CaptureAsync(Action<ReadOnlySpan<byte>, int> handler, CancellationToken token)
+            {
+                if (handler == null)
+                {
+                    throw new ArgumentNullException(nameof(handler));
+                }
+
+                RunCapture(handler, token);
+                return Task.CompletedTask;
+            }
+
+            private void RunCapture(Action<ReadOnlySpan<byte>, int> handler, CancellationToken token)
+            {
+                if (_disposed)
+                {
+                    throw new ObjectDisposedException(nameof(WasapiAudioCapture));
+                }
+
+                CoreAudioInterop.CheckHr(_audioClient.Start(), "IAudioClient.Start");
+
+                try
+                {
+                    while (!token.IsCancellationRequested)
+                    {
+                        uint waitResult = CoreAudioInterop.WaitForSingleObject(_eventHandle, 2000);
+                        if (waitResult == CoreAudioInterop.WAIT_OBJECT_0)
+                        {
+                            DrainPackets(handler, token);
+                        }
+                        else if (waitResult == CoreAudioInterop.WAIT_TIMEOUT)
+                        {
+                            continue;
+                        }
+                        else
+                        {
+                            throw new InvalidOperationException("Waiting for audio samples failed.");
+                        }
+                    }
+                }
+                finally
+                {
+                    _audioClient.Stop();
+                }
+            }
+
+            private void DrainPackets(Action<ReadOnlySpan<byte>, int> handler, CancellationToken token)
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    CoreAudioInterop.CheckHr(_captureClient.GetNextPacketSize(out var framesInNextPacket), "IAudioCaptureClient.GetNextPacketSize");
+                    if (framesInNextPacket == 0)
+                    {
+                        return;
+                    }
+
+                    IntPtr buffer;
+                    CoreAudioInterop.AudioClientBufferFlags flags;
+                    long devicePosition;
+                    long qpcPosition;
+                    CoreAudioInterop.CheckHr(
+                        _captureClient.GetBuffer(out buffer, out var framesAvailable, out flags, out devicePosition, out qpcPosition),
+                        "IAudioCaptureClient.GetBuffer");
+
+                    try
+                    {
+                        int bytes = framesAvailable * _format.BlockAlign;
+                        if (bytes <= 0)
+                        {
+                            continue;
+                        }
+
+                        if ((flags & CoreAudioInterop.AudioClientBufferFlags.Silent) != 0)
+                        {
+                            EnsureBufferCapacity(ref _silenceBuffer, bytes);
+                            Array.Clear(_silenceBuffer!, 0, bytes);
+                            handler(_silenceBuffer.AsSpan(0, bytes), framesAvailable);
+                        }
+                        else
+                        {
+                            EnsureBufferCapacity(ref _transferBuffer, bytes);
+                            Marshal.Copy(buffer, _transferBuffer!, 0, bytes);
+                            handler(_transferBuffer.AsSpan(0, bytes), framesAvailable);
+                        }
+                    }
+                    finally
+                    {
+                        CoreAudioInterop.CheckHr(_captureClient.ReleaseBuffer(framesAvailable), "IAudioCaptureClient.ReleaseBuffer");
+                    }
+                }
+            }
+
+            public void Dispose()
+            {
+                lock (_disposeSync)
+                {
+                    if (_disposed)
+                    {
+                        return;
+                    }
+
+                    _disposed = true;
+                }
+
+                try
+                {
+                    _audioClient.Stop();
+                }
+                catch
+                {
+                }
+
+                if (_eventHandle != IntPtr.Zero)
+                {
+                    CoreAudioInterop.CloseHandle(_eventHandle);
+                }
+
+                Marshal.ReleaseComObject(_captureClient);
+                Marshal.ReleaseComObject(_audioClient);
+                Marshal.ReleaseComObject(_device);
+                Marshal.ReleaseComObject(_enumerator);
+            }
+
+            private static void EnsureBufferCapacity(ref byte[]? buffer, int required)
+            {
+                if (buffer == null || buffer.Length < required)
+                {
+                    buffer = new byte[required];
+                }
+            }
+        }
+
+        private static class CoreAudioInterop
+        {
+            public const uint CLSCTX_ALL = 23;
+            public const uint AUDCLNT_STREAMFLAGS_LOOPBACK = 0x00020000;
+            public const uint AUDCLNT_STREAMFLAGS_EVENTCALLBACK = 0x00040000;
+            public const uint AUDCLNT_SHAREMODE_SHARED = 0;
+            public const uint WAIT_OBJECT_0 = 0x00000000;
+            public const uint WAIT_TIMEOUT = 0x00000102;
+            public const ushort WAVE_FORMAT_PCM = 1;
+            public const ushort WAVE_FORMAT_IEEE_FLOAT = 3;
+            public const ushort WAVE_FORMAT_EXTENSIBLE = 0xFFFE;
+
+            public static readonly Guid KSDATAFORMAT_SUBTYPE_PCM = new Guid("00000001-0000-0010-8000-00AA00389B71");
+            public static readonly Guid KSDATAFORMAT_SUBTYPE_IEEE_FLOAT = new Guid("00000003-0000-0010-8000-00AA00389B71");
+
+            [DllImport("kernel32.dll", SetLastError = true)]
+            public static extern IntPtr CreateEvent(IntPtr lpEventAttributes, bool bManualReset, bool bInitialState, string? lpName);
+
+            [DllImport("kernel32.dll", SetLastError = true)]
+            public static extern bool CloseHandle(IntPtr hObject);
+
+            [DllImport("kernel32.dll", SetLastError = true)]
+            public static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
+
+            public static void CheckHr(int hr, string message)
+            {
+                if (hr < 0)
+                {
+                    throw new InvalidOperationException($"{message} failed with HRESULT 0x{hr:X8}.");
+                }
+            }
+
+            public static WaveFormatInfo ParseWaveFormat(IntPtr pointer)
+            {
+                if (pointer == IntPtr.Zero)
+                {
+                    throw new ArgumentNullException(nameof(pointer));
+                }
+
+                var baseFormat = Marshal.PtrToStructure<WAVEFORMATEX>(pointer);
+                if (baseFormat.wFormatTag == WAVE_FORMAT_EXTENSIBLE && baseFormat.cbSize >= Marshal.SizeOf<WAVEFORMATEXTENSIBLE>() - Marshal.SizeOf<WAVEFORMATEX>())
+                {
+                    var extensible = Marshal.PtrToStructure<WAVEFORMATEXTENSIBLE>(pointer);
+                    bool isFloat = extensible.SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
+                    int validBits = extensible.Samples.wValidBitsPerSample != 0 ? extensible.Samples.wValidBitsPerSample : baseFormat.wBitsPerSample;
+                    var audioFormat = new AudioFormat(
+                        (int)baseFormat.nSamplesPerSec,
+                        baseFormat.nChannels,
+                        baseFormat.wBitsPerSample,
+                        baseFormat.nBlockAlign,
+                        extensible.SubFormat,
+                        isFloat,
+                        validBits,
+                        extensible.dwChannelMask);
+                    return new WaveFormatInfo(baseFormat, audioFormat);
+                }
+                else
+                {
+                    Guid subFormat = baseFormat.wFormatTag switch
+                    {
+                        WAVE_FORMAT_IEEE_FLOAT => KSDATAFORMAT_SUBTYPE_IEEE_FLOAT,
+                        _ => KSDATAFORMAT_SUBTYPE_PCM
+                    };
+
+                    bool isFloat = subFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
+                    var audioFormat = new AudioFormat(
+                        (int)baseFormat.nSamplesPerSec,
+                        baseFormat.nChannels,
+                        baseFormat.wBitsPerSample,
+                        baseFormat.nBlockAlign,
+                        subFormat,
+                        isFloat,
+                        baseFormat.wBitsPerSample,
+                        0);
+                    return new WaveFormatInfo(baseFormat, audioFormat);
+                }
+            }
+
+            [StructLayout(LayoutKind.Sequential)]
+            public struct WAVEFORMATEX
+            {
+                public ushort wFormatTag;
+                public ushort nChannels;
+                public uint nSamplesPerSec;
+                public uint nAvgBytesPerSec;
+                public ushort nBlockAlign;
+                public ushort wBitsPerSample;
+                public ushort cbSize;
+            }
+
+            [StructLayout(LayoutKind.Sequential)]
+            public struct WAVEFORMATEXTENSIBLE
+            {
+                public WAVEFORMATEX Format;
+                public SamplesUnion Samples;
+                public uint dwChannelMask;
+                public Guid SubFormat;
+
+                [StructLayout(LayoutKind.Explicit)]
+                public struct SamplesUnion
+                {
+                    [FieldOffset(0)]
+                    public ushort wValidBitsPerSample;
+                    [FieldOffset(0)]
+                    public ushort wSamplesPerBlock;
+                    [FieldOffset(0)]
+                    public ushort wReserved;
+                }
+            }
+
+            public readonly struct WaveFormatInfo
+            {
+                public WaveFormatInfo(WAVEFORMATEX waveFormat, AudioFormat format)
+                {
+                    WaveFormat = waveFormat;
+                    AudioFormat = format;
+                }
+
+                public WAVEFORMATEX WaveFormat { get; }
+
+                public AudioFormat AudioFormat { get; }
+            }
+
+            [ComImport]
+            [Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+            public sealed class MMDeviceEnumeratorComObject
+            {
+            }
+
+            public enum EDataFlow
+            {
+                Render,
+                Capture,
+                All,
+            }
+
+            public enum ERole
+            {
+                Console,
+                Multimedia,
+                Communications,
+            }
+
+            [Flags]
+            public enum AudioClientBufferFlags
+            {
+                None = 0,
+                DataDiscontinuity = 0x1,
+                Silent = 0x2,
+                TimestampError = 0x4,
+            }
+
+            [ComImport]
+            [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6")]
+            [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+            public interface IMMDeviceEnumerator
+            {
+                [PreserveSig]
+                int EnumAudioEndpoints(EDataFlow dataFlow, uint dwStateMask, out object devices);
+
+                [PreserveSig]
+                int GetDefaultAudioEndpoint(EDataFlow dataFlow, ERole role, out IMMDevice device);
+
+                [PreserveSig]
+                int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string id, out IMMDevice device);
+
+                [PreserveSig]
+                int RegisterEndpointNotificationCallback(IntPtr client);
+
+                [PreserveSig]
+                int UnregisterEndpointNotificationCallback(IntPtr client);
+            }
+
+            [ComImport]
+            [Guid("D666063F-1587-4E43-81F1-B948E807363F")]
+            [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+            public interface IMMDevice
+            {
+                [PreserveSig]
+                int Activate([MarshalAs(UnmanagedType.LPStruct)] Guid iid, uint clsCtx, IntPtr activationParams, [MarshalAs(UnmanagedType.IUnknown)] out object interfacePointer);
+
+                [PreserveSig]
+                int OpenPropertyStore(uint stgmAccess, out IntPtr properties);
+
+                [PreserveSig]
+                int GetId([MarshalAs(UnmanagedType.LPWStr)] out string id);
+
+                [PreserveSig]
+                int GetState(out uint state);
+            }
+
+            [ComImport]
+            [Guid("1CB9AD4C-DBFA-4C32-B178-C2F568A703B2")]
+            [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+            public interface IAudioClient
+            {
+                [PreserveSig]
+                int Initialize(uint shareMode, uint streamFlags, long hnsBufferDuration, long hnsPeriodicity, IntPtr format, Guid audioSessionGuid);
+
+                [PreserveSig]
+                int GetBufferSize(out uint bufferFrameCount);
+
+                [PreserveSig]
+                int GetStreamLatency(out long latency);
+
+                [PreserveSig]
+                int GetCurrentPadding(out uint currentPadding);
+
+                [PreserveSig]
+                int IsFormatSupported(uint shareMode, IntPtr format, IntPtr closestMatch);
+
+                [PreserveSig]
+                int GetMixFormat(out IntPtr deviceFormat);
+
+                [PreserveSig]
+                int GetDevicePeriod(out long defaultDevicePeriod, out long minimumDevicePeriod);
+
+                [PreserveSig]
+                int Start();
+
+                [PreserveSig]
+                int Stop();
+
+                [PreserveSig]
+                int Reset();
+
+                [PreserveSig]
+                int SetEventHandle(IntPtr eventHandle);
+
+                [PreserveSig]
+                int GetService(ref Guid serviceId, [MarshalAs(UnmanagedType.IUnknown)] out object service);
+            }
+
+            [ComImport]
+            [Guid("C8ADBD64-E71E-48A0-A4DE-185C395CD317")]
+            [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+            public interface IAudioCaptureClient
+            {
+                [PreserveSig]
+                int GetBuffer(out IntPtr data, out int numFramesRead, out AudioClientBufferFlags flags, out long devicePosition, out long qpcPosition);
+
+                [PreserveSig]
+                int ReleaseBuffer(int numFramesRead);
+
+                [PreserveSig]
+                int GetNextPacketSize(out int numFramesInNextPacket);
+            }
+        }
+
+        private sealed class MediaFoundationFrameWriter : IMediaWriter
         {
             private static readonly Dictionary<string, FormatDescriptor> FormatMap = new Dictionary<string, FormatDescriptor>(StringComparer.OrdinalIgnoreCase)
             {
-                { "mp4", new FormatDescriptor(MediaFoundationInterop.MFVideoFormat_H264, MediaFoundationInterop.MFTranscodeContainerType_MPEG4) },
-                { "mov", new FormatDescriptor(MediaFoundationInterop.MFVideoFormat_H264, MediaFoundationInterop.MFTranscodeContainerType_MPEG4) },
-                { "mkv", new FormatDescriptor(MediaFoundationInterop.MFVideoFormat_H264, MediaFoundationInterop.MFTranscodeContainerType_MPEG4) },
-                { "flv", new FormatDescriptor(MediaFoundationInterop.MFVideoFormat_H264, MediaFoundationInterop.MFTranscodeContainerType_MPEG4) },
-                { "wmv", new FormatDescriptor(MediaFoundationInterop.MFVideoFormat_WMV3, MediaFoundationInterop.MFTranscodeContainerType_ASF) },
-                { "asf", new FormatDescriptor(MediaFoundationInterop.MFVideoFormat_WMV3, MediaFoundationInterop.MFTranscodeContainerType_ASF) },
-                { "mpg", new FormatDescriptor(MediaFoundationInterop.MFVideoFormat_MPEG2, MediaFoundationInterop.MFTranscodeContainerType_MPEG2) },
-                { "vob", new FormatDescriptor(MediaFoundationInterop.MFVideoFormat_MPEG2, MediaFoundationInterop.MFTranscodeContainerType_MPEG2) },
+                { "mp4", new FormatDescriptor(MediaFoundationInterop.MFVideoFormat_H264, MediaFoundationInterop.MFTranscodeContainerType_MPEG4, MediaFoundationInterop.MFAudioFormat_AAC, 192000) },
+                { "mov", new FormatDescriptor(MediaFoundationInterop.MFVideoFormat_H264, MediaFoundationInterop.MFTranscodeContainerType_MPEG4, MediaFoundationInterop.MFAudioFormat_AAC, 192000) },
+                { "mkv", new FormatDescriptor(MediaFoundationInterop.MFVideoFormat_H264, MediaFoundationInterop.MFTranscodeContainerType_MPEG4, MediaFoundationInterop.MFAudioFormat_AAC, 192000) },
+                { "flv", new FormatDescriptor(MediaFoundationInterop.MFVideoFormat_H264, MediaFoundationInterop.MFTranscodeContainerType_MPEG4, MediaFoundationInterop.MFAudioFormat_AAC, 160000) },
+                { "wmv", new FormatDescriptor(MediaFoundationInterop.MFVideoFormat_WMV3, MediaFoundationInterop.MFTranscodeContainerType_ASF, MediaFoundationInterop.MFAudioFormat_WMAudioV9, 192000) },
+                { "asf", new FormatDescriptor(MediaFoundationInterop.MFVideoFormat_WMV3, MediaFoundationInterop.MFTranscodeContainerType_ASF, MediaFoundationInterop.MFAudioFormat_WMAudioV9, 192000) },
+                { "mpg", new FormatDescriptor(MediaFoundationInterop.MFVideoFormat_MPEG2, MediaFoundationInterop.MFTranscodeContainerType_MPEG2, MediaFoundationInterop.MFAudioFormat_MPEG, 224000) },
+                { "vob", new FormatDescriptor(MediaFoundationInterop.MFVideoFormat_MPEG2, MediaFoundationInterop.MFTranscodeContainerType_MPEG2, MediaFoundationInterop.MFAudioFormat_MPEG, 224000) },
             };
 
             private readonly MediaFoundationInterop.IMFSinkWriter _sinkWriter = null!;
@@ -1373,8 +2034,13 @@ namespace ToNRoundCounter.Application
             private bool _disposed;
             private readonly bool _isHardwareAccelerated;
             private readonly HardwareDeviceContext? _hardwareContext;
+            private readonly bool _supportsAudio;
+            private readonly int? _audioStreamIndex;
+            private readonly AudioFormat? _audioFormat;
+            private long _audioTimestamp;
+            private readonly object _audioSync = new object();
 
-            private MediaFoundationFrameWriter(string extension, string path, int width, int height, int frameRate, FormatDescriptor descriptor)
+            private MediaFoundationFrameWriter(string extension, string path, int width, int height, int frameRate, FormatDescriptor descriptor, AudioFormat? audioFormat)
             {
                 if (width <= 0)
                 {
@@ -1405,6 +2071,8 @@ namespace ToNRoundCounter.Application
                 MediaFoundationInterop.IMFMediaType? inputType = null;
                 MediaFoundationInterop.IMFSinkWriter? writer = null;
                 HardwareDeviceContext? hardwareContext = null;
+                int? audioStreamIndex = null;
+                AudioFormat? configuredAudioFormat = null;
 
                 try
                 {
@@ -1432,6 +2100,17 @@ namespace ToNRoundCounter.Application
 
                     MediaFoundationInterop.CheckHr(writer.SetInputMediaType(_streamIndex, inputType, null), "IMFSinkWriter.SetInputMediaType");
                     MediaFoundationInterop.CheckHr(writer.BeginWriting(), "IMFSinkWriter.BeginWriting");
+
+                    if (audioFormat.HasValue)
+                    {
+                        if (!descriptor.SupportsAudio)
+                        {
+                            throw new NotSupportedException($"The '{extension}' container does not support audio recording.");
+                        }
+
+                        audioStreamIndex = InitializeAudioStream(writer, descriptor, audioFormat.Value);
+                        configuredAudioFormat = audioFormat;
+                    }
 
                     _sinkWriter = writer;
                     writer = null;
@@ -1468,11 +2147,83 @@ namespace ToNRoundCounter.Application
                         MediaFoundationInterop.Release();
                     }
                 }
+
+                _supportsAudio = audioStreamIndex.HasValue;
+                _audioStreamIndex = audioStreamIndex;
+                _audioFormat = configuredAudioFormat;
             }
 
             public bool IsHardwareAccelerated => _isHardwareAccelerated;
 
-            public static MediaFoundationFrameWriter Create(string extension, string path, int width, int height, int frameRate)
+            public bool SupportsAudio => _supportsAudio;
+
+            private int InitializeAudioStream(MediaFoundationInterop.IMFSinkWriter writer, FormatDescriptor descriptor, AudioFormat format)
+            {
+                MediaFoundationInterop.IMFMediaType? outputAudioType = null;
+                MediaFoundationInterop.IMFMediaType? inputAudioType = null;
+
+                try
+                {
+                    outputAudioType = MediaFoundationInterop.CreateMediaType();
+                    MediaFoundationInterop.CheckHr(outputAudioType.SetGUID(MediaFoundationInterop.MF_MT_MAJOR_TYPE, MediaFoundationInterop.MFMediaType_Audio), "Audio MF_MT_MAJOR_TYPE");
+                    MediaFoundationInterop.CheckHr(outputAudioType.SetGUID(MediaFoundationInterop.MF_MT_SUBTYPE, descriptor.AudioSubtype), "Audio MF_MT_SUBTYPE");
+                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_NUM_CHANNELS, format.Channels), "Audio channels");
+                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_SAMPLES_PER_SECOND, format.SampleRate), "Audio sample rate");
+                    int averageBytes = descriptor.AudioBitrate > 0 ? Math.Max(format.BytesPerSecond, descriptor.AudioBitrate / 8) : format.BytesPerSecond;
+                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_AVG_BYTES_PER_SECOND, averageBytes), "Audio average bytes");
+                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BLOCK_ALIGNMENT, format.BlockAlign), "Audio block alignment");
+                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BITS_PER_SAMPLE, format.BitsPerSample), "Audio bits per sample");
+                    if (format.ChannelMask != 0)
+                    {
+                        MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_CHANNEL_MASK, unchecked((int)format.ChannelMask)), "Audio channel mask");
+                    }
+
+                    if (descriptor.AudioSubtype == MediaFoundationInterop.MFAudioFormat_AAC)
+                    {
+                        MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AAC_PAYLOAD_TYPE, 0), "Audio AAC payload");
+                        MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AAC_AUDIO_PROFILE_LEVEL_INDICATION, 0x29), "Audio AAC profile");
+                    }
+
+                    MediaFoundationInterop.CheckHr(writer.AddStream(outputAudioType, out int streamIndex), "IMFSinkWriter.AddStream(Audio)");
+
+                    inputAudioType = MediaFoundationInterop.CreateMediaType();
+                    MediaFoundationInterop.CheckHr(inputAudioType.SetGUID(MediaFoundationInterop.MF_MT_MAJOR_TYPE, MediaFoundationInterop.MFMediaType_Audio), "Audio input MF_MT_MAJOR_TYPE");
+                    var inputSubtype = format.IsFloat ? MediaFoundationInterop.MFAudioFormat_Float : MediaFoundationInterop.MFAudioFormat_PCM;
+                    MediaFoundationInterop.CheckHr(inputAudioType.SetGUID(MediaFoundationInterop.MF_MT_SUBTYPE, inputSubtype), "Audio input MF_MT_SUBTYPE");
+                    MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_NUM_CHANNELS, format.Channels), "Audio input channels");
+                    MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_SAMPLES_PER_SECOND, format.SampleRate), "Audio input sample rate");
+                    MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BLOCK_ALIGNMENT, format.BlockAlign), "Audio input block alignment");
+                    MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_AVG_BYTES_PER_SECOND, format.BytesPerSecond), "Audio input average bytes");
+                    MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BITS_PER_SAMPLE, format.BitsPerSample), "Audio input bits per sample");
+                    if (format.ValidBitsPerSample > 0 && format.ValidBitsPerSample <= format.BitsPerSample)
+                    {
+                        MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_VALID_BITS_PER_SAMPLE, format.ValidBitsPerSample), "Audio valid bits");
+                    }
+                    if (format.ChannelMask != 0)
+                    {
+                        MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_CHANNEL_MASK, unchecked((int)format.ChannelMask)), "Audio input channel mask");
+                    }
+                    MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_PREFER_WAVEFORMATEX, 1), "Audio prefer WAVEFORMATEX");
+
+                    MediaFoundationInterop.CheckHr(writer.SetInputMediaType(streamIndex, inputAudioType, null), "IMFSinkWriter.SetInputMediaType(Audio)");
+
+                    return streamIndex;
+                }
+                finally
+                {
+                    if (outputAudioType != null)
+                    {
+                        Marshal.ReleaseComObject(outputAudioType);
+                    }
+
+                    if (inputAudioType != null)
+                    {
+                        Marshal.ReleaseComObject(inputAudioType);
+                    }
+                }
+            }
+
+            public static MediaFoundationFrameWriter Create(string extension, string path, int width, int height, int frameRate, AudioFormat? audioFormat)
             {
                 if (string.IsNullOrWhiteSpace(extension))
                 {
@@ -1484,7 +2235,12 @@ namespace ToNRoundCounter.Application
                     throw new NotSupportedException($"Recording format '{extension}' is not supported.");
                 }
 
-                return new MediaFoundationFrameWriter(extension, path, width, height, frameRate, descriptor);
+                if (audioFormat.HasValue && !descriptor.SupportsAudio)
+                {
+                    throw new NotSupportedException($"Recording format '{extension}' does not support audio capture.");
+                }
+
+                return new MediaFoundationFrameWriter(extension, path, width, height, frameRate, descriptor, audioFormat);
             }
 
             private static MediaFoundationInterop.IMFSinkWriter CreateSinkWriterWithHardwareFallback(string path, FormatDescriptor descriptor, out bool hardwareEnabled, out HardwareDeviceContext? hardwareContext)
@@ -1553,7 +2309,7 @@ namespace ToNRoundCounter.Application
                 throw new InvalidOperationException("Failed to initialize Media Foundation sink writer.", lastError ?? new InvalidOperationException("Unknown Media Foundation error."));
             }
 
-            public void WriteFrame(Bitmap frame)
+            public void WriteVideoFrame(Bitmap frame)
             {
                 if (frame == null)
                 {
@@ -1645,6 +2401,82 @@ namespace ToNRoundCounter.Application
                         Marshal.ReleaseComObject(buffer);
                     }
                 }
+            }
+
+            public void WriteAudioSample(ReadOnlySpan<byte> data, int frames)
+            {
+                if (!_supportsAudio || !_audioStreamIndex.HasValue || _audioFormat == null)
+                {
+                    throw new InvalidOperationException("Audio stream is not configured for this recording.");
+                }
+
+                if (frames <= 0 || data.Length == 0)
+                {
+                    return;
+                }
+
+                var format = _audioFormat.Value;
+                long duration = format.FramesToDurationHns(frames);
+
+                MediaFoundationInterop.IMFMediaBuffer? buffer = null;
+                MediaFoundationInterop.IMFSample? sample = null;
+                IntPtr pointer = IntPtr.Zero;
+
+                lock (_audioSync)
+                {
+                    try
+                    {
+                        buffer = MediaFoundationInterop.CreateMemoryBuffer(data.Length);
+                        MediaFoundationInterop.CheckHr(buffer.Lock(out pointer, out var maxLength, out _), "Audio IMFMediaBuffer.Lock");
+                        if (data.Length > maxLength)
+                        {
+                            throw new InvalidOperationException("Allocated audio buffer is too small for the captured sample.");
+                        }
+
+                        byte[] temp = ArrayPool<byte>.Shared.Rent(data.Length);
+                        try
+                        {
+                            data.CopyTo(temp);
+                            Marshal.Copy(temp, 0, pointer, data.Length);
+                        }
+                        finally
+                        {
+                            ArrayPool<byte>.Shared.Return(temp);
+                        }
+
+                        MediaFoundationInterop.CheckHr(buffer.SetCurrentLength(data.Length), "Audio IMFMediaBuffer.SetCurrentLength");
+
+                        sample = MediaFoundationInterop.CreateSample();
+                        MediaFoundationInterop.CheckHr(sample.AddBuffer(buffer), "Audio IMFSample.AddBuffer");
+                        MediaFoundationInterop.CheckHr(sample.SetSampleTime(_audioTimestamp), "Audio IMFSample.SetSampleTime");
+                        MediaFoundationInterop.CheckHr(sample.SetSampleDuration(duration), "Audio IMFSample.SetSampleDuration");
+
+                        MediaFoundationInterop.CheckHr(_sinkWriter.WriteSample(_audioStreamIndex.Value, sample), "IMFSinkWriter.WriteSample(Audio)");
+
+                        _audioTimestamp += duration;
+                    }
+                    finally
+                    {
+                        if (pointer != IntPtr.Zero && buffer != null)
+                        {
+                            buffer.Unlock();
+                        }
+
+                        if (sample != null)
+                        {
+                            Marshal.ReleaseComObject(sample);
+                        }
+
+                        if (buffer != null)
+                        {
+                            Marshal.ReleaseComObject(buffer);
+                        }
+                    }
+                }
+            }
+
+            public void CompleteAudio()
+            {
             }
 
             public void Dispose()
@@ -2187,15 +3019,23 @@ namespace ToNRoundCounter.Application
 
             private readonly struct FormatDescriptor
             {
-                public FormatDescriptor(Guid videoSubtype, Guid? containerType)
+                public FormatDescriptor(Guid videoSubtype, Guid? containerType, Guid audioSubtype, int audioBitrate)
                 {
                     VideoSubtype = videoSubtype;
                     ContainerType = containerType;
+                    AudioSubtype = audioSubtype;
+                    AudioBitrate = audioBitrate;
                 }
 
                 public Guid VideoSubtype { get; }
 
                 public Guid? ContainerType { get; }
+
+                public Guid AudioSubtype { get; }
+
+                public int AudioBitrate { get; }
+
+                public bool SupportsAudio => AudioSubtype != Guid.Empty;
             }
 
             private static class MediaFoundationInterop
@@ -2207,6 +3047,7 @@ namespace ToNRoundCounter.Application
                 private static int _refCount;
 
                 public static readonly Guid MFMediaType_Video = new Guid("73646976-0000-0010-8000-00AA00389B71");
+                public static readonly Guid MFMediaType_Audio = new Guid("73647561-0000-0010-8000-00AA00389B71");
                 public static readonly Guid MFVideoFormat_H264 = new Guid("34363248-0000-0010-8000-00AA00389B71");
                 public static readonly Guid MFVideoFormat_WMV3 = new Guid("33564D57-0000-0010-8000-00AA00389B71");
                 public static readonly Guid MFVideoFormat_MPEG2 = new Guid("E06D8026-DB46-11CF-B4D1-00805F6CBBEA");
@@ -2226,6 +3067,21 @@ namespace ToNRoundCounter.Application
                 public static readonly Guid MF_MT_INTERLACE_MODE = new Guid("E2724BB8-E676-4806-B4B2-A8D6EFB44CCD");
                 public static readonly Guid MF_MT_AVG_BITRATE = new Guid("20332624-FB0D-4D9E-BD0D-CBF6786C102E");
                 public static readonly Guid MF_MT_ALL_SAMPLES_INDEPENDENT = new Guid("C9173739-5E56-461C-B713-46FB995CB95F");
+                public static readonly Guid MFAudioFormat_PCM = new Guid("00000001-0000-0010-8000-00AA00389B71");
+                public static readonly Guid MFAudioFormat_Float = new Guid("00000003-0000-0010-8000-00AA00389B71");
+                public static readonly Guid MFAudioFormat_AAC = new Guid("00001610-0000-0010-8000-00AA00389B71");
+                public static readonly Guid MFAudioFormat_WMAudioV9 = new Guid("00000162-0000-0010-8000-00AA00389B71");
+                public static readonly Guid MFAudioFormat_MPEG = new Guid("00000050-0000-0010-8000-00AA00389B71");
+                public static readonly Guid MF_MT_AUDIO_NUM_CHANNELS = new Guid("FBAAEB32-0A2C-43C4-8EF6-1A0AAF0CBFB1");
+                public static readonly Guid MF_MT_AUDIO_SAMPLES_PER_SECOND = new Guid("5FAEE9F9-7B2E-43BD-9E94-05BC827116B7");
+                public static readonly Guid MF_MT_AUDIO_BLOCK_ALIGNMENT = new Guid("322DE230-9E08-450B-A165-1DD51BE1E3A0");
+                public static readonly Guid MF_MT_AUDIO_AVG_BYTES_PER_SECOND = new Guid("1AAB75C8-C9E6-4B9C-AF90-E67CB18F3464");
+                public static readonly Guid MF_MT_AUDIO_BITS_PER_SAMPLE = new Guid("F2DEAF05-FEAF-4F2B-9FC9-C16BCEB54C6D");
+                public static readonly Guid MF_MT_AUDIO_VALID_BITS_PER_SAMPLE = new Guid("8448455D-0058-4615-8F88-2CC812AABADD");
+                public static readonly Guid MF_MT_AUDIO_CHANNEL_MASK = new Guid("55FB5765-644A-4AFD-9164-F478FFE4472E");
+                public static readonly Guid MF_MT_AUDIO_PREFER_WAVEFORMATEX = new Guid("A901AABA-E037-458A-B5C6-DD90BCA80902");
+                public static readonly Guid MF_MT_AAC_PAYLOAD_TYPE = new Guid("BFBABE79-7434-4D1C-9445-D25A5BBEED83");
+                public static readonly Guid MF_MT_AAC_AUDIO_PROFILE_LEVEL_INDICATION = new Guid("7632F0E6-9538-4D61-ACDA-E072CD37434C");
 
                 public static void AddRef()
                 {
@@ -2522,7 +3378,7 @@ namespace ToNRoundCounter.Application
             }
         }
 
-        private sealed class GifFrameWriter : IFrameWriter
+        private sealed class GifFrameWriter : IMediaWriter
         {
             private readonly GifBitmapEncoder _encoder = new GifBitmapEncoder();
             private readonly string _path;
@@ -2557,7 +3413,9 @@ namespace ToNRoundCounter.Application
 
             public bool IsHardwareAccelerated => false;
 
-            public void WriteFrame(Bitmap frame)
+            public bool SupportsAudio => false;
+
+            public void WriteVideoFrame(Bitmap frame)
             {
                 lock (_sync)
                 {
@@ -2575,6 +3433,15 @@ namespace ToNRoundCounter.Application
                     var bitmapFrame = CreateBitmapFrame(clone, _frameDelay);
                     _encoder.Frames.Add(bitmapFrame);
                 }
+            }
+
+            public void WriteAudioSample(ReadOnlySpan<byte> data, int frames)
+            {
+                throw new NotSupportedException("Audio capture is not supported for GIF recordings.");
+            }
+
+            public void CompleteAudio()
+            {
             }
 
             public void Dispose()

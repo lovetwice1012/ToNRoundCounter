@@ -299,6 +299,12 @@ APIキーはwebサイトから取得してください。</value>
   <data name="AutoRecording_FormatHelp" xml:space="preserve">
     <value>AVIは非圧縮で高品質ですがファイルサイズが大きくなります。MP4/MOV/MKV/FLVはH.264圧縮で容量と互換性のバランスを取ります。WMV/ASFはWindows Media Videoを生成します。MPG/VOBはMPEG2のプログラムストリームです。GIFは軽量ですが色数とフレームレートに制限があるアニメーション画像です。</value>
   </data>
+  <data name="AutoRecording_AdminElevationPrompt" xml:space="preserve">
+    <value>VRChatの音声を録音するには管理者権限が必要です。管理者権限でToNRoundCounterを再起動しますか？</value>
+  </data>
+  <data name="AutoRecording_AdminElevationTitle" xml:space="preserve">
+    <value>管理者権限の確認</value>
+  </data>
   <data name="録画開始テラー" xml:space="preserve">
     <value>録画開始テラー</value>
   </data>
