@@ -1,4 +1,5 @@
 using System;
+using System.Data;
 using System.IO;
 using Microsoft.Data.Sqlite;
 using Newtonsoft.Json;
@@ -8,9 +9,12 @@ using ToNRoundCounter.Domain;
 
 namespace ToNRoundCounter.Infrastructure.Sqlite
 {
-    public class SqliteRoundDataRepository : IRoundDataRepository
+    public class SqliteRoundDataRepository : IRoundDataRepository, IDisposable
     {
         private readonly string _connectionString;
+        private readonly SqliteConnection _connection;
+        private readonly object _connectionLock = new();
+        private bool _disposed;
 
         public SqliteRoundDataRepository(string databasePath)
         {
@@ -26,6 +30,20 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
                 ForeignKeys = true
             }.ToString();
 
+            _connection = new SqliteConnection(_connectionString);
+            _connection.Open();
+
+            try
+            {
+                using var pragmaCommand = _connection.CreateCommand();
+                pragmaCommand.CommandText = "PRAGMA journal_mode=WAL;";
+                pragmaCommand.ExecuteNonQuery();
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Failed to enable WAL journal mode for round data database.");
+            }
+
             Initialize();
         }
 
@@ -33,10 +51,7 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
         {
             try
             {
-                using var connection = new SqliteConnection(_connectionString);
-                connection.Open();
-
-                using (var command = connection.CreateCommand())
+                ExecuteInTransaction(command =>
                 {
                     command.CommandText = @"CREATE TABLE IF NOT EXISTS RoundLogs (
                             Id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,10 +65,7 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
                             RoundJson TEXT
                         );";
                     command.ExecuteNonQuery();
-                }
 
-                using (var command = connection.CreateCommand())
-                {
                     command.CommandText = @"CREATE TABLE IF NOT EXISTS RoundResults (
                             Id INTEGER PRIMARY KEY AUTOINCREMENT,
                             RoundType TEXT NOT NULL,
@@ -62,10 +74,7 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
                             CreatedAt TEXT NOT NULL
                         );";
                     command.ExecuteNonQuery();
-                }
 
-                using (var command = connection.CreateCommand())
-                {
                     command.CommandText = @"CREATE TABLE IF NOT EXISTS Stats (
                             Name TEXT PRIMARY KEY,
                             Value TEXT,
@@ -73,7 +82,7 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
                             UpdatedAt TEXT NOT NULL
                         );";
                     command.ExecuteNonQuery();
-                }
+                });
             }
             catch (Exception ex)
             {
@@ -85,39 +94,38 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
         {
             try
             {
-                using var connection = new SqliteConnection(_connectionString);
-                connection.Open();
+                ExecuteInTransaction(command =>
+                {
+                    command.CommandText = @"INSERT INTO RoundLogs (
+                            RoundId,
+                            RoundType,
+                            TerrorKey,
+                            MapName,
+                            IsDeath,
+                            Status,
+                            CreatedAt,
+                            RoundJson)
+                        VALUES (
+                            $roundId,
+                            $roundType,
+                            $terrorKey,
+                            $mapName,
+                            $isDeath,
+                            $status,
+                            $createdAt,
+                            $roundJson);";
 
-                using var command = connection.CreateCommand();
-                command.CommandText = @"INSERT INTO RoundLogs (
-                        RoundId,
-                        RoundType,
-                        TerrorKey,
-                        MapName,
-                        IsDeath,
-                        Status,
-                        CreatedAt,
-                        RoundJson)
-                    VALUES (
-                        $roundId,
-                        $roundType,
-                        $terrorKey,
-                        $mapName,
-                        $isDeath,
-                        $status,
-                        $createdAt,
-                        $roundJson);";
+                    command.Parameters.AddWithValue("$roundId", round.Id.Value.ToString());
+                    command.Parameters.AddWithValue("$roundType", (object?)round.RoundType ?? DBNull.Value);
+                    command.Parameters.AddWithValue("$terrorKey", (object?)round.TerrorKey ?? DBNull.Value);
+                    command.Parameters.AddWithValue("$mapName", (object?)round.MapName ?? DBNull.Value);
+                    command.Parameters.AddWithValue("$isDeath", round.IsDeath ? 1 : 0);
+                    command.Parameters.AddWithValue("$status", logEntry);
+                    command.Parameters.AddWithValue("$createdAt", recordedAt.ToString("o"));
+                    command.Parameters.AddWithValue("$roundJson", JsonConvert.SerializeObject(round));
 
-                command.Parameters.AddWithValue("$roundId", round.Id.Value.ToString());
-                command.Parameters.AddWithValue("$roundType", (object?)round.RoundType ?? DBNull.Value);
-                command.Parameters.AddWithValue("$terrorKey", (object?)round.TerrorKey ?? DBNull.Value);
-                command.Parameters.AddWithValue("$mapName", (object?)round.MapName ?? DBNull.Value);
-                command.Parameters.AddWithValue("$isDeath", round.IsDeath ? 1 : 0);
-                command.Parameters.AddWithValue("$status", logEntry);
-                command.Parameters.AddWithValue("$createdAt", recordedAt.ToString("o"));
-                command.Parameters.AddWithValue("$roundJson", JsonConvert.SerializeObject(round));
-
-                command.ExecuteNonQuery();
+                    command.ExecuteNonQuery();
+                });
             }
             catch (Exception ex)
             {
@@ -129,27 +137,26 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
         {
             try
             {
-                using var connection = new SqliteConnection(_connectionString);
-                connection.Open();
+                ExecuteInTransaction(command =>
+                {
+                    command.CommandText = @"INSERT INTO RoundResults (
+                            RoundType,
+                            TerrorKey,
+                            Survived,
+                            CreatedAt)
+                        VALUES (
+                            $roundType,
+                            $terrorKey,
+                            $survived,
+                            $createdAt);";
 
-                using var command = connection.CreateCommand();
-                command.CommandText = @"INSERT INTO RoundResults (
-                        RoundType,
-                        TerrorKey,
-                        Survived,
-                        CreatedAt)
-                    VALUES (
-                        $roundType,
-                        $terrorKey,
-                        $survived,
-                        $createdAt);";
+                    command.Parameters.AddWithValue("$roundType", roundType);
+                    command.Parameters.AddWithValue("$terrorKey", (object?)terrorType ?? DBNull.Value);
+                    command.Parameters.AddWithValue("$survived", survived ? 1 : 0);
+                    command.Parameters.AddWithValue("$createdAt", recordedAt.ToString("o"));
 
-                command.Parameters.AddWithValue("$roundType", roundType);
-                command.Parameters.AddWithValue("$terrorKey", (object?)terrorType ?? DBNull.Value);
-                command.Parameters.AddWithValue("$survived", survived ? 1 : 0);
-                command.Parameters.AddWithValue("$createdAt", recordedAt.ToString("o"));
-
-                command.ExecuteNonQuery();
+                    command.ExecuteNonQuery();
+                });
             }
             catch (Exception ex)
             {
@@ -161,31 +168,79 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
         {
             try
             {
-                using var connection = new SqliteConnection(_connectionString);
-                connection.Open();
+                ExecuteInTransaction(command =>
+                {
+                    command.CommandText = @"INSERT INTO Stats (Name, Value, ValueType, UpdatedAt)
+                        VALUES ($name, $value, $valueType, $updatedAt)
+                        ON CONFLICT(Name) DO UPDATE SET
+                            Value = excluded.Value,
+                            ValueType = excluded.ValueType,
+                            UpdatedAt = excluded.UpdatedAt;";
 
-                using var command = connection.CreateCommand();
-                command.CommandText = @"INSERT INTO Stats (Name, Value, ValueType, UpdatedAt)
-                    VALUES ($name, $value, $valueType, $updatedAt)
-                    ON CONFLICT(Name) DO UPDATE SET
-                        Value = excluded.Value,
-                        ValueType = excluded.ValueType,
-                        UpdatedAt = excluded.UpdatedAt;";
+                    var serializedValue = value == null ? null : JsonConvert.SerializeObject(value);
+                    var valueType = value?.GetType().FullName ?? string.Empty;
 
-                var serializedValue = value == null ? null : JsonConvert.SerializeObject(value);
-                var valueType = value?.GetType().FullName ?? string.Empty;
+                    command.Parameters.AddWithValue("$name", name);
+                    command.Parameters.AddWithValue("$value", (object?)serializedValue ?? DBNull.Value);
+                    command.Parameters.AddWithValue("$valueType", valueType);
+                    command.Parameters.AddWithValue("$updatedAt", recordedAt.ToString("o"));
 
-                command.Parameters.AddWithValue("$name", name);
-                command.Parameters.AddWithValue("$value", (object?)serializedValue ?? DBNull.Value);
-                command.Parameters.AddWithValue("$valueType", valueType);
-                command.Parameters.AddWithValue("$updatedAt", recordedAt.ToString("o"));
-
-                command.ExecuteNonQuery();
+                    command.ExecuteNonQuery();
+                });
             }
             catch (Exception ex)
             {
                 Log.Warning(ex, "Failed to persist statistic '{StatName}' to SQLite.", name);
             }
+        }
+
+        private void ExecuteInTransaction(Action<SqliteCommand> execute)
+        {
+            ThrowIfDisposed();
+
+            lock (_connectionLock)
+            {
+                using var transaction = _connection.BeginTransaction();
+                using var command = _connection.CreateCommand();
+                command.Transaction = transaction;
+                execute(command);
+                transaction.Commit();
+                command.Parameters.Clear();
+            }
+        }
+
+        private void ThrowIfDisposed()
+        {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(SqliteRoundDataRepository));
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            lock (_connectionLock)
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                if (_connection.State != ConnectionState.Closed)
+                {
+                    _connection.Close();
+                }
+
+                _connection.Dispose();
+                _disposed = true;
+            }
+
+            GC.SuppressFinalize(this);
         }
     }
 }
