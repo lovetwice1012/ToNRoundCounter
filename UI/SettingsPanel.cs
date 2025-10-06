@@ -120,6 +120,7 @@ namespace ToNRoundCounter.UI
         public CheckedListBox AutoRecordingRoundTypesListBox { get; private set; } = null!;
         public TextBox AutoRecordingTerrorNamesTextBox { get; private set; } = null!;
         private Button autoRecordingBrowseOutputButton = null!;
+        private Button roundLogExportButton = null!;
 
         private const string AutoLaunchEnabledColumnName = "AutoLaunchEnabled";
         private const string AutoLaunchPathColumnName = "AutoLaunchPath";
@@ -960,6 +961,30 @@ namespace ToNRoundCounter.UI
             grpOverlay.Height = overlayInnerY + 7;
             thirdColumnY = grpOverlay.Bottom + margin;
 
+            GroupBox roundLogExportGroup = new GroupBox();
+            roundLogExportGroup.Text = LanguageManager.Translate("ラウンドログエクスポート");
+            roundLogExportGroup.Location = new Point(thirdColumnX, thirdColumnY);
+            roundLogExportGroup.Size = new Size(columnWidth, 180);
+            this.Controls.Add(roundLogExportGroup);
+
+            int exportInnerMargin = 10;
+            Label roundLogExportDescriptionLabel = new Label();
+            roundLogExportDescriptionLabel.AutoSize = true;
+            roundLogExportDescriptionLabel.MaximumSize = new Size(columnWidth - exportInnerMargin * 2, 0);
+            roundLogExportDescriptionLabel.Location = new Point(exportInnerMargin, 25);
+            roundLogExportDescriptionLabel.Text = LanguageManager.Translate("tontrack.meにインポート可能な形式でラウンドログをエクスポートします。\nエクスポート後、インポート画面に出力されたjsonファイルをドラッグアンドドロップしてください。\n利用にはToNTracker+拡張機能のインストールが必要です。");
+            roundLogExportGroup.Controls.Add(roundLogExportDescriptionLabel);
+
+            roundLogExportButton = new Button();
+            roundLogExportButton.Text = LanguageManager.Translate("ラウンドログをエクスポート");
+            roundLogExportButton.AutoSize = true;
+            roundLogExportButton.Location = new Point(exportInnerMargin, roundLogExportDescriptionLabel.Bottom + 12);
+            roundLogExportButton.Click += RoundLogExportButton_Click;
+            roundLogExportGroup.Controls.Add(roundLogExportButton);
+
+            roundLogExportGroup.Height = roundLogExportButton.Bottom + 20;
+            thirdColumnY = roundLogExportGroup.Bottom + margin;
+
             currentY = currentY + grpOsc.Bottom + margin;
 
             // 表示設定グループ
@@ -1791,6 +1816,78 @@ namespace ToNRoundCounter.UI
             this.Width = totalWidth;
             this.Height = Math.Max(Math.Max(currentY, rightColumnY), thirdColumnY) + margin;
 
+        }
+
+        private async void RoundLogExportButton_Click(object? sender, EventArgs e)
+        {
+            using SaveFileDialog saveDialog = new SaveFileDialog();
+            saveDialog.Filter = "JSON Files|*.json|All Files|*.*";
+            saveDialog.DefaultExt = "json";
+            saveDialog.FileName = $"tontrack_round_logs_{DateTime.Now:yyyyMMdd_HHmmss}.json";
+            var documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            if (!string.IsNullOrWhiteSpace(documentsPath) && Directory.Exists(documentsPath))
+            {
+                saveDialog.InitialDirectory = documentsPath;
+            }
+
+            if (saveDialog.ShowDialog() != DialogResult.OK)
+            {
+                return;
+            }
+
+            string dataDirectory = ResolveRoundLogDataDirectory();
+
+            RoundLogExportOptions options;
+            try
+            {
+                options = RoundLogExportOptions.FromPaths(dataDirectory, saveDialog.FileName);
+            }
+            catch (Exception ex)
+            {
+                Log.Logger?.Error(ex, "Failed to prepare round log export options.");
+                MessageBox.Show(
+                    string.Format(LanguageManager.Translate("ラウンドログのエクスポート準備に失敗しました: {0}"), ex.Message),
+                    LanguageManager.Translate("エラー"),
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+                return;
+            }
+
+            var exporter = new RoundLogExporter(Log.Logger);
+
+            try
+            {
+                roundLogExportButton.Enabled = false;
+                UseWaitCursor = true;
+
+                int exportedCount = await exporter.ExportAsync(options);
+
+                MessageBox.Show(
+                    string.Format(LanguageManager.Translate("ラウンドログを{0}件エクスポートしました。"), exportedCount),
+                    LanguageManager.Translate("完了"),
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                Log.Logger?.Error(ex, "Failed to export round logs.");
+                MessageBox.Show(
+                    string.Format(LanguageManager.Translate("ラウンドログのエクスポートに失敗しました: {0}"), ex.Message),
+                    LanguageManager.Translate("エラー"),
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+            finally
+            {
+                UseWaitCursor = false;
+                roundLogExportButton.Enabled = true;
+            }
+        }
+
+        private static string ResolveRoundLogDataDirectory()
+        {
+            string baseDirectory = AppDomain.CurrentDomain.BaseDirectory ?? Directory.GetCurrentDirectory();
+            return Path.Combine(baseDirectory, "data");
         }
 
         public void LoadLanguageOptions(string? selectedLanguage)

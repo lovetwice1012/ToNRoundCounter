@@ -21,11 +21,14 @@ namespace ToNRoundCounter.Domain
         public bool IsDeath { get; set; }
         public string? TerrorKey { get; set; }
         public string? MapName { get; set; }
+        public int? RoundNumber { get; set; }
+        public int? MapId { get; set; }
         public List<string> ItemNames { get; set; }
         public int Damage { get; set; }
         public int PageCount { get; set; }
         public int InstancePlayersCount { get; internal set; }
         public int? RoundColor { get; set; }
+        public int[] TerrorIds { get; set; } = new int[3];
 
         /// <summary>
         /// Creates a deep copy of the round so that snapshots can be stored safely.
@@ -38,6 +41,8 @@ namespace ToNRoundCounter.Domain
                 IsDeath = IsDeath,
                 TerrorKey = TerrorKey,
                 MapName = MapName,
+                RoundNumber = RoundNumber,
+                MapId = MapId,
                 Damage = Damage,
                 PageCount = PageCount,
                 InstancePlayersCount = InstancePlayersCount,
@@ -47,6 +52,11 @@ namespace ToNRoundCounter.Domain
             if (ItemNames != null && ItemNames.Count > 0)
             {
                 clone.ItemNames.AddRange(ItemNames);
+            }
+
+            if (TerrorIds != null && TerrorIds.Length > 0)
+            {
+                clone.TerrorIds = (int[])TerrorIds.Clone();
             }
 
             return clone;

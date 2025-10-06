@@ -62,7 +62,10 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
                             IsDeath INTEGER,
                             Status TEXT NOT NULL,
                             CreatedAt TEXT NOT NULL,
-                            RoundJson TEXT
+                            RoundJson TEXT,
+                            RoundInt INTEGER,
+                            MapId INTEGER,
+                            TerrorIds TEXT
                         );";
                     command.ExecuteNonQuery();
 
@@ -83,10 +86,52 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
                         );";
                     command.ExecuteNonQuery();
                 });
+
+                EnsureColumnExists("RoundLogs", "RoundInt", "INTEGER");
+                EnsureColumnExists("RoundLogs", "MapId", "INTEGER");
+                EnsureColumnExists("RoundLogs", "TerrorIds", "TEXT");
             }
             catch (Exception ex)
             {
                 Log.Warning(ex, "Failed to initialize round data database.");
+            }
+        }
+
+        private void EnsureColumnExists(string tableName, string columnName, string columnDefinition)
+        {
+            try
+            {
+                lock (_connectionLock)
+                {
+                    bool exists = false;
+                    using (var pragmaCommand = _connection.CreateCommand())
+                    {
+                        pragmaCommand.CommandText = $"PRAGMA table_info({tableName});";
+                        using var reader = pragmaCommand.ExecuteReader();
+                        while (reader.Read())
+                        {
+                            var existingName = reader.GetString(1);
+                            if (string.Equals(existingName, columnName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                exists = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (exists)
+                    {
+                        return;
+                    }
+
+                    using var alterCommand = _connection.CreateCommand();
+                    alterCommand.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnDefinition};";
+                    alterCommand.ExecuteNonQuery();
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Failed to add column '{Column}' to table '{Table}'.", columnName, tableName);
             }
         }
 
@@ -104,7 +149,10 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
                             IsDeath,
                             Status,
                             CreatedAt,
-                            RoundJson)
+                            RoundJson,
+                            RoundInt,
+                            MapId,
+                            TerrorIds)
                         VALUES (
                             $roundId,
                             $roundType,
@@ -113,7 +161,10 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
                             $isDeath,
                             $status,
                             $createdAt,
-                            $roundJson);";
+                            $roundJson,
+                            $roundInt,
+                            $mapId,
+                            $terrorIds);";
 
                     command.Parameters.AddWithValue("$roundId", round.Id.Value.ToString());
                     command.Parameters.AddWithValue("$roundType", (object?)round.RoundType ?? DBNull.Value);
@@ -123,6 +174,16 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
                     command.Parameters.AddWithValue("$status", logEntry);
                     command.Parameters.AddWithValue("$createdAt", recordedAt.ToString("o"));
                     command.Parameters.AddWithValue("$roundJson", JsonConvert.SerializeObject(round));
+                    command.Parameters.AddWithValue("$roundInt", round.RoundNumber.HasValue ? (object)round.RoundNumber.Value : DBNull.Value);
+                    command.Parameters.AddWithValue("$mapId", round.MapId.HasValue ? (object)round.MapId.Value : DBNull.Value);
+
+                    string? terrorIdsJson = null;
+                    if (round.TerrorIds != null && round.TerrorIds.Length > 0)
+                    {
+                        terrorIdsJson = JsonConvert.SerializeObject(round.TerrorIds);
+                    }
+
+                    command.Parameters.AddWithValue("$terrorIds", (object?)terrorIdsJson ?? DBNull.Value);
 
                     command.ExecuteNonQuery();
                 });
