@@ -1315,21 +1315,34 @@ namespace ToNRoundCounter.UI
                         {
                             CancelAutoSuicide();
                         }
+
                         if (issetAllSelfKillMode)
                         {
                             _ = Task.Run(() => PerformAutoSuicide());
                         }
                         else if (terrorAction == 1)
                         {
-                            _ = Task.Run(() => PerformAutoSuicide());
+                            ScheduleAutoSuicide(TimeSpan.FromSeconds(3), true, allRoundsForcedSchedule);
                         }
                         else if (terrorAction == 2)
                         {
-                            TimeSpan remaining = TimeSpan.FromSeconds(40) - (DateTime.UtcNow - autoSuicideService.RoundStartTime);
-                            if (remaining > TimeSpan.Zero)
+                            var roundStart = autoSuicideService.RoundStartTime;
+                            bool resetStartTime = roundStart == default;
+                            TimeSpan remaining;
+                            if (resetStartTime)
                             {
-                                ScheduleAutoSuicide(remaining, false, allRoundsForcedSchedule);
+                                remaining = TimeSpan.FromSeconds(40);
                             }
+                            else
+                            {
+                                remaining = TimeSpan.FromSeconds(40) - (DateTime.UtcNow - roundStart);
+                                if (remaining < TimeSpan.Zero)
+                                {
+                                    remaining = TimeSpan.Zero;
+                                }
+                            }
+
+                            ScheduleAutoSuicide(remaining, resetStartTime, allRoundsForcedSchedule);
                         }
                     }
                 }

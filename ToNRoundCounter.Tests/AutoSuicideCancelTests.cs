@@ -62,6 +62,28 @@ namespace ToNRoundCounter.Tests
             Assert.False(triggered);
             Assert.False(service.HasScheduled);
         }
+
+        [Fact]
+        public async Task TerrorRuleDelayReschedulesSuicide()
+        {
+            var service = new AutoSuicideService();
+            bool triggered = false;
+
+            service.Schedule(TimeSpan.FromMilliseconds(30), true, () => triggered = true);
+            await Task.Delay(10);
+
+            service.Schedule(TimeSpan.FromMilliseconds(80), false, () => triggered = true);
+
+            await Task.Delay(50);
+
+            Assert.False(triggered);
+            Assert.True(service.HasScheduled);
+
+            await Task.Delay(100);
+
+            Assert.True(triggered);
+            Assert.False(service.HasScheduled);
+        }
     }
 }
 
