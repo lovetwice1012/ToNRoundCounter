@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Serilog.Events;
 using ToNRoundCounter.Application;
@@ -15,10 +15,18 @@ namespace ToNRoundCounter.Infrastructure
     {
         private readonly ConcurrentDictionary<Type, ImmutableArray<Delegate>> _handlers = new();
         private readonly IEventLogger? _logger;
+        private readonly Channel<Action> _dispatchQueue;
 
         public EventBus(IEventLogger? logger = null)
         {
             _logger = logger;
+            _dispatchQueue = Channel.CreateUnbounded<Action>(new UnboundedChannelOptions
+            {
+                AllowSynchronousContinuations = true,
+                SingleReader = true,
+                SingleWriter = false
+            });
+            _ = Task.Run(ProcessQueueAsync);
         }
 
         public void Subscribe<T>(Action<T> handler)
@@ -31,7 +39,7 @@ namespace ToNRoundCounter.Infrastructure
                     var updated = existing.Add(handler);
                     if (_handlers.TryUpdate(messageType, updated, existing))
                     {
-                        _logger?.LogEvent("EventBus", () => $"Subscribed handler '{handler.Method.DeclaringType?.FullName}.{handler.Method.Name}' for message type {messageType.FullName}. Total handlers: {updated.Length}");
+                        LogDebug(() => $"Subscribed handler '{handler.Method.DeclaringType?.FullName}.{handler.Method.Name}' for message type {messageType.FullName}. Total handlers: {updated.Length}");
                         return;
                     }
                 }
@@ -40,7 +48,7 @@ namespace ToNRoundCounter.Infrastructure
                     var initial = ImmutableArray.Create<Delegate>(handler);
                     if (_handlers.TryAdd(messageType, initial))
                     {
-                        _logger?.LogEvent("EventBus", () => $"Subscribed handler '{handler.Method.DeclaringType?.FullName}.{handler.Method.Name}' for message type {messageType.FullName}. Total handlers: {initial.Length}");
+                        LogDebug(() => $"Subscribed handler '{handler.Method.DeclaringType?.FullName}.{handler.Method.Name}' for message type {messageType.FullName}. Total handlers: {initial.Length}");
                         return;
                     }
                 }
@@ -55,7 +63,7 @@ namespace ToNRoundCounter.Infrastructure
                 var updated = existing.Remove(handler);
                 if (updated.Length == existing.Length)
                 {
-                    _logger?.LogEvent("EventBus", () => $"Attempted to unsubscribe handler '{handler.Method.DeclaringType?.FullName}.{handler.Method.Name}' for unregistered message type {messageType.FullName}.");
+                    LogDebug(() => $"Attempted to unsubscribe handler '{handler.Method.DeclaringType?.FullName}.{handler.Method.Name}' for unregistered message type {messageType.FullName}.");
                     return;
                 }
 
@@ -66,12 +74,12 @@ namespace ToNRoundCounter.Infrastructure
                         _handlers.TryRemove(messageType, out _);
                     }
 
-                    _logger?.LogEvent("EventBus", () => $"Unsubscribed handler '{handler.Method.DeclaringType?.FullName}.{handler.Method.Name}' for message type {messageType.FullName}. Remaining handlers: {updated.Length}");
+                    LogDebug(() => $"Unsubscribed handler '{handler.Method.DeclaringType?.FullName}.{handler.Method.Name}' for message type {messageType.FullName}. Remaining handlers: {updated.Length}");
                     return;
                 }
             }
 
-            _logger?.LogEvent("EventBus", () => $"Attempted to unsubscribe handler '{handler.Method.DeclaringType?.FullName}.{handler.Method.Name}' for unregistered message type {messageType.FullName}.");
+            LogDebug(() => $"Attempted to unsubscribe handler '{handler.Method.DeclaringType?.FullName}.{handler.Method.Name}' for unregistered message type {messageType.FullName}.");
         }
 
         public void Publish<T>(T message)
@@ -79,30 +87,62 @@ namespace ToNRoundCounter.Infrastructure
             var messageType = typeof(T);
             if (_handlers.TryGetValue(messageType, out var handlers) && !handlers.IsDefaultOrEmpty)
             {
-                _logger?.LogEvent("EventBus", () => $"Publishing message of type {messageType.FullName} to {handlers.Length} handler(s).");
+                LogDebug(() => $"Publishing message of type {messageType.FullName} to {handlers.Length} handler(s).");
                 foreach (var entry in handlers)
                 {
                     if (entry is Action<T> action)
                     {
-                        var actionCopy = action;
-                        var messageCopy = message;
-                        Task.Run(() =>
-                        {
-                            try
-                            {
-                                actionCopy(messageCopy);
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger?.LogEvent("EventBus", () => $"Handler '{actionCopy.Method.DeclaringType?.FullName}.{actionCopy.Method.Name}' threw: {ex}", LogEventLevel.Error);
-                            }
-                        });
+                        QueueInvocation(action, message);
                     }
                 }
             }
             else
             {
-                _logger?.LogEvent("EventBus", () => $"Publishing message of type {messageType.FullName} with no registered handlers.");
+                LogDebug(() => $"Publishing message of type {messageType.FullName} with no registered handlers.");
+            }
+        }
+
+        private void QueueInvocation<TMessage>(Action<TMessage> handler, TMessage message)
+        {
+            Action workItem = () => InvokeHandler(handler, message);
+            if (!_dispatchQueue.Writer.TryWrite(workItem))
+            {
+                _logger?.LogEvent("EventBus", () => $"Failed to enqueue handler '{handler.Method.DeclaringType?.FullName}.{handler.Method.Name}' for execution.", LogEventLevel.Warning);
+            }
+        }
+
+        private void InvokeHandler<TMessage>(Action<TMessage> handler, TMessage message)
+        {
+            try
+            {
+                handler(message);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogEvent("EventBus", () => $"Handler '{handler.Method.DeclaringType?.FullName}.{handler.Method.Name}' threw: {ex}", LogEventLevel.Error);
+            }
+        }
+
+        private async Task ProcessQueueAsync()
+        {
+            await foreach (var workItem in _dispatchQueue.Reader.ReadAllAsync())
+            {
+                try
+                {
+                    workItem();
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogEvent("EventBus", () => $"Queued handler execution threw: {ex}", LogEventLevel.Error);
+                }
+            }
+        }
+
+        private void LogDebug(Func<string> messageFactory)
+        {
+            if (_logger?.IsEnabled(LogEventLevel.Debug) == true)
+            {
+                _logger.LogEvent("EventBus", messageFactory, LogEventLevel.Debug);
             }
         }
     }

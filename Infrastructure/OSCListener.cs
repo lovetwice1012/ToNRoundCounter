@@ -44,6 +44,7 @@ namespace ToNRoundCounter.Infrastructure
                         listener.Connect();
                         _bus.Publish(new OscConnected(port));
                         _logger.LogEvent("OSC", "OSC listener connected.");
+                        bool isDebugLoggingEnabled = _logger.IsEnabled(Serilog.Events.LogEventLevel.Debug);
                         while (!_cancellation.Token.IsCancellationRequested)
                         {
                             if (listener.State != OscSocketState.Connected)
@@ -55,7 +56,11 @@ namespace ToNRoundCounter.Infrastructure
                             {
                                 _channel.Writer.TryWrite(msg);
                                 messageCount++;
-                                _logger.LogEvent("OSC", $"Queued OSC message #{messageCount}: {FormatOscMessage(msg)}");
+                                if (isDebugLoggingEnabled && ShouldLogSample(messageCount))
+                                {
+                                    var capturedCount = messageCount;
+                                    _logger.LogEvent("OSC", () => $"Queued OSC message #{capturedCount}: {FormatOscMessage(msg)}", Serilog.Events.LogEventLevel.Debug);
+                                }
                             }
                         }
                     }
@@ -80,11 +85,16 @@ namespace ToNRoundCounter.Infrastructure
             try
             {
                 int dispatched = 0;
+                bool isDebugLoggingEnabled = _logger.IsEnabled(Serilog.Events.LogEventLevel.Debug);
                 await foreach (var msg in _channel.Reader.ReadAllAsync(_cancellation.Token))
                 {
                     _bus.Publish(new OscMessageReceived(msg));
                     dispatched++;
-                    _logger.LogEvent("OSC", $"Dispatched OSC message #{dispatched}: {FormatOscMessage(msg)}");
+                    if (isDebugLoggingEnabled && ShouldLogSample(dispatched))
+                    {
+                        var capturedCount = dispatched;
+                        _logger.LogEvent("OSC", () => $"Dispatched OSC message #{capturedCount}: {FormatOscMessage(msg)}", Serilog.Events.LogEventLevel.Debug);
+                    }
                 }
             }
             catch (OperationCanceledException) { }
@@ -120,6 +130,11 @@ namespace ToNRoundCounter.Infrastructure
         {
             var data = message.Select(arg => arg?.ToString() ?? "<null>");
             return $"{message.Address} [{string.Join(", ", data)}]";
+        }
+
+        private static bool ShouldLogSample(int count)
+        {
+            return count <= 5 || count % 50 == 0;
         }
     }
 }

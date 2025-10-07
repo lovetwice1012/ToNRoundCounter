@@ -19,6 +19,7 @@ namespace ToNRoundCounter.UI
         private DateTime velocityInRangeStart = DateTime.MinValue;
         private DateTime idleStartTime = DateTime.MinValue;
         private System.Windows.Forms.Timer velocityTimer; // Windows.Forms.Timer
+        private int oscUiUpdatePending;
         private float receivedVelocityMagnitude = 0;
         private float currentVelocityX = 0;
         private float currentVelocityZ = 0;
@@ -364,12 +365,8 @@ namespace ToNRoundCounter.UI
             }
 
             currentVelocity = Math.Abs(receivedVelocityMagnitude);
-            _dispatcher.Invoke(() =>
-            {
-                hasFacingAngleMeasurement = false;
-                lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2}  Members: {connected}";
-                UpdateVelocityOverlay();
-            });
+            hasFacingAngleMeasurement = false;
+            Interlocked.Exchange(ref oscUiUpdatePending, 1);
         }
 
         private void CopySaveCodeToClipboard(string saveCode)

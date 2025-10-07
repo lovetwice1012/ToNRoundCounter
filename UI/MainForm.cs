@@ -1873,6 +1873,11 @@ namespace ToNRoundCounter.UI
 
         private async void VelocityTimer_Tick(object sender, EventArgs e)
         {
+            if (Interlocked.Exchange(ref oscUiUpdatePending, 0) == 1)
+            {
+                lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2}  Members: {connected}";
+            }
+
             // 無操作判定：VelocityMagnitudeの絶対値が1未満の場合、最低1秒連続してidleと判定する
             double idleSecondsForDisplay = 0d;
             if (stateService.CurrentRound != null && currentVelocity < 1)

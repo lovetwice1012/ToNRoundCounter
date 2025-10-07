@@ -50,9 +50,19 @@ namespace ToNRoundCounter.Infrastructure
             bus.Subscribe<UnhandledExceptionOccurred>(HandleUnhandledException);
         }
 
-        private void LogHostEvent(string action, string detail)
+        private void LogHostEvent(string action, string detail, LogEventLevel level = LogEventLevel.Information)
         {
-            _logger.LogEvent("ModuleHost", $"{action}: {detail}");
+            _logger.LogEvent("ModuleHost", () => $"{action}: {detail}", level);
+        }
+
+        private void LogHostEvent(string action, Func<string> detailFactory, LogEventLevel level = LogEventLevel.Information)
+        {
+            if (detailFactory == null)
+            {
+                throw new ArgumentNullException(nameof(detailFactory));
+            }
+
+            _logger.LogEvent("ModuleHost", () => $"{action}: {detailFactory()}", level);
         }
 
         /// <summary>
@@ -888,7 +898,10 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleOscMessageReceived(OscMessageReceived message)
         {
-            LogHostEvent(nameof(HandleOscMessageReceived), $"OSC message received: {message.Message.Address}.");
+            if (_logger.IsEnabled(LogEventLevel.Debug))
+            {
+                LogHostEvent(nameof(HandleOscMessageReceived), () => $"OSC message received: {message.Message.Address}.", LogEventLevel.Debug);
+            }
             var context = new ModuleOscMessageContext(message.Message, _serviceProvider);
             OscMessageReceived?.Invoke(this, context);
             foreach (var module in _modules)

@@ -171,7 +171,11 @@ namespace ToNRoundCounter.Infrastructure
         {
             await _channel.Writer.WriteAsync(message, token).ConfigureAwait(false);
             var messageNumber = Interlocked.Increment(ref _receivedMessages);
-            _logger.LogEvent("WebSocket", () => $"Received message #{messageNumber}: {Truncate(message, MaxMessagePreviewLength)}");
+            var debugLoggingEnabled = _logger.IsEnabled(Serilog.Events.LogEventLevel.Debug);
+            if (debugLoggingEnabled && ShouldLogSample(messageNumber))
+            {
+                _logger.LogEvent("WebSocket", () => $"Received message #{messageNumber}: {Truncate(message, MaxMessagePreviewLength)}", Serilog.Events.LogEventLevel.Debug);
+            }
         }
 
         private static void EnsureBufferCapacity(ref byte[] buffer, int requiredLength, int preservedLength)
@@ -196,11 +200,16 @@ namespace ToNRoundCounter.Infrastructure
             try
             {
                 long dispatched = 0;
+                var debugLoggingEnabled = _logger.IsEnabled(Serilog.Events.LogEventLevel.Debug);
                 await foreach (var msg in _channel.Reader.ReadAllAsync(token))
                 {
                     _bus.Publish(new WebSocketMessageReceived(msg));
                     dispatched++;
-                    _logger.LogEvent("WebSocket", () => $"Dispatched message #{dispatched} to event bus.");
+                    if (debugLoggingEnabled && ShouldLogSample(dispatched))
+                    {
+                        var capturedCount = dispatched;
+                        _logger.LogEvent("WebSocket", () => $"Dispatched message #{capturedCount} to event bus.", Serilog.Events.LogEventLevel.Debug);
+                    }
                 }
             }
             catch (OperationCanceledException) { }
@@ -208,6 +217,11 @@ namespace ToNRoundCounter.Infrastructure
             {
                 _logger.LogEvent("WebSocket", "ProcessMessagesAsync completed.");
             }
+        }
+
+        private static bool ShouldLogSample(long count)
+        {
+            return count <= 5 || count % 50 == 0;
         }
 
         public async Task StopAsync()
