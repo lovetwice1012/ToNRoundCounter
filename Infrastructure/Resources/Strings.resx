@@ -267,10 +267,10 @@ Please obtain an API key from the website.</value>
     <value>AVI (uncompressed video)</value>
   </data>
   <data name="AutoRecording_FormatOption_MP4" xml:space="preserve">
-    <value>MP4 (H.264 video)</value>
+    <value>MP4 (H.264/HEVC/AV1/VP9)</value>
   </data>
   <data name="AutoRecording_FormatOption_MOV" xml:space="preserve">
-    <value>MOV (H.264 video)</value>
+    <value>MOV (H.264/HEVC/AV1/VP9)</value>
   </data>
   <data name="AutoRecording_FormatOption_WMV" xml:space="preserve">
     <value>WMV (Windows Media Video)</value>
@@ -279,7 +279,7 @@ Please obtain an API key from the website.</value>
     <value>MPEG-2 (Program Stream)</value>
   </data>
   <data name="AutoRecording_FormatOption_MKV" xml:space="preserve">
-    <value>MKV (H.264 video)</value>
+    <value>MKV (H.264/HEVC/AV1/VP9)</value>
   </data>
   <data name="AutoRecording_FormatOption_FLV" xml:space="preserve">
     <value>FLV (H.264 video)</value>
@@ -297,7 +297,79 @@ Please obtain an API key from the website.</value>
     <value>Include overlay windows in recordings</value>
   </data>
   <data name="AutoRecording_FormatHelp" xml:space="preserve">
-    <value>AVI creates lossless recordings but results in large files. MP4, MOV, MKV, and FLV use H.264 to balance size and compatibility. WMV and ASF produce Windows Media Video files. MPG and VOB generate MPEG-2 program streams. GIF produces lightweight animated images with limited colors and frame rate.</value>
+    <value>AVI creates lossless recordings but results in large files. MP4, MOV, and MKV support H.264, HEVC, AV1, and VP9 codecs. FLV uses H.264 to balance size and compatibility. WMV and ASF produce Windows Media Video files. MPG and VOB generate MPEG-2 program streams. GIF produces lightweight animated images with limited colors and frame rate.</value>
+  </data>
+  <data name="AutoRecording_VideoCodecLabel" xml:space="preserve">
+    <value>Video codec</value>
+  </data>
+  <data name="AutoRecording_VideoCodecHelp" xml:space="preserve">
+    <value>Select the compression format used for the video stream.</value>
+  </data>
+  <data name="AutoRecording_VideoBitrateLabel" xml:space="preserve">
+    <value>Video bitrate</value>
+  </data>
+  <data name="AutoRecording_VideoBitrateHelp" xml:space="preserve">
+    <value>Set to 0 to let the encoder determine an appropriate bitrate.</value>
+  </data>
+  <data name="AutoRecording_AudioBitrateLabel" xml:space="preserve">
+    <value>Audio bitrate</value>
+  </data>
+  <data name="AutoRecording_AudioBitrateHelp" xml:space="preserve">
+    <value>Set to 0 to let the encoder determine an appropriate bitrate.</value>
+  </data>
+  <data name="AutoRecording_AudioBitrateNotAvailable" xml:space="preserve">
+    <value>Audio capture is not available for the selected codec.</value>
+  </data>
+  <data name="AutoRecording_BitrateUnit" xml:space="preserve">
+    <value>bps</value>
+  </data>
+  <data name="AutoRecording_HardwareEncoderLabel" xml:space="preserve">
+    <value>Hardware encoder</value>
+  </data>
+  <data name="AutoRecording_HardwareEncoderHelp" xml:space="preserve">
+    <value>Select the GPU and API used for encoding. Auto chooses the best available device.</value>
+  </data>
+  <data name="AutoRecording_HardwareOption_Auto" xml:space="preserve">
+    <value>Auto (best available)</value>
+  </data>
+  <data name="AutoRecording_HardwareOption_Software" xml:space="preserve">
+    <value>Software (CPU)</value>
+  </data>
+  <data name="AutoRecording_HardwareOption_D3D11" xml:space="preserve">
+    <value>Direct3D 11 ({0})</value>
+  </data>
+  <data name="AutoRecording_CodecOption_H264" xml:space="preserve">
+    <value>H.264</value>
+  </data>
+  <data name="AutoRecording_CodecOption_HEVC" xml:space="preserve">
+    <value>H.265 / HEVC</value>
+  </data>
+  <data name="AutoRecording_CodecOption_AV1" xml:space="preserve">
+    <value>AV1</value>
+  </data>
+  <data name="AutoRecording_CodecOption_VP9" xml:space="preserve">
+    <value>VP9</value>
+  </data>
+  <data name="AutoRecording_CodecOption_WMV3" xml:space="preserve">
+    <value>WMV</value>
+  </data>
+  <data name="AutoRecording_CodecOption_MPEG2" xml:space="preserve">
+    <value>MPEG-2</value>
+  </data>
+  <data name="AutoRecording_CodecOption_Raw" xml:space="preserve">
+    <value>Uncompressed (RGB)</value>
+  </data>
+  <data name="AutoRecording_CodecOption_GIF" xml:space="preserve">
+    <value>Animated GIF</value>
+  </data>
+  <data name="AutoRecording_CodecOption_Fallback" xml:space="preserve">
+    <value>Default</value>
+  </data>
+  <data name="AutoRecording_AdminElevationPrompt" xml:space="preserve">
+    <value>Capturing VRChat audio requires administrator privileges. Restart ToNRoundCounter with elevated permissions now?</value>
+  </data>
+  <data name="AutoRecording_AdminElevationTitle" xml:space="preserve">
+    <value>Administrator privileges required</value>
   </data>
   <data name="録画開始テラー" xml:space="preserve">
     <value>Trigger terror names</value>

@@ -267,10 +267,10 @@ APIキーはwebサイトから取得してください。</value>
     <value>AVI（非圧縮動画）</value>
   </data>
   <data name="AutoRecording_FormatOption_MP4" xml:space="preserve">
-    <value>MP4（H.264 動画）</value>
+    <value>MP4（H.264/HEVC/AV1/VP9）</value>
   </data>
   <data name="AutoRecording_FormatOption_MOV" xml:space="preserve">
-    <value>MOV（H.264 動画）</value>
+    <value>MOV（H.264/HEVC/AV1/VP9）</value>
   </data>
   <data name="AutoRecording_FormatOption_WMV" xml:space="preserve">
     <value>WMV（Windows Media 動画）</value>
@@ -279,7 +279,7 @@ APIキーはwebサイトから取得してください。</value>
     <value>MPEG2（プログラムストリーム）</value>
   </data>
   <data name="AutoRecording_FormatOption_MKV" xml:space="preserve">
-    <value>MKV（H.264 動画）</value>
+    <value>MKV（H.264/HEVC/AV1/VP9）</value>
   </data>
   <data name="AutoRecording_FormatOption_FLV" xml:space="preserve">
     <value>FLV（H.264 動画）</value>
@@ -297,7 +297,79 @@ APIキーはwebサイトから取得してください。</value>
     <value>録画にオーバーレイを含める</value>
   </data>
   <data name="AutoRecording_FormatHelp" xml:space="preserve">
-    <value>AVIは非圧縮で高品質ですがファイルサイズが大きくなります。MP4/MOV/MKV/FLVはH.264圧縮で容量と互換性のバランスを取ります。WMV/ASFはWindows Media Videoを生成します。MPG/VOBはMPEG2のプログラムストリームです。GIFは軽量ですが色数とフレームレートに制限があるアニメーション画像です。</value>
+    <value>AVIは非圧縮で高品質ですがファイルサイズが大きくなります。MP4/MOV/MKVではH.264やHEVC、AV1、VP9などのコーデックを選択できます。FLVはH.264圧縮で容量と互換性のバランスを取ります。WMV/ASFはWindows Media Videoを生成します。MPG/VOBはMPEG2のプログラムストリームです。GIFは軽量ですが色数とフレームレートに制限があるアニメーション画像です。</value>
+  </data>
+  <data name="AutoRecording_VideoCodecLabel" xml:space="preserve">
+    <value>ビデオコーデック</value>
+  </data>
+  <data name="AutoRecording_VideoCodecHelp" xml:space="preserve">
+    <value>録画に使用する映像圧縮方式を選択します。</value>
+  </data>
+  <data name="AutoRecording_VideoBitrateLabel" xml:space="preserve">
+    <value>ビデオビットレート</value>
+  </data>
+  <data name="AutoRecording_VideoBitrateHelp" xml:space="preserve">
+    <value>0 にするとエンコーダーが適切な値を自動で選択します。</value>
+  </data>
+  <data name="AutoRecording_AudioBitrateLabel" xml:space="preserve">
+    <value>オーディオビットレート</value>
+  </data>
+  <data name="AutoRecording_AudioBitrateHelp" xml:space="preserve">
+    <value>0 にするとエンコーダーが適切な値を自動で選択します。</value>
+  </data>
+  <data name="AutoRecording_AudioBitrateNotAvailable" xml:space="preserve">
+    <value>選択したコーデックでは音声を録音できません。</value>
+  </data>
+  <data name="AutoRecording_BitrateUnit" xml:space="preserve">
+    <value>bps</value>
+  </data>
+  <data name="AutoRecording_HardwareEncoderLabel" xml:space="preserve">
+    <value>ハードウェアエンコーダー</value>
+  </data>
+  <data name="AutoRecording_HardwareEncoderHelp" xml:space="preserve">
+    <value>使用するGPUとAPIを選択します。自動は利用可能な最適なデバイスを選びます。</value>
+  </data>
+  <data name="AutoRecording_HardwareOption_Auto" xml:space="preserve">
+    <value>自動 (最適)</value>
+  </data>
+  <data name="AutoRecording_HardwareOption_Software" xml:space="preserve">
+    <value>ソフトウェア (CPU)</value>
+  </data>
+  <data name="AutoRecording_HardwareOption_D3D11" xml:space="preserve">
+    <value>Direct3D 11 ({0})</value>
+  </data>
+  <data name="AutoRecording_CodecOption_H264" xml:space="preserve">
+    <value>H.264</value>
+  </data>
+  <data name="AutoRecording_CodecOption_HEVC" xml:space="preserve">
+    <value>H.265 / HEVC</value>
+  </data>
+  <data name="AutoRecording_CodecOption_AV1" xml:space="preserve">
+    <value>AV1</value>
+  </data>
+  <data name="AutoRecording_CodecOption_VP9" xml:space="preserve">
+    <value>VP9</value>
+  </data>
+  <data name="AutoRecording_CodecOption_WMV3" xml:space="preserve">
+    <value>WMV</value>
+  </data>
+  <data name="AutoRecording_CodecOption_MPEG2" xml:space="preserve">
+    <value>MPEG-2</value>
+  </data>
+  <data name="AutoRecording_CodecOption_Raw" xml:space="preserve">
+    <value>非圧縮 (RGB)</value>
+  </data>
+  <data name="AutoRecording_CodecOption_GIF" xml:space="preserve">
+    <value>アニメーションGIF</value>
+  </data>
+  <data name="AutoRecording_CodecOption_Fallback" xml:space="preserve">
+    <value>既定</value>
+  </data>
+  <data name="AutoRecording_AdminElevationPrompt" xml:space="preserve">
+    <value>VRChatの音声を録音するには管理者権限が必要です。管理者権限でToNRoundCounterを再起動しますか？</value>
+  </data>
+  <data name="AutoRecording_AdminElevationTitle" xml:space="preserve">
+    <value>管理者権限の確認</value>
   </data>
   <data name="録画開始テラー" xml:space="preserve">
     <value>録画開始テラー</value>
