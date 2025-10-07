@@ -1164,7 +1164,9 @@ namespace ToNRoundCounter.Application
                         continue;
                     }
 
-                    if (best == null || score > best.Score || (score == best.Score && candidate.ZOrder < best.ZOrder))
+                    if (best is null
+                        || score > best.Value.Score
+                        || (score == best.Value.Score && candidate.ZOrder < best.Value.ZOrder))
                     {
                         best = new WindowCandidate(candidate, score);
                     }
@@ -1834,7 +1836,11 @@ namespace ToNRoundCounter.Application
 
                 try
                 {
-                    enumerator = (CoreAudioInterop.IMMDeviceEnumerator)new CoreAudioInterop.MMDeviceEnumeratorComObject();
+                    enumerator = new CoreAudioInterop.MMDeviceEnumeratorComObject() as CoreAudioInterop.IMMDeviceEnumerator;
+                    if (enumerator is null)
+                    {
+                        throw new InvalidOperationException("Failed to create IMMDeviceEnumerator instance.");
+                    }
                     CoreAudioInterop.CheckHr(
                         enumerator.GetDefaultAudioEndpoint(CoreAudioInterop.EDataFlow.Render, CoreAudioInterop.ERole.Console, out device),
                         "IMMDeviceEnumerator.GetDefaultAudioEndpoint");
@@ -1862,7 +1868,7 @@ namespace ToNRoundCounter.Application
 
                         CoreAudioInterop.CheckHr(audioClient.GetBufferSize(out _), "IAudioClient.GetBufferSize");
 
-                        eventHandle = CoreAudioInterop.CreateEvent();
+                        eventHandle = CoreAudioInterop.CreateEvent(IntPtr.Zero, false, false, null);
                         if (eventHandle == IntPtr.Zero)
                         {
                             throw new InvalidOperationException("Failed to create audio capture event handle.");
@@ -2694,7 +2700,8 @@ namespace ToNRoundCounter.Application
                     {
                         MediaFoundationInterop.CheckHr(attributes.SetUINT32(MediaFoundationInterop.MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, 1), "IMFAttributes.SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS)");
                         hardwareContext = HardwareDeviceContext.Create(selection);
-                        MediaFoundationInterop.CheckHr(attributes.SetUnknown(ref MediaFoundationInterop.MF_SINK_WRITER_D3D_MANAGER, hardwareContext.DeviceManager), "IMFAttributes.SetUnknown(MF_SINK_WRITER_D3D_MANAGER)");
+                        var sinkWriterD3DManager = MediaFoundationInterop.MF_SINK_WRITER_D3D_MANAGER;
+                        MediaFoundationInterop.CheckHr(attributes.SetUnknown(ref sinkWriterD3DManager, hardwareContext.DeviceManager), "IMFAttributes.SetUnknown(MF_SINK_WRITER_D3D_MANAGER)");
                     }
 
                     var writer = MediaFoundationInterop.CreateSinkWriter(path, attributes);
