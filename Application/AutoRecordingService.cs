@@ -972,52 +972,52 @@ namespace ToNRoundCounter.Application
                 {
                     while (!token.IsCancellationRequested)
                     {
-                    if (!IsWindow(_windowHandle))
-                    {
-                        SetStopReason("Target window is no longer available.", true);
-                        break;
-                    }
-
-                    if (!TryGetWindowBounds(_windowHandle, out var rect))
-                    {
-                        SetStopReason("Failed to retrieve window bounds.", true);
-                        break;
-                    }
-
-                    int width = Math.Max(1, rect.Right - rect.Left);
-                    int height = Math.Max(1, rect.Bottom - rect.Top);
-
-                    if (captureFrame == null || captureFrame.Width != width || captureFrame.Height != height)
-                    {
-                        captureFrame?.Dispose();
-                        captureFrame = new Bitmap(width, height, PixelFormat.Format32bppArgb);
-                    }
-
-                    bool captured = TryCaptureWindow(_windowHandle, rect, captureFrame, _includeOverlay);
-
-                    try
-                    {
-                        using (var graphics = Graphics.FromImage(outputFrame))
+                        if (!IsWindow(_windowHandle))
                         {
-                            graphics.Clear(Color.Black);
-                            graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                            graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
-                            graphics.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
-
-                            if (captured)
-                            {
-                                graphics.DrawImage(captureFrame, new Rectangle(System.Drawing.Point.Empty, targetSize),
-                                    new Rectangle(System.Drawing.Point.Empty, captureFrame.Size), GraphicsUnit.Pixel);
-                            }
+                            SetStopReason("Target window is no longer available.", true);
+                            break;
                         }
 
-                        _writer.WriteVideoFrame(outputFrame);
-                    }
-                    catch (Exception ex)
-                    {
-                        SetStopReason($"Capture error: {ex.Message}", true);
-                        break;
-                    }
+                        if (!TryGetWindowBounds(_windowHandle, out var rect))
+                        {
+                            SetStopReason("Failed to retrieve window bounds.", true);
+                            break;
+                        }
+
+                        int width = Math.Max(1, rect.Right - rect.Left);
+                        int height = Math.Max(1, rect.Bottom - rect.Top);
+
+                        if (captureFrame == null || captureFrame.Width != width || captureFrame.Height != height)
+                        {
+                            captureFrame?.Dispose();
+                            captureFrame = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+                        }
+
+                        bool captured = TryCaptureWindow(_windowHandle, rect, captureFrame, _includeOverlay);
+
+                        try
+                        {
+                            using (var graphics = Graphics.FromImage(outputFrame))
+                            {
+                                graphics.Clear(Color.Black);
+                                graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                                graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                                graphics.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
+
+                                if (captured)
+                                {
+                                    graphics.DrawImage(captureFrame, new Rectangle(System.Drawing.Point.Empty, targetSize),
+                                        new Rectangle(System.Drawing.Point.Empty, captureFrame.Size), GraphicsUnit.Pixel);
+                                }
+                            }
+
+                            _writer.WriteVideoFrame(outputFrame);
+                        }
+                        catch (Exception ex)
+                        {
+                            SetStopReason($"Capture error: {ex.Message}", true);
+                            break;
+                        }
 
                         nextFrame += frameInterval;
                         var delay = nextFrame - DateTime.UtcNow;
@@ -1836,7 +1836,7 @@ namespace ToNRoundCounter.Application
 
                 try
                 {
-                    enumerator = new CoreAudioInterop.MMDeviceEnumeratorComObject() as CoreAudioInterop.IMMDeviceEnumerator;
+                    enumerator = (CoreAudioInterop.IMMDeviceEnumerator)Activator.CreateInstance(typeof(CoreAudioInterop.MMDeviceEnumeratorComObject));
                     if (enumerator is null)
                     {
                         throw new InvalidOperationException("Failed to create IMMDeviceEnumerator instance.");
@@ -3366,22 +3366,28 @@ namespace ToNRoundCounter.Application
 
                     _disposed = true;
 
-                    if (_deviceManager != null)
+                    try
                     {
-                        Marshal.ReleaseComObject(_deviceManager);
-                        _deviceManager = null;
-                    }
+                        if (_deviceManager != null)
+                        {
+                            Marshal.ReleaseComObject(_deviceManager);
+                            _deviceManager = null;
+                        }
 
-                    if (_deviceContext != IntPtr.Zero)
-                    {
-                        Marshal.Release(_deviceContext);
-                        _deviceContext = IntPtr.Zero;
-                    }
+                        if (_deviceContext != IntPtr.Zero)
+                        {
+                            Marshal.Release(_deviceContext);
+                            _deviceContext = IntPtr.Zero;
+                        }
 
-                    if (_device != IntPtr.Zero)
+                        if (_device != IntPtr.Zero)
+                        {
+                            Marshal.Release(_device);
+                            _device = IntPtr.Zero;
+                        }
+                    }
+                    catch
                     {
-                        Marshal.Release(_device);
-                        _device = IntPtr.Zero;
                     }
                 }
             }
