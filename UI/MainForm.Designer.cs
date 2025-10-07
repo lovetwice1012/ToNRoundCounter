@@ -7,41 +7,6 @@
         /// </summary>
         private System.ComponentModel.IContainer components = null;
 
-        /// <summary>
-        /// Clean up any resources being used.
-        /// </summary>
-        /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                UnsubscribeEventBus();
-                velocityTimer?.Stop();
-                velocityTimer?.Dispose();
-                oscListener?.Stop();
-                _cancellation.Cancel();
-                overlayVisibilityTimer?.Stop();
-                overlayVisibilityTimer?.Dispose();
-                foreach (var form in overlayForms.Values)
-                {
-                    if (form == null)
-                    {
-                        continue;
-                    }
-
-                    if (!form.IsDisposed)
-                    {
-                        form.Hide();
-                        form.Close();
-                    }
-                    form.Dispose();
-                }
-                overlayForms.Clear();
-                components?.Dispose();
-            }
-            base.Dispose(disposing);
-        }
-
         #region Windows Form Designer generated code
 
         /// <summary>
