@@ -3779,7 +3779,7 @@ namespace ToNRoundCounter.Application
 
                 private const int E_NOINTERFACE = unchecked((int)0x80004002);
 
-                private static readonly Guid IMFSinkWriterGuid = new Guid("ad4c1b00-4bf7-422f-9175-756693d9130d");
+                private static readonly Guid IMFSinkWriterGuid = new Guid("3137F1CD-FE5E-4805-A5D8-FB477448CB3D");
 
                 [DllImport("mfreadwrite.dll", CharSet = CharSet.Unicode)]
                 private static extern int MFCreateSinkWriterFromURL(string? pwszOutputURL, IntPtr pUnkSink, IMFAttributes? pAttributes, out IntPtr ppSinkWriter);
@@ -3855,7 +3855,7 @@ namespace ToNRoundCounter.Application
                 }
 
                 [ComImport]
-                [Guid("ad4c1b00-4bf7-422f-9175-756693d9130d")]
+                [Guid("3137F1CD-FE5E-4805-A5D8-FB477448CB3D")]
                 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
                 public interface IMFSinkWriter
                 {
