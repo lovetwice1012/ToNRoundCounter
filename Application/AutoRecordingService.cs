@@ -3763,12 +3763,21 @@ namespace ToNRoundCounter.Application
 
                 public static void SetAttributeSize(IMFMediaType type, Guid key, int width, int height)
                 {
-                    CheckHr(MFSetAttributeSize(type, key, (uint)width, (uint)height), nameof(MFSetAttributeSize));
+                    uint safeWidth = (uint)Math.Max(0, width);
+                    uint safeHeight = (uint)Math.Max(0, height);
+                    CheckHr(type.SetUINT64(ref key, PackToLong(safeWidth, safeHeight)), "IMFAttributes::SetUINT64 (size)");
                 }
 
                 public static void SetAttributeRatio(IMFMediaType type, Guid key, int numerator, int denominator)
                 {
-                    CheckHr(MFSetAttributeRatio(type, key, (uint)numerator, (uint)denominator), nameof(MFSetAttributeRatio));
+                    uint safeNumerator = (uint)Math.Max(0, numerator);
+                    uint safeDenominator = (uint)Math.Max(0, denominator);
+                    CheckHr(type.SetUINT64(ref key, PackToLong(safeNumerator, safeDenominator)), "IMFAttributes::SetUINT64 (ratio)");
+                }
+
+                private static long PackToLong(uint high, uint low)
+                {
+                    return ((long)high << 32) | low;
                 }
 
                 [DllImport("mfplat.dll")]
@@ -3789,12 +3798,6 @@ namespace ToNRoundCounter.Application
 
                 [DllImport("mfplat.dll")]
                 private static extern int MFCreateAttributes(out IMFAttributes ppMFAttributes, int cInitialSize);
-
-                [DllImport("mfplat.dll")]
-                private static extern int MFSetAttributeSize(IMFAttributes pAttributes, Guid guidKey, uint unWidth, uint unHeight);
-
-                [DllImport("mfplat.dll")]
-                private static extern int MFSetAttributeRatio(IMFAttributes pAttributes, Guid guidKey, uint unNumerator, uint unDenominator);
 
                 [DllImport("mfplat.dll")]
                 private static extern int MFCreateSample(out IMFSample ppIMFSample);
