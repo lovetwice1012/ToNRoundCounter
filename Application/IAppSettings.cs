@@ -73,6 +73,10 @@ namespace ToNRoundCounter.Application
         string AutoRecordingArguments { get; set; }
         string AutoRecordingOutputDirectory { get; set; }
         string AutoRecordingOutputExtension { get; set; }
+        string AutoRecordingVideoCodec { get; set; }
+        int AutoRecordingVideoBitrate { get; set; }
+        int AutoRecordingAudioBitrate { get; set; }
+        string AutoRecordingHardwareEncoder { get; set; }
         bool AutoRecordingIncludeOverlay { get; set; }
         List<string> AutoRecordingRoundTypes { get; set; }
         List<string> AutoRecordingTerrors { get; set; }

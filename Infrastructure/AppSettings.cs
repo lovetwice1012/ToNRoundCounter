@@ -97,6 +97,10 @@ namespace ToNRoundCounter.Infrastructure
         public string AutoRecordingArguments { get; set; } = string.Empty;
         public string AutoRecordingOutputDirectory { get; set; } = "recordings";
         public string AutoRecordingOutputExtension { get; set; } = "avi";
+        public string AutoRecordingVideoCodec { get; set; } = AutoRecordingService.DefaultCodec;
+        public int AutoRecordingVideoBitrate { get; set; }
+        public int AutoRecordingAudioBitrate { get; set; }
+        public string AutoRecordingHardwareEncoder { get; set; } = AutoRecordingService.DefaultHardwareEncoderOptionId;
         public bool AutoRecordingIncludeOverlay { get; set; }
         public List<string> AutoRecordingRoundTypes { get; set; } = new List<string>();
         public List<string> AutoRecordingTerrors { get; set; } = new List<string>();
@@ -386,6 +390,10 @@ namespace ToNRoundCounter.Infrastructure
                 ? "recordings"
                 : AutoRecordingOutputDirectory.Trim();
             AutoRecordingOutputExtension = NormalizeRecordingExtension(AutoRecordingOutputExtension);
+            AutoRecordingVideoCodec = AutoRecordingService.NormalizeCodec(AutoRecordingOutputExtension, AutoRecordingVideoCodec);
+            AutoRecordingVideoBitrate = AutoRecordingService.NormalizeVideoBitrate(AutoRecordingVideoBitrate);
+            AutoRecordingAudioBitrate = AutoRecordingService.NormalizeAudioBitrate(AutoRecordingAudioBitrate);
+            AutoRecordingHardwareEncoder = AutoRecordingService.NormalizeHardwareOption(AutoRecordingHardwareEncoder);
             AutoRecordingRoundTypes = NormalizeStringList(AutoRecordingRoundTypes);
             AutoRecordingTerrors = NormalizeStringList(AutoRecordingTerrors);
         }
@@ -414,9 +422,9 @@ namespace ToNRoundCounter.Infrastructure
                 return 5;
             }
 
-            if (frameRate > 60)
+            if (frameRate > 240)
             {
-                return 60;
+                return 240;
             }
 
             return frameRate;
@@ -565,6 +573,10 @@ namespace ToNRoundCounter.Infrastructure
                 AutoRecordingArguments = AutoRecordingArguments,
                 AutoRecordingOutputDirectory = AutoRecordingOutputDirectory,
                 AutoRecordingOutputExtension = AutoRecordingOutputExtension,
+                AutoRecordingVideoCodec = AutoRecordingVideoCodec,
+                AutoRecordingVideoBitrate = AutoRecordingVideoBitrate,
+                AutoRecordingAudioBitrate = AutoRecordingAudioBitrate,
+                AutoRecordingHardwareEncoder = AutoRecordingHardwareEncoder,
                 AutoRecordingIncludeOverlay = AutoRecordingIncludeOverlay,
                 AutoRecordingRoundTypes = AutoRecordingRoundTypes,
                 AutoRecordingTerrors = AutoRecordingTerrors,
@@ -661,6 +673,10 @@ namespace ToNRoundCounter.Infrastructure
         public string AutoRecordingArguments { get; set; } = string.Empty;
         public string AutoRecordingOutputDirectory { get; set; } = "recordings";
         public string AutoRecordingOutputExtension { get; set; } = "avi";
+        public string AutoRecordingVideoCodec { get; set; } = AutoRecordingService.DefaultCodec;
+        public int AutoRecordingVideoBitrate { get; set; }
+        public int AutoRecordingAudioBitrate { get; set; }
+        public string AutoRecordingHardwareEncoder { get; set; } = AutoRecordingService.DefaultHardwareEncoderOptionId;
         public bool AutoRecordingIncludeOverlay { get; set; }
         public List<string> AutoRecordingRoundTypes { get; set; } = new List<string>();
         public List<string> AutoRecordingTerrors { get; set; } = new List<string>();
