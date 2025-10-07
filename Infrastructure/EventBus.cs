@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Threading.Tasks;
 using Serilog.Events;
 using ToNRoundCounter.Application;
 
@@ -83,14 +84,19 @@ namespace ToNRoundCounter.Infrastructure
                 {
                     if (entry is Action<T> action)
                     {
-                        try
+                        var actionCopy = action;
+                        var messageCopy = message;
+                        Task.Run(() =>
                         {
-                            action(message);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger?.LogEvent("EventBus", () => $"Handler '{action.Method.DeclaringType?.FullName}.{action.Method.Name}' threw: {ex}", LogEventLevel.Error);
-                        }
+                            try
+                            {
+                                actionCopy(messageCopy);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger?.LogEvent("EventBus", () => $"Handler '{actionCopy.Method.DeclaringType?.FullName}.{actionCopy.Method.Name}' threw: {ex}", LogEventLevel.Error);
+                            }
+                        });
                     }
                 }
             }

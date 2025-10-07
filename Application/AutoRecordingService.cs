@@ -3709,8 +3709,38 @@ namespace ToNRoundCounter.Application
 
                 public static IMFSinkWriter CreateSinkWriter(string path, IMFAttributes? attributes)
                 {
-                    CheckHr(MFCreateSinkWriterFromURL(path, IntPtr.Zero, attributes, out var writer), nameof(MFCreateSinkWriterFromURL));
-                    return writer;
+                    IntPtr rawPtr = IntPtr.Zero;
+                    IntPtr sinkWriterPtr = IntPtr.Zero;
+                    try
+                    {
+                        CheckHr(MFCreateSinkWriterFromURL(path, IntPtr.Zero, attributes, out rawPtr), nameof(MFCreateSinkWriterFromURL));
+
+                        Guid iid = IMFSinkWriterGuid;
+                        int hr = Marshal.QueryInterface(rawPtr, ref iid, out sinkWriterPtr);
+                        if (hr < 0)
+                        {
+                            if (hr == E_NOINTERFACE)
+                            {
+                                throw new NotSupportedException("Media Foundation sink writer is not available on this system. Install the Media Feature Pack or enable the Media Foundation optional Windows feature.");
+                            }
+
+                            CheckHr(hr, "Marshal.QueryInterface(IMFSinkWriter)");
+                        }
+
+                        return (IMFSinkWriter)Marshal.GetObjectForIUnknown(sinkWriterPtr);
+                    }
+                    finally
+                    {
+                        if (sinkWriterPtr != IntPtr.Zero)
+                        {
+                            Marshal.Release(sinkWriterPtr);
+                        }
+
+                        if (rawPtr != IntPtr.Zero)
+                        {
+                            Marshal.Release(rawPtr);
+                        }
+                    }
                 }
 
                 public static IMFSample CreateSample()
@@ -3747,8 +3777,12 @@ namespace ToNRoundCounter.Application
                 [DllImport("mfplat.dll")]
                 private static extern int MFShutdown();
 
+                private const int E_NOINTERFACE = unchecked((int)0x80004002);
+
+                private static readonly Guid IMFSinkWriterGuid = new Guid("ad4c1b00-4bf7-422f-9175-756693d9130d");
+
                 [DllImport("mfreadwrite.dll", CharSet = CharSet.Unicode)]
-                private static extern int MFCreateSinkWriterFromURL(string? pwszOutputURL, IntPtr pUnkSink, IMFAttributes? pAttributes, out IMFSinkWriter ppSinkWriter);
+                private static extern int MFCreateSinkWriterFromURL(string? pwszOutputURL, IntPtr pUnkSink, IMFAttributes? pAttributes, out IntPtr ppSinkWriter);
 
                 [DllImport("mfplat.dll")]
                 private static extern int MFCreateMediaType(out IMFMediaType ppMFType);
