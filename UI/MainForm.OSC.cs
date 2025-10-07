@@ -117,13 +117,14 @@ namespace ToNRoundCounter.UI
                 LogUi("Received null OSC message.", LogEventLevel.Warning);
                 return;
             }
-            LogUi($"OSC message received: {message.Address} ({message.Count} argument(s)).", LogEventLevel.Debug);
             if (message.Address == "/avatar/parameters/VelocityMagnitude")
             {
                 try
                 {
-                    receivedVelocityMagnitude = Convert.ToSingle(message.ToArray()[0]);
-                    LogUi($"Velocity magnitude updated to {receivedVelocityMagnitude}.", LogEventLevel.Debug);
+                    if (message.Count > 0)
+                    {
+                        receivedVelocityMagnitude = Convert.ToSingle(message[0]);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -134,8 +135,10 @@ namespace ToNRoundCounter.UI
             {
                 try
                 {
-                    currentVelocityX = Convert.ToSingle(message.ToArray()[0]);
-                    LogUi($"Velocity X updated to {currentVelocityX}.", LogEventLevel.Debug);
+                    if (message.Count > 0)
+                    {
+                        currentVelocityX = Convert.ToSingle(message[0]);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -146,8 +149,10 @@ namespace ToNRoundCounter.UI
             {
                 try
                 {
-                    currentVelocityZ = Convert.ToSingle(message.ToArray()[0]);
-                    LogUi($"Velocity Z updated to {currentVelocityZ}.", LogEventLevel.Debug);
+                    if (message.Count > 0)
+                    {
+                        currentVelocityZ = Convert.ToSingle(message[0]);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -161,7 +166,7 @@ namespace ToNRoundCounter.UI
                 {
                     try
                     {
-                        suicideFlag = Convert.ToBoolean(message.ToArray()[0]);
+                        suicideFlag = Convert.ToBoolean(message[0]);
                     }
                     catch (Exception ex)
                     {
@@ -181,7 +186,7 @@ namespace ToNRoundCounter.UI
                 {
                     try
                     {
-                        autoSuicideOSC = Convert.ToBoolean(message.ToArray()[0]);
+                        autoSuicideOSC = Convert.ToBoolean(message[0]);
                     }
                     catch (Exception ex)
                     {
@@ -204,7 +209,7 @@ namespace ToNRoundCounter.UI
                 {
                     try
                     {
-                        abortFlag = Convert.ToBoolean(message.ToArray()[0]);
+                        abortFlag = Convert.ToBoolean(message[0]);
                     }
                     catch (Exception ex)
                     {
@@ -224,7 +229,7 @@ namespace ToNRoundCounter.UI
                 {
                     try
                     {
-                        delayFlag = Convert.ToBoolean(message.ToArray()[0]);
+                        delayFlag = Convert.ToBoolean(message[0]);
                     }
                     catch (Exception ex)
                     {
@@ -247,7 +252,7 @@ namespace ToNRoundCounter.UI
                 {
                     try
                     {
-                        setAlertValue = Convert.ToSingle(message.ToArray()[0]);
+                        setAlertValue = Convert.ToSingle(message[0]);
                     }
                     catch (Exception ex)
                     {
@@ -267,7 +272,7 @@ namespace ToNRoundCounter.UI
                 {
                     try
                     {
-                        getLatestSaveCode = Convert.ToBoolean(message.ToArray()[0]);
+                        getLatestSaveCode = Convert.ToBoolean(message[0]);
                     }
                     catch (Exception ex)
                     {
@@ -324,9 +329,13 @@ namespace ToNRoundCounter.UI
                 {
                     try
                     {
-                        issetAllSelfKillMode = Convert.ToBoolean(message.ToArray()[0]);
-                        LogUi($"Received 'isAllSelfKill' flag: {issetAllSelfKillMode}.", LogEventLevel.Debug);
-                        UpdateShortcutOverlayState();
+                        var newValue = Convert.ToBoolean(message[0]);
+                        if (issetAllSelfKillMode != newValue)
+                        {
+                            issetAllSelfKillMode = newValue;
+                            LogUi($"Received 'isAllSelfKill' flag: {issetAllSelfKillMode}.", LogEventLevel.Debug);
+                            UpdateShortcutOverlayState();
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -340,8 +349,12 @@ namespace ToNRoundCounter.UI
                 {
                     try
                     {
-                        followAutoSelfKill = Convert.ToBoolean(message.ToArray()[0]);
-                        LogUi($"Received 'followAutoSelfKill' flag: {followAutoSelfKill}.", LogEventLevel.Debug);
+                        var newValue = Convert.ToBoolean(message[0]);
+                        if (followAutoSelfKill != newValue)
+                        {
+                            followAutoSelfKill = newValue;
+                            LogUi($"Received 'followAutoSelfKill' flag: {followAutoSelfKill}.", LogEventLevel.Debug);
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -351,7 +364,6 @@ namespace ToNRoundCounter.UI
             }
 
             currentVelocity = Math.Abs(receivedVelocityMagnitude);
-            _logger.LogEvent("Receive: ", $"{message.Address} => Computed Velocity: {currentVelocity:F2}");
             _dispatcher.Invoke(() =>
             {
                 hasFacingAngleMeasurement = false;

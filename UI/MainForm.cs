@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -66,6 +67,8 @@ namespace ToNRoundCounter.UI
         private readonly StateService stateService;
         private readonly IAppSettings _settings;
         private readonly IEventLogger _logger;
+        private readonly BlockingCollection<(string Message, LogEventLevel Level)> _uiLogQueue;
+        private readonly Task _logWorker;
         private readonly MainPresenter _presenter;
         private readonly IEventBus _eventBus;
         private readonly IInputSender _inputSender;
@@ -152,7 +155,25 @@ namespace ToNRoundCounter.UI
 
         private void LogUi(string message, LogEventLevel level = LogEventLevel.Information)
         {
-            _logger?.LogEvent("MainForm", message, level);
+            if (_logger == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (!_uiLogQueue.IsAddingCompleted)
+                {
+                    _uiLogQueue.Add((message, level));
+                    return;
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // Queue has been marked as complete; fall back to direct logging.
+            }
+
+            _logger.LogEvent("MainForm", message, level);
         }
 
         private void EvaluateAutoRecording(string reason)
@@ -167,6 +188,28 @@ namespace ToNRoundCounter.UI
             }
         }
 
+        private void ProcessUiLogQueue()
+        {
+            try
+            {
+                foreach (var entry in _uiLogQueue.GetConsumingEnumerable())
+                {
+                    try
+                    {
+                        _logger?.LogEvent("MainForm", entry.Message, entry.Level);
+                    }
+                    catch
+                    {
+                        // Ignore logging failures in the background pipeline.
+                    }
+                }
+            }
+            catch
+            {
+                // Swallow exceptions to keep background logging from crashing the app.
+            }
+        }
+
 
         public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, IEnumerable<IOscRepeaterPolicy> oscRepeaterPolicies, AutoRecordingService autoRecordingService, ModuleHost moduleHost)
         {
@@ -178,6 +221,13 @@ namespace ToNRoundCounter.UI
             this.stateService = stateService;
             _settings = settings;
             _logger = logger;
+            _uiLogQueue = new BlockingCollection<(string Message, LogEventLevel Level)>(
+                new ConcurrentQueue<(string Message, LogEventLevel Level)>());
+            _logWorker = Task.Factory.StartNew(
+                () => ProcessUiLogQueue(),
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
             this.autoRecordingService = autoRecordingService;
             LogUi("Constructing main form instance and wiring dependencies.");
             _presenter = presenter;
@@ -1044,6 +1094,34 @@ namespace ToNRoundCounter.UI
             }
             LogUi("Main form closing sequence finished. Base closing invoked.", LogEventLevel.Debug);
             base.OnFormClosing(e);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                try
+                {
+                    _uiLogQueue.CompleteAdding();
+                }
+                catch
+                {
+                    // Ignored
+                }
+
+                try
+                {
+                    _logWorker.Wait(TimeSpan.FromSeconds(2));
+                }
+                catch
+                {
+                    // Ignored
+                }
+
+                _uiLogQueue.Dispose();
+            }
+
+            base.Dispose(disposing);
         }
 
         private void SaveRoundLogsToFile()
