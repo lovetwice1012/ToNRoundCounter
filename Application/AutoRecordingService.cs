@@ -1928,7 +1928,9 @@ namespace ToNRoundCounter.Application
                 }
             }
 
-            public Task CaptureAsync(Action<ReadOnlySpan<byte>, int> handler, CancellationToken token)
+            public delegate void AudioBufferHandler(ReadOnlySpan<byte> buffer, int frames);
+
+            public Task CaptureAsync(AudioBufferHandler handler, CancellationToken token)
             {
                 if (handler == null)
                 {
@@ -1939,7 +1941,7 @@ namespace ToNRoundCounter.Application
                 return Task.CompletedTask;
             }
 
-            private void RunCapture(Action<ReadOnlySpan<byte>, int> handler, CancellationToken token)
+            private void RunCapture(AudioBufferHandler handler, CancellationToken token)
             {
                 if (_disposed)
                 {
@@ -1973,7 +1975,7 @@ namespace ToNRoundCounter.Application
                 }
             }
 
-            private void DrainPackets(Action<ReadOnlySpan<byte>, int> handler, CancellationToken token)
+            private void DrainPackets(AudioBufferHandler handler, CancellationToken token)
             {
                 while (!token.IsCancellationRequested)
                 {
