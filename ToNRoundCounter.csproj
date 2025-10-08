@@ -121,9 +121,16 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.5" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Application\Recording\AudioFormat.cs" />
+    <Compile Include="Application\Recording\CoreAudioInterop.cs" />
     <Compile Include="Application\Recording\GifFrameWriter.cs" />
+    <Compile Include="Application\Recording\HardwareAccelerationApi.cs" />
+    <Compile Include="Application\Recording\HardwareEncoderSelection.cs" />
     <Compile Include="Application\Recording\IMediaWriter.cs" />
+    <Compile Include="Application\Recording\InternalScreenRecorder.cs" />
+    <Compile Include="Application\Recording\MediaFoundationFrameWriter.cs" />
     <Compile Include="Application\Recording\SimpleAviWriter.cs" />
+    <Compile Include="Application\Recording\WasapiAudioCapture.cs" />
     <Compile Include="UI\MainForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -210,6 +217,8 @@
     <Compile Include="Domain\UnboundRoundDefinitions.cs" />
     <Compile Include="Application\AutoSuicideService.cs" />
     <Compile Include="Application\AutoRecordingService.cs" />
+    <Compile Include="Application\AutoRecordingService.Configuration.cs" />
+    <Compile Include="Application\AutoRecordingService.Triggers.cs" />
     <Compile Include="Application\StateService.cs" />
     <Compile Include="Application\IMainView.cs" />
     <Compile Include="Application\MainPresenter.cs" />
