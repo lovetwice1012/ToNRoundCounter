@@ -398,13 +398,33 @@ namespace ToNRoundCounter.Infrastructure
         
         private void BuildOscMessageReceiverCache()
         {
-            // For now, use all modules but with optimized dispatch
-            // Future enhancement: use reflection or attributes to filter modules
-            _oscMessageReceiverModules = new List<LoadedModule>(_modules);
+            var receivers = new List<LoadedModule>();
+            foreach (var module in _modules)
+            {
+                // Check if the module's OnOscMessageReceived method is not a trivial implementation
+                // by checking if it has a non-empty method body
+                var moduleType = module.Instance.GetType();
+                var method = moduleType.GetMethod(
+                    nameof(IModule.OnOscMessageReceived),
+                    BindingFlags.Public | BindingFlags.Instance);
+                
+                if (method != null)
+                {
+                    // Check if method body is not empty (has IL instructions)
+                    var methodBody = method.GetMethodBody();
+                    if (methodBody != null && methodBody.GetILAsByteArray()?.Length > 2)
+                    {
+                        // Method has actual implementation beyond just a return
+                        receivers.Add(module);
+                    }
+                }
+            }
+            
+            _oscMessageReceiverModules = receivers;
             
             LogHostEvent(nameof(BuildOscMessageReceiverCache), 
-                $"OSC message receiver cache initialized with {_oscMessageReceiverModules.Count} module(s).", 
-                LogEventLevel.Debug);
+                $"OSC message receiver cache built: {receivers.Count} of {_modules.Count} module(s) will receive OSC notifications.", 
+                LogEventLevel.Information);
         }
 
         public void NotifyMainWindowCreating(ModuleMainWindowCreationContext context)
