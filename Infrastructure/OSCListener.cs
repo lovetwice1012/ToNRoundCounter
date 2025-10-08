@@ -17,7 +17,7 @@ namespace ToNRoundCounter.Infrastructure
         private readonly IEventBus _bus;
         private readonly ICancellationProvider _cancellation;
         private readonly IEventLogger _logger;
-        private readonly Channel<OscMessage> _channel = Channel.CreateUnbounded<OscMessage>();
+        private readonly Channel<OscMessage> _channel;
         private Task? _processingTask;
 
         public OSCListener(IEventBus bus, ICancellationProvider cancellation, IEventLogger logger)
@@ -25,6 +25,13 @@ namespace ToNRoundCounter.Infrastructure
             _bus = bus;
             _cancellation = cancellation;
             _logger = logger;
+            // 制限付きチャネルに変更し、バックプレッシャーを適用
+            _channel = Channel.CreateBounded<OscMessage>(new BoundedChannelOptions(1000)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true,
+                SingleWriter = false
+            });
         }
 
         public async Task StartAsync(int port)

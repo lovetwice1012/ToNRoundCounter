@@ -17,6 +17,7 @@ using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media.Imaging;
 using ToNRoundCounter.Domain;
+using ToNRoundCounter.Application.Recording;
 
 namespace ToNRoundCounter.Application
 {
@@ -2578,6 +2579,7 @@ namespace ToNRoundCounter.Application
                     MediaFoundationInterop.CheckHr(outputAudioType.SetGUID(MediaFoundationInterop.MF_MT_SUBTYPE, descriptor.AudioSubtype), "Audio MF_MT_SUBTYPE");
                     MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_NUM_CHANNELS, format.Channels), "Audio channels");
                     MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_SAMPLES_PER_SECOND, format.SampleRate), "Audio sample rate");
+
                     bool outputIsPcm = descriptor.AudioSubtype == MediaFoundationInterop.MFAudioFormat_PCM || descriptor.AudioSubtype == MediaFoundationInterop.MFAudioFormat_Float;
                     int resolvedAudioBitrate = ResolveAudioBitrate(requestedAudioBitrate, descriptor.DefaultAudioBitrate, format);
                     int averageBytes;
@@ -2610,24 +2612,54 @@ namespace ToNRoundCounter.Application
 
                     MediaFoundationInterop.CheckHr(writer.AddStream(outputAudioType, out int streamIndex), "IMFSinkWriter.AddStream(Audio)");
 
+
+                    // Create input audio type - CORRECTED VERSION
                     inputAudioType = MediaFoundationInterop.CreateMediaType();
                     MediaFoundationInterop.CheckHr(inputAudioType.SetGUID(MediaFoundationInterop.MF_MT_MAJOR_TYPE, MediaFoundationInterop.MFMediaType_Audio), "Audio input MF_MT_MAJOR_TYPE");
-                    var inputSubtype = format.IsFloat ? MediaFoundationInterop.MFAudioFormat_Float : MediaFoundationInterop.MFAudioFormat_PCM;
+
+                    // Use the actual format from WASAPI capture
+                    Guid inputSubtype = format.IsFloat ? MediaFoundationInterop.MFAudioFormat_Float : MediaFoundationInterop.MFAudioFormat_PCM;
                     MediaFoundationInterop.CheckHr(inputAudioType.SetGUID(MediaFoundationInterop.MF_MT_SUBTYPE, inputSubtype), "Audio input MF_MT_SUBTYPE");
+
+                    // Set essential audio format properties
                     MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_NUM_CHANNELS, format.Channels), "Audio input channels");
                     MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_SAMPLES_PER_SECOND, format.SampleRate), "Audio input sample rate");
                     MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BLOCK_ALIGNMENT, format.BlockAlign), "Audio input block alignment");
                     MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_AVG_BYTES_PER_SECOND, format.BytesPerSecond), "Audio input average bytes");
                     MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BITS_PER_SAMPLE, format.BitsPerSample), "Audio input bits per sample");
-                    if (format.ValidBitsPerSample > 0 && format.ValidBitsPerSample <= format.BitsPerSample)
+
+                    // Set valid bits per sample (important for non-float formats)
+                    if (!format.IsFloat)
                     {
-                        MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_VALID_BITS_PER_SAMPLE, format.ValidBitsPerSample), "Audio valid bits");
+                        int validBits = format.ValidBitsPerSample > 0 && format.ValidBitsPerSample <= format.BitsPerSample
+                            ? format.ValidBitsPerSample
+                            : format.BitsPerSample;
+                        MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_VALID_BITS_PER_SAMPLE, validBits), "Audio valid bits");
                     }
-                    if (format.ChannelMask != 0)
+
+                    // Set channel mask with proper defaults
+                    uint channelMask = format.ChannelMask;
+                    if (channelMask == 0)
                     {
-                        MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_CHANNEL_MASK, unchecked((int)format.ChannelMask)), "Audio input channel mask");
+                        // Provide default channel masks for common configurations
+                        channelMask = format.Channels switch
+                        {
+                            1 => 0x4,      // SPEAKER_FRONT_CENTER
+                            2 => 0x3,      // SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT
+                            4 => 0x33,     // Quad
+                            6 => 0x3F,     // 5.1
+                            8 => 0x63F,    // 7.1
+                            _ => 0
+                        };
                     }
-                    MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_PREFER_WAVEFORMATEX, 1), "Audio prefer WAVEFORMATEX");
+
+                    if (channelMask != 0)
+                    {
+                        MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_CHANNEL_MASK, unchecked((int)channelMask)), "Audio input channel mask");
+                    }
+
+                    // Set this flag for better encoder compatibility
+                    MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_ALL_SAMPLES_INDEPENDENT, 1), "Audio all samples independent");
 
                     MediaFoundationInterop.CheckHr(writer.SetInputMediaType(streamIndex, inputAudioType, null), "IMFSinkWriter.SetInputMediaType(Audio)");
 
@@ -3478,7 +3510,7 @@ namespace ToNRoundCounter.Application
                 [PreserveSig] int CreateSwapChain(IntPtr device, IntPtr desc, out IntPtr swapChain);
                 [PreserveSig] int CreateSoftwareAdapter(IntPtr module, out IntPtr adapter);
                 [PreserveSig] int EnumAdapters1(uint adapter, out IDXGIAdapter1 ppAdapter);
-                [PreserveSig] bool IsCurrent();
+                [PreserveSig] int IsCurrent();
             }
 
             [ComImport]

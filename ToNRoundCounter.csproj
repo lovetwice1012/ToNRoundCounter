@@ -121,6 +121,9 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.5" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Application\Recording\GifFrameWriter.cs" />
+    <Compile Include="Application\Recording\IMediaWriter.cs" />
+    <Compile Include="Application\Recording\SimpleAviWriter.cs" />
     <Compile Include="UI\MainForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -290,5 +293,6 @@
       <Install>false</Install>
     </BootstrapperPackage>
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
