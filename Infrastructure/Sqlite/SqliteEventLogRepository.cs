@@ -19,11 +19,15 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
                 Directory.CreateDirectory(directory);
             }
 
-            _connectionString = new SqliteConnectionStringBuilder
+            var connectionStringBuilder = new SqliteConnectionStringBuilder
             {
                 DataSource = databasePath,
-                ForeignKeys = true
-            }.ToString();
+                ForeignKeys = true,
+                Cache = SqliteCacheMode.Shared,
+                DefaultTimeout = 5
+            };
+
+            _connectionString = connectionStringBuilder.ToString();
 
             Initialize();
         }
@@ -34,6 +38,18 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
             {
                 using var connection = new SqliteConnection(_connectionString);
                 connection.Open();
+                using (var journalCommand = connection.CreateCommand())
+                {
+                    journalCommand.CommandText = "PRAGMA journal_mode=WAL;";
+                    journalCommand.ExecuteNonQuery();
+                }
+
+                using (var busyTimeoutCommand = connection.CreateCommand())
+                {
+                    busyTimeoutCommand.CommandText = "PRAGMA busy_timeout=5000;";
+                    busyTimeoutCommand.ExecuteNonQuery();
+                }
+
                 using var command = connection.CreateCommand();
                 command.CommandText = @"CREATE TABLE IF NOT EXISTS EventLogs (
                         Id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,6 +72,12 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
             {
                 using var connection = new SqliteConnection(_connectionString);
                 connection.Open();
+
+                using (var busyTimeoutCommand = connection.CreateCommand())
+                {
+                    busyTimeoutCommand.CommandText = "PRAGMA busy_timeout=5000;";
+                    busyTimeoutCommand.ExecuteNonQuery();
+                }
 
                 using var command = connection.CreateCommand();
                 command.CommandText = @"INSERT INTO EventLogs (EventType, Message, Level, CreatedAt)
