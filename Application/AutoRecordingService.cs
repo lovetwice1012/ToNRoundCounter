@@ -159,8 +159,8 @@ namespace ToNRoundCounter.Application
             _currentTriggerDescription = triggerDetails;
             recorder.Completion.ContinueWith(_ => HandleRecorderCompleted(recorder), TaskScheduler.Default);
             string encoderMode = recorder.IsHardwareAccelerated ? "hardware" : "software";
-            string videoBitrateDisplay = videoBitrate > 0 ? $"{videoBitrate / 1000} kbps" : "auto";
-            string audioBitrateDisplay = captureAudio ? (audioBitrate > 0 ? $"{audioBitrate / 1000} kbps" : "auto") : "disabled";
+            string videoBitrateDisplay = videoBitrate > 0 ? $"{videoBitrate / 1000.0:F1} kbps" : "auto";
+            string audioBitrateDisplay = captureAudio ? (audioBitrate > 0 ? $"{audioBitrate / 1000.0:F1} kbps" : "auto") : "disabled";
             string hardwareDescription = GetHardwareOptionDisplay(hardwareOptionId);
             _logger.LogEvent(
                 "AutoRecording",
