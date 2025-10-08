@@ -2575,14 +2575,28 @@ namespace ToNRoundCounter.Application
                     MediaFoundationInterop.CheckHr(outputAudioType.SetGUID(MediaFoundationInterop.MF_MT_SUBTYPE, descriptor.AudioSubtype), "Audio MF_MT_SUBTYPE");
                     MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_NUM_CHANNELS, format.Channels), "Audio channels");
                     MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_SAMPLES_PER_SECOND, format.SampleRate), "Audio sample rate");
+                    bool outputIsPcm = descriptor.AudioSubtype == MediaFoundationInterop.MFAudioFormat_PCM || descriptor.AudioSubtype == MediaFoundationInterop.MFAudioFormat_Float;
                     int resolvedAudioBitrate = ResolveAudioBitrate(requestedAudioBitrate, descriptor.DefaultAudioBitrate, format);
-                    int averageBytes = resolvedAudioBitrate > 0 ? Math.Max(format.BytesPerSecond, resolvedAudioBitrate / 8) : format.BytesPerSecond;
-                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_AVG_BYTES_PER_SECOND, averageBytes), "Audio average bytes");
-                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BLOCK_ALIGNMENT, format.BlockAlign), "Audio block alignment");
-                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BITS_PER_SAMPLE, format.BitsPerSample), "Audio bits per sample");
-                    if (format.ChannelMask != 0)
+                    int averageBytes;
+                    if (resolvedAudioBitrate > 0)
                     {
-                        MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_CHANNEL_MASK, unchecked((int)format.ChannelMask)), "Audio channel mask");
+                        int requestedAverageBytes = Math.Max(1, resolvedAudioBitrate / 8);
+                        averageBytes = outputIsPcm ? Math.Max(format.BytesPerSecond, requestedAverageBytes) : requestedAverageBytes;
+                    }
+                    else
+                    {
+                        averageBytes = format.BytesPerSecond;
+                    }
+
+                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_AVG_BYTES_PER_SECOND, averageBytes), "Audio average bytes");
+                    if (outputIsPcm)
+                    {
+                        MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BLOCK_ALIGNMENT, format.BlockAlign), "Audio block alignment");
+                        MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BITS_PER_SAMPLE, format.BitsPerSample), "Audio bits per sample");
+                        if (format.ChannelMask != 0)
+                        {
+                            MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_CHANNEL_MASK, unchecked((int)format.ChannelMask)), "Audio channel mask");
+                        }
                     }
 
                     if (descriptor.AudioSubtype == MediaFoundationInterop.MFAudioFormat_AAC)
