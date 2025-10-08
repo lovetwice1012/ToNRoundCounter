@@ -2876,10 +2876,6 @@ namespace ToNRoundCounter.UI
                         throw new IOException($"JSファイルのコピーに失敗しました: {sourceJs} -> {destJs}", ex);
                     }
                 }
-                else
-                {
-                    return;
-                }
 
                 // プロセスの再起動
                 try
