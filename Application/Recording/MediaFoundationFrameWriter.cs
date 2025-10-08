@@ -200,6 +200,7 @@ namespace ToNRoundCounter.Application.Recording
                 MediaFoundationInterop.CheckHr(inputType.SetUINT32(MediaFoundationInterop.MF_MT_DEFAULT_STRIDE, _targetStride), "Input MF_MT_DEFAULT_STRIDE");
                 MediaFoundationInterop.CheckHr(inputType.SetUINT32(MediaFoundationInterop.MF_MT_FIXED_SIZE_SAMPLES, 1), "Input MF_MT_FIXED_SIZE_SAMPLES");
                 MediaFoundationInterop.CheckHr(inputType.SetUINT32(MediaFoundationInterop.MF_MT_SAMPLE_SIZE, _targetStride * _height), "Input MF_MT_SAMPLE_SIZE");
+                MediaFoundationInterop.CheckHr(inputType.SetUINT32(MediaFoundationInterop.MF_MT_ALL_SAMPLES_INDEPENDENT, 1), "Input MF_MT_ALL_SAMPLES_INDEPENDENT");
 
                 MediaFoundationInterop.CheckHr(writer.SetInputMediaType(_streamIndex, inputType, null), "IMFSinkWriter.SetInputMediaType");
                 MediaFoundationInterop.CheckHr(writer.BeginWriting(), "IMFSinkWriter.BeginWriting");
