@@ -2503,6 +2503,9 @@ namespace ToNRoundCounter.Application
                     MediaFoundationInterop.SetAttributeRatio(inputType, MediaFoundationInterop.MF_MT_FRAME_RATE, frameRate, 1);
                     MediaFoundationInterop.SetAttributeRatio(inputType, MediaFoundationInterop.MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
                     MediaFoundationInterop.CheckHr(inputType.SetUINT32(MediaFoundationInterop.MF_MT_INTERLACE_MODE, (int)MediaFoundationInterop.MFVideoInterlaceMode.Progressive), "Input MF_MT_INTERLACE_MODE");
+                    MediaFoundationInterop.CheckHr(inputType.SetUINT32(MediaFoundationInterop.MF_MT_DEFAULT_STRIDE, _targetStride), "Input MF_MT_DEFAULT_STRIDE");
+                    MediaFoundationInterop.CheckHr(inputType.SetUINT32(MediaFoundationInterop.MF_MT_FIXED_SIZE_SAMPLES, 1), "Input MF_MT_FIXED_SIZE_SAMPLES");
+                    MediaFoundationInterop.CheckHr(inputType.SetUINT32(MediaFoundationInterop.MF_MT_SAMPLE_SIZE, _targetStride * _height), "Input MF_MT_SAMPLE_SIZE");
 
                     MediaFoundationInterop.CheckHr(writer.SetInputMediaType(_streamIndex, inputType, null), "IMFSinkWriter.SetInputMediaType");
                     MediaFoundationInterop.CheckHr(writer.BeginWriting(), "IMFSinkWriter.BeginWriting");
@@ -3646,6 +3649,9 @@ namespace ToNRoundCounter.Application
                 public static readonly Guid MF_MT_FRAME_RATE = new Guid("C459A2E8-3D2C-4E44-B132-FEE5156C7BB0");
                 public static readonly Guid MF_MT_PIXEL_ASPECT_RATIO = new Guid("C6376A1E-8D0A-4027-BE45-6D9A0AD39BB6");
                 public static readonly Guid MF_MT_INTERLACE_MODE = new Guid("E2724BB8-E676-4806-B4B2-A8D6EFB44CCD");
+                public static readonly Guid MF_MT_DEFAULT_STRIDE = new Guid("644B4E48-1E02-4516-B0EB-C01CA9D4AA75");
+                public static readonly Guid MF_MT_FIXED_SIZE_SAMPLES = new Guid("B8EBEFAF-B718-4E04-B0A9-116775E3321B");
+                public static readonly Guid MF_MT_SAMPLE_SIZE = new Guid("DAD3AB78-1990-408B-BCE2-EB41B83B0ED5");
                 public static readonly Guid MF_MT_AVG_BITRATE = new Guid("20332624-FB0D-4D9E-BD0D-CBF6786C102E");
                 public static readonly Guid MF_MT_ALL_SAMPLES_INDEPENDENT = new Guid("C9173739-5E56-461C-B713-46FB995CB95F");
                 public static readonly Guid MFAudioFormat_PCM = new Guid("00000001-0000-0010-8000-00AA00389B71");
