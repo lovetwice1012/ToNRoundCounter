@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog.Events;
 using System.Windows.Forms;
@@ -21,6 +22,7 @@ namespace ToNRoundCounter.Infrastructure
         private IServiceProvider? _serviceProvider;
         private readonly Dictionary<string, AuxiliaryWindowDescriptor> _auxiliaryWindows = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, List<Form>> _activeAuxiliaryWindows = new(StringComparer.OrdinalIgnoreCase);
+        private List<LoadedModule>? _oscMessageReceiverModules;
 
         public ModuleHost(IEventLogger logger, IEventBus bus, SafeModeManager? safeModeManager = null)
         {
@@ -389,6 +391,20 @@ namespace ToNRoundCounter.Infrastructure
                     NotifyPeers(module, context, static (m, ctx) => m.OnPeerModuleAfterServiceProviderBuild(ctx), nameof(IModule.OnPeerModuleAfterServiceProviderBuild));
                 }
             }
+            
+            // Build cache of modules that need OSC message notifications
+            BuildOscMessageReceiverCache();
+        }
+        
+        private void BuildOscMessageReceiverCache()
+        {
+            // For now, use all modules but with optimized dispatch
+            // Future enhancement: use reflection or attributes to filter modules
+            _oscMessageReceiverModules = new List<LoadedModule>(_modules);
+            
+            LogHostEvent(nameof(BuildOscMessageReceiverCache), 
+                $"OSC message receiver cache initialized with {_oscMessageReceiverModules.Count} module(s).", 
+                LogEventLevel.Debug);
         }
 
         public void NotifyMainWindowCreating(ModuleMainWindowCreationContext context)
@@ -902,11 +918,25 @@ namespace ToNRoundCounter.Infrastructure
             {
                 LogHostEvent(nameof(HandleOscMessageReceived), () => $"OSC message received: {message.Message.Address}.", LogEventLevel.Debug);
             }
+            
+            // Early exit if no handlers and no modules interested in OSC messages
+            var hasEventHandlers = OscMessageReceived != null;
+            var modulesToNotify = _oscMessageReceiverModules ?? _modules;
+            
+            if (!hasEventHandlers && (modulesToNotify == null || modulesToNotify.Count == 0))
+            {
+                return;
+            }
+            
             var context = new ModuleOscMessageContext(message.Message, _serviceProvider);
             OscMessageReceived?.Invoke(this, context);
-            foreach (var module in _modules)
+            
+            if (modulesToNotify != null && modulesToNotify.Count > 0)
             {
-                InvokeModuleAction(module, context, static (m, ctx) => m.OnOscMessageReceived(ctx), nameof(IModule.OnOscMessageReceived));
+                foreach (var module in modulesToNotify)
+                {
+                    InvokeModuleAction(module, context, static (m, ctx) => m.OnOscMessageReceived(ctx), nameof(IModule.OnOscMessageReceived));
+                }
             }
         }
 
