@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -16,6 +17,7 @@ namespace ToNRoundCounter.Infrastructure
         private readonly ConcurrentDictionary<Type, ImmutableArray<Delegate>> _handlers = new();
         private readonly IEventLogger? _logger;
         private readonly Channel<Action> _dispatchQueue;
+        private static readonly HashSet<Type> _suppressDebugLoggingTypes = new();
 
         public EventBus(IEventLogger? logger = null)
         {
@@ -27,6 +29,9 @@ namespace ToNRoundCounter.Infrastructure
                 SingleWriter = false
             });
             _ = Task.Run(ProcessQueueAsync);
+            
+            // Suppress debug logging for high-frequency event types
+            _suppressDebugLoggingTypes.Add(typeof(OscMessageReceived));
         }
 
         public void Subscribe<T>(Action<T> handler)
@@ -87,7 +92,11 @@ namespace ToNRoundCounter.Infrastructure
             var messageType = typeof(T);
             if (_handlers.TryGetValue(messageType, out var handlers) && !handlers.IsDefaultOrEmpty)
             {
-                LogDebug(() => $"Publishing message of type {messageType.FullName} to {handlers.Length} handler(s).");
+                if (!_suppressDebugLoggingTypes.Contains(messageType))
+                {
+                    LogDebug(() => $"Publishing message of type {messageType.FullName} to {handlers.Length} handler(s).");
+                }
+                
                 foreach (var entry in handlers)
                 {
                     if (entry is Action<T> action)
@@ -98,7 +107,10 @@ namespace ToNRoundCounter.Infrastructure
             }
             else
             {
-                LogDebug(() => $"Publishing message of type {messageType.FullName} with no registered handlers.");
+                if (!_suppressDebugLoggingTypes.Contains(messageType))
+                {
+                    LogDebug(() => $"Publishing message of type {messageType.FullName} with no registered handlers.");
+                }
             }
         }
 
