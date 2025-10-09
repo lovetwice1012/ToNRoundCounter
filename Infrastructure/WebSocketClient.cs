@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Threading.Channels;
+using System.Runtime.ExceptionServices;
 using ToNRoundCounter.Application;
 
 namespace ToNRoundCounter.Infrastructure
@@ -12,7 +13,7 @@ namespace ToNRoundCounter.Infrastructure
     /// <summary>
     /// Handles WebSocket connections and message dispatching.
     /// </summary>
-    public class WebSocketClient : IWebSocketClient, IDisposable
+    public class WebSocketClient : IWebSocketClient, IDisposable, IAsyncDisposable
     {
         private const int ReceiveBufferSize = 8192;
         private const int MaxMessagePreviewLength = 200;
@@ -52,10 +53,12 @@ namespace ToNRoundCounter.Infrastructure
             var cts = CancellationTokenSource.CreateLinkedTokenSource(_cancellation.Token);
             _cts = cts;
             var token = cts.Token;
+            EnsureProcessingTask(token);
             try
             {
                 while (!token.IsCancellationRequested)
                 {
+                    EnsureProcessingTask(token);
                     _socket = new ClientWebSocket();
                     try
                     {
@@ -65,7 +68,6 @@ namespace ToNRoundCounter.Infrastructure
                         await _socket.ConnectAsync(_uri, token).ConfigureAwait(false);
                         _logger.LogEvent("WebSocket", "Connection established.");
                         _bus.Publish(new WebSocketConnected(_uri));
-                        _processingTask ??= Task.Run(() => ProcessMessagesAsync(token), token);
                         await ReceiveLoopAsync(token).ConfigureAwait(false);
                         _logger.LogEvent("WebSocket", "Receive loop completed.");
                         _bus.Publish(new WebSocketDisconnected(_uri));
@@ -91,8 +93,11 @@ namespace ToNRoundCounter.Infrastructure
             finally
             {
                 _logger.LogEvent("WebSocket", "StartAsync exiting and disposing cancellation token source.");
+                if (ReferenceEquals(_cts, cts))
+                {
+                    _cts = null;
+                }
                 cts.Dispose();
-                _cts = null;
             }
         }
 
@@ -226,32 +231,78 @@ namespace ToNRoundCounter.Infrastructure
 
         public async Task StopAsync()
         {
+            _logger.LogEvent("WebSocket", "StopAsync invoked.");
+
+            var cts = Interlocked.Exchange(ref _cts, null);
+            Task? processingTask = Interlocked.Exchange(ref _processingTask, null);
             try
             {
-                _logger.LogEvent("WebSocket", "StopAsync invoked.");
-                _cts?.Cancel();
-                if (_processingTask != null)
+                try
                 {
-                    try { await _processingTask.ConfigureAwait(false); } catch { }
+                    cts?.Cancel();
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogEvent("WebSocket", () => $"Stop error: {ex.Message}", Serilog.Events.LogEventLevel.Error);
+                catch (ObjectDisposedException)
+                {
+                }
+
+                Exception? processingError = null;
+                if (processingTask != null)
+                {
+                    try
+                    {
+                        await processingTask.ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        processingError = ex;
+                        _logger.LogEvent("WebSocket", () => $"Stop processing error: {ex.Message}", Serilog.Events.LogEventLevel.Error);
+                    }
+                }
+
+                while (_channel.Reader.TryRead(out _))
+                {
+                }
+
+                if (processingError != null)
+                {
+                    ExceptionDispatchInfo.Capture(processingError).Throw();
+                }
             }
             finally
             {
                 _logger.LogEvent("WebSocket", "StopAsync cleaning up resources.");
-                _cts?.Dispose();
-                _cts = null;
+                cts?.Dispose();
                 _socket?.Dispose();
+                _socket = null;
             }
         }
 
         public void Dispose()
         {
             _logger.LogEvent("WebSocket", "Dispose called.");
-            _ = StopAsync();
+            try
+            {
+                StopAsync().GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogEvent("WebSocket", () => $"Dispose error: {ex.Message}", Serilog.Events.LogEventLevel.Error);
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            _logger.LogEvent("WebSocket", "DisposeAsync called.");
+            await StopAsync().ConfigureAwait(false);
+        }
+
+        private void EnsureProcessingTask(CancellationToken token)
+        {
+            var existing = _processingTask;
+            if (existing == null || existing.IsCompleted)
+            {
+                _processingTask = Task.Run(() => ProcessMessagesAsync(token), token);
+            }
         }
 
         private static string Truncate(string value, int maxLength)

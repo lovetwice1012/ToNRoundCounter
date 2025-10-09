@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Serilog.Events;
 
 namespace ToNRoundCounter.Application
 {
@@ -72,8 +73,15 @@ namespace ToNRoundCounter.Application
                     {
                         _logger?.LogEvent("AutoSuicideService", "Delay elapsed. Triggering auto suicide action.");
                         _bus?.Publish(new AutoSuicideTriggered());
-                        action();
-                        _logger?.LogEvent("AutoSuicideService", "Auto suicide action executed.");
+                        try
+                        {
+                            action();
+                            _logger?.LogEvent("AutoSuicideService", "Auto suicide action executed.");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger?.LogEvent("AutoSuicideService", () => $"Auto suicide action threw: {ex}", LogEventLevel.Error);
+                        }
                     }
                 }
                 catch (TaskCanceledException)

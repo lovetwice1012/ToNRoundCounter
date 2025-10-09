@@ -144,7 +144,7 @@ namespace ToNRoundCounter.Application
                 return records;
             }
 
-            foreach (var file in Directory.EnumerateFiles(roundsDirectory, "*.sqlite", SearchOption.AllDirectories))
+            foreach (var file in EnumerateRoundDatabases(roundsDirectory, cancellationToken))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 try
@@ -159,6 +159,54 @@ namespace ToNRoundCounter.Application
             }
 
             return records;
+        }
+
+        private IEnumerable<string> EnumerateRoundDatabases(string rootDirectory, CancellationToken cancellationToken)
+        {
+            var pending = new Stack<string>();
+            pending.Push(rootDirectory);
+
+            while (pending.Count > 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var current = pending.Pop();
+
+                IEnumerable<string>? files = null;
+                try
+                {
+                    files = Directory.EnumerateFiles(current, "*.sqlite", SearchOption.TopDirectoryOnly);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.Warning(ex, "Failed to enumerate round log files in '{Directory}'.", current);
+                }
+
+                if (files != null)
+                {
+                    foreach (var file in files)
+                    {
+                        yield return file;
+                    }
+                }
+
+                IEnumerable<string>? subdirectories = null;
+                try
+                {
+                    subdirectories = Directory.EnumerateDirectories(current);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.Warning(ex, "Failed to enumerate subdirectories in '{Directory}'.", current);
+                }
+
+                if (subdirectories != null)
+                {
+                    foreach (var directory in subdirectories)
+                    {
+                        pending.Push(directory);
+                    }
+                }
+            }
         }
 
         private async Task<List<RoundLogRecord>> LoadRecordsFromDatabaseAsync(string databasePath, CancellationToken cancellationToken)

@@ -91,9 +91,14 @@ namespace ToNRoundCounter.Infrastructure
                     Trigger = SafeModeTrigger.Automatic
                 };
 
-                SaveState(state);
-                _logger.LogEvent("SafeMode", $"Safe mode scheduled due to failure in module '{moduleName}' ({stage}).", LogEventLevel.Warning);
-                return true;
+                if (TrySaveState(state))
+                {
+                    _logger.LogEvent("SafeMode", $"Safe mode scheduled due to failure in module '{moduleName}' ({stage}).", LogEventLevel.Warning);
+                    return true;
+                }
+
+                _logger.LogEvent("SafeMode", "Failed to persist automatic safe mode schedule. State remains unchanged.", LogEventLevel.Error);
+                return false;
             }
         }
 
@@ -104,6 +109,7 @@ namespace ToNRoundCounter.Infrastructure
         {
             lock (_sync)
             {
+                var cleared = true;
                 try
                 {
                     if (File.Exists(_statePath))
@@ -114,13 +120,18 @@ namespace ToNRoundCounter.Infrastructure
                 catch (Exception ex)
                 {
                     _logger.LogEvent("SafeMode", $"Failed to clear safe mode flag: {ex.Message}", LogEventLevel.Warning);
-                }
-                finally
-                {
-                    _state = null;
+                    cleared = false;
                 }
 
-                _logger.LogEvent("SafeMode", "Safe mode flag cleared.");
+                if (cleared)
+                {
+                    _state = null;
+                    _logger.LogEvent("SafeMode", "Safe mode flag cleared.");
+                }
+                else
+                {
+                    _logger.LogEvent("SafeMode", "Safe mode flag remains due to file deletion failure.", LogEventLevel.Warning);
+                }
             }
         }
 
@@ -162,14 +173,22 @@ namespace ToNRoundCounter.Infrastructure
                     return;
                 }
 
-                _state = new SafeModeState
+                var state = new SafeModeState
                 {
                     Reason = reason,
                     RequestedAtUtc = DateTimeOffset.UtcNow,
                     Trigger = SafeModeTrigger.Manual
                 };
 
-                _logger.LogEvent("SafeMode", $"Manual safe mode activation recorded. Reason: {reason}", LogEventLevel.Information);
+                if (TrySaveState(state))
+                {
+                    _logger.LogEvent("SafeMode", $"Manual safe mode activation recorded. Reason: {reason}", LogEventLevel.Information);
+                }
+                else
+                {
+                    _state = state;
+                    _logger.LogEvent("SafeMode", $"Manual safe mode activation recorded in memory but failed to persist. Reason: {reason}", LogEventLevel.Warning);
+                }
             }
         }
 
@@ -192,7 +211,7 @@ namespace ToNRoundCounter.Infrastructure
             }
         }
 
-        private void SaveState(SafeModeState state)
+        private bool TrySaveState(SafeModeState state)
         {
             try
             {
@@ -205,10 +224,12 @@ namespace ToNRoundCounter.Infrastructure
                 var json = JsonSerializer.Serialize(state, SerializerOptions);
                 File.WriteAllText(_statePath, json);
                 _state = state;
+                return true;
             }
             catch (Exception ex)
             {
                 _logger.LogEvent("SafeMode", $"Failed to persist safe mode state: {ex.Message}", LogEventLevel.Error);
+                return false;
             }
         }
     }

@@ -1081,9 +1081,25 @@ namespace ToNRoundCounter.UI
             {
                 LogUi($"Failed to save settings on close: {ex.Message}", LogEventLevel.Warning);
             }
+            try
+            {
+                await webSocketClient.StopAsync();
+            }
+            catch (Exception ex)
+            {
+                LogUi($"Failed to stop WebSocket client: {ex.Message}", LogEventLevel.Warning);
+            }
+
+            try
+            {
+                oscListener.Stop();
+            }
+            catch (Exception ex)
+            {
+                LogUi($"Failed to stop OSC listener: {ex.Message}", LogEventLevel.Warning);
+            }
+
             _cancellation.Cancel();
-            await webSocketClient.StopAsync();
-            oscListener.Stop();
             if (oscRepeaterProcess != null && !oscRepeaterProcess.HasExited)
             {
                 try
@@ -1104,7 +1120,25 @@ namespace ToNRoundCounter.UI
                 UnsubscribeEventBus();
                 velocityTimer?.Stop();
                 velocityTimer?.Dispose();
-                oscListener?.Stop();
+
+                try
+                {
+                    webSocketClient?.StopAsync().GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    LogUi($"Failed to stop WebSocket client during dispose: {ex.Message}", LogEventLevel.Warning);
+                }
+
+                try
+                {
+                    oscListener?.Stop();
+                }
+                catch (Exception ex)
+                {
+                    LogUi($"Failed to stop OSC listener during dispose: {ex.Message}", LogEventLevel.Warning);
+                }
+
                 _cancellation.Cancel();
                 overlayVisibilityTimer?.Stop();
                 overlayVisibilityTimer?.Dispose();
