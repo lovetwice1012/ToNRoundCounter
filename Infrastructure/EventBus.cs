@@ -17,7 +17,8 @@ namespace ToNRoundCounter.Infrastructure
         private readonly ConcurrentDictionary<Type, ImmutableArray<Delegate>> _handlers = new();
         private readonly IEventLogger? _logger;
         private readonly Channel<Action> _dispatchQueue;
-        private static readonly HashSet<Type> _suppressDebugLoggingTypes = new();
+        private static ImmutableHashSet<Type> _suppressDebugLoggingTypes = ImmutableHashSet<Type>.Empty;
+        private static readonly object _suppressSync = new();
 
         public EventBus(IEventLogger? logger = null)
         {
@@ -31,7 +32,13 @@ namespace ToNRoundCounter.Infrastructure
             _ = Task.Run(ProcessQueueAsync);
             
             // Suppress debug logging for high-frequency event types
-            _suppressDebugLoggingTypes.Add(typeof(OscMessageReceived));
+            lock (_suppressSync)
+            {
+                if (!_suppressDebugLoggingTypes.Contains(typeof(OscMessageReceived)))
+                {
+                    _suppressDebugLoggingTypes = _suppressDebugLoggingTypes.Add(typeof(OscMessageReceived));
+                }
+            }
         }
 
         public void Subscribe<T>(Action<T> handler)
@@ -90,9 +97,10 @@ namespace ToNRoundCounter.Infrastructure
         public void Publish<T>(T message)
         {
             var messageType = typeof(T);
+            var suppressSet = _suppressDebugLoggingTypes;
             if (_handlers.TryGetValue(messageType, out var handlers) && !handlers.IsDefaultOrEmpty)
             {
-                if (!_suppressDebugLoggingTypes.Contains(messageType))
+                if (!suppressSet.Contains(messageType))
                 {
                     LogDebug(() => $"Publishing message of type {messageType.FullName} to {handlers.Length} handler(s).");
                 }
@@ -107,7 +115,7 @@ namespace ToNRoundCounter.Infrastructure
             }
             else
             {
-                if (!_suppressDebugLoggingTypes.Contains(messageType))
+                if (!suppressSet.Contains(messageType))
                 {
                     LogDebug(() => $"Publishing message of type {messageType.FullName} with no registered handlers.");
                 }

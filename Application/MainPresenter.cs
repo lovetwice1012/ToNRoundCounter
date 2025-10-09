@@ -15,6 +15,7 @@ namespace ToNRoundCounter.Application
     /// </summary>
     public class MainPresenter
     {
+        private static readonly char[] TerrorSeparators = new[] { '&', '＆' };
         private readonly StateService _stateService;
         private readonly IAppSettings _settings;
         private readonly IEventLogger _logger;
@@ -101,7 +102,7 @@ namespace ToNRoundCounter.Application
                 return;
             }
 
-            var terrors = (round.TerrorKey ?? string.Empty).Split('&');
+            var terrors = (round.TerrorKey ?? string.Empty).Split(TerrorSeparators, StringSplitOptions.None);
             var payload = new
             {
                 roundType = round.RoundType,
@@ -119,7 +120,7 @@ namespace ToNRoundCounter.Application
             try
             {
                 var url = "https://toncloud.sprink.cloud/api/roundlogs/create/" + _settings.apikey;
-                var response = await _httpClient.PostAsync(url, content, System.Threading.CancellationToken.None).ConfigureAwait(false);
+                using var response = await _httpClient.PostAsync(url, content, System.Threading.CancellationToken.None).ConfigureAwait(false);
                 if (response.IsSuccessStatusCode)
                 {
                     _logger.LogEvent("RoundLogUpload", "ラウンドログのアップロードに成功しました。");
@@ -190,7 +191,7 @@ namespace ToNRoundCounter.Application
             using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
             try
             {
-                var response = await _httpClient.PostAsync(_settings.DiscordWebhookUrl, content, System.Threading.CancellationToken.None).ConfigureAwait(false);
+                using var response = await _httpClient.PostAsync(_settings.DiscordWebhookUrl, content, System.Threading.CancellationToken.None).ConfigureAwait(false);
                 if (response.IsSuccessStatusCode)
                 {
                     _logger.LogEvent("DiscordWebhook", "Discordへのラウンドログ送信に成功しました。");

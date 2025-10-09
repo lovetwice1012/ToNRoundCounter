@@ -1,11 +1,11 @@
 using System;
-using System.Net;
 using System.Linq;
+using System.Net;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Rug.Osc;
 using ToNRoundCounter.Application;
-using System.Threading.Channels;
 
 namespace ToNRoundCounter.Infrastructure
 {
@@ -18,14 +18,16 @@ namespace ToNRoundCounter.Infrastructure
         private readonly ICancellationProvider _cancellation;
         private readonly IEventLogger _logger;
         private readonly Channel<OscMessage> _channel;
+        private readonly object _lifecycleLock = new();
+        private CancellationTokenSource? _listenerCts;
         private Task? _processingTask;
+        private Task? _listenerTask;
 
         public OSCListener(IEventBus bus, ICancellationProvider cancellation, IEventLogger logger)
         {
             _bus = bus;
             _cancellation = cancellation;
             _logger = logger;
-            // 制限付きチャネルに変更し、バックプレッシャーを適用
             _channel = Channel.CreateBounded<OscMessage>(new BoundedChannelOptions(1000)
             {
                 FullMode = BoundedChannelFullMode.DropOldest,
@@ -34,66 +36,137 @@ namespace ToNRoundCounter.Infrastructure
             });
         }
 
-        public async Task StartAsync(int port)
+        public Task StartAsync(int port)
         {
             _logger.LogEvent("OSC", $"Starting OSC listener on port {port}.");
-            _processingTask = Task.Run(ProcessMessagesAsync, _cancellation.Token);
-            await Task.Run(() =>
+
+            lock (_lifecycleLock)
             {
-                using (var listener = new OscReceiver(IPAddress.Parse("127.0.0.1"), port))
+                if (_listenerTask != null)
                 {
-                    Exception? failure = null;
-                    int messageCount = 0;
+                    if (!_listenerTask.IsCompleted)
+                    {
+                        _logger.LogEvent("OSC", "Start requested while listener is already running.", Serilog.Events.LogEventLevel.Debug);
+                        return _listenerTask;
+                    }
+
+                    _listenerTask = null;
+                }
+
+                if (_processingTask != null && _processingTask.IsCompleted)
+                {
+                    _processingTask = null;
+                }
+
+                if (_listenerCts != null)
+                {
                     try
                     {
-                        _bus.Publish(new OscConnecting(port));
-                        _logger.LogEvent("OSC", $"Connecting to OSC endpoint 127.0.0.1:{port}.");
-                        listener.Connect();
-                        _bus.Publish(new OscConnected(port));
-                        _logger.LogEvent("OSC", "OSC listener connected.");
-                        bool isDebugLoggingEnabled = _logger.IsEnabled(Serilog.Events.LogEventLevel.Debug);
-                        while (!_cancellation.Token.IsCancellationRequested)
-                        {
-                            if (listener.State != OscSocketState.Connected)
-                            {
-                                _logger.LogEvent("OSC", "Listener state changed from Connected. Exiting receive loop.");
-                                break;
-                            }
-                            if (listener.TryReceive(out OscPacket packet) && packet is OscMessage msg)
-                            {
-                                _channel.Writer.TryWrite(msg);
-                                messageCount++;
-                                if (isDebugLoggingEnabled && ShouldLogSample(messageCount))
-                                {
-                                    var capturedCount = messageCount;
-                                    _logger.LogEvent("OSC", () => $"Queued OSC message #{capturedCount}: {FormatOscMessage(msg)}", Serilog.Events.LogEventLevel.Debug);
-                                }
-                            }
-                        }
+                        _listenerCts.Cancel();
                     }
-                    catch (Exception ex)
+                    catch (ObjectDisposedException)
                     {
-                        failure = ex;
-                        _logger.LogEvent("OSC", ex.Message, Serilog.Events.LogEventLevel.Error);
                     }
-                    finally
-                    {
-                        _logger.LogEvent("OSC", failure == null
-                            ? $"OSC listener stopped after processing {messageCount} message(s)."
-                            : $"OSC listener stopped with failure after {messageCount} message(s): {failure.Message}");
-                        _bus.Publish(new OscDisconnected(port, failure));
-                    }
+                    _listenerCts.Dispose();
+                    _listenerCts = null;
                 }
-            }, _cancellation.Token).ConfigureAwait(false);
+
+                var cts = CancellationTokenSource.CreateLinkedTokenSource(_cancellation.Token);
+                _listenerCts = cts;
+                var token = cts.Token;
+                _processingTask = Task.Run(() => ProcessMessagesAsync(token), token);
+                _listenerTask = Task.Run(() => RunListener(port, cts), token);
+                return _listenerTask;
+            }
         }
 
-        private async Task ProcessMessagesAsync()
+        private void RunListener(int port, CancellationTokenSource cts)
+        {
+            var token = cts.Token;
+            using var listener = new OscReceiver(IPAddress.Parse("127.0.0.1"), port);
+
+            Exception? failure = null;
+            int messageCount = 0;
+
+            try
+            {
+                _bus.Publish(new OscConnecting(port));
+                _logger.LogEvent("OSC", $"Connecting to OSC endpoint 127.0.0.1:{port}.");
+                listener.Connect();
+                _bus.Publish(new OscConnected(port));
+                _logger.LogEvent("OSC", "OSC listener connected.");
+                bool isDebugLoggingEnabled = _logger.IsEnabled(Serilog.Events.LogEventLevel.Debug);
+                while (!token.IsCancellationRequested)
+                {
+                    if (listener.State != OscSocketState.Connected)
+                    {
+                        _logger.LogEvent("OSC", "Listener state changed from Connected. Exiting receive loop.");
+                        break;
+                    }
+
+                    if (listener.TryReceive(out OscPacket packet) && packet is OscMessage msg)
+                    {
+                        _channel.Writer.TryWrite(msg);
+                        messageCount++;
+                        if (isDebugLoggingEnabled && ShouldLogSample(messageCount))
+                        {
+                            var capturedCount = messageCount;
+                            _logger.LogEvent("OSC", () => $"Queued OSC message #{capturedCount}: {FormatOscMessage(msg)}", Serilog.Events.LogEventLevel.Debug);
+                        }
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+                _logger.LogEvent("OSC", ex.Message, Serilog.Events.LogEventLevel.Error);
+            }
+            finally
+            {
+                _logger.LogEvent("OSC", failure == null
+                    ? $"OSC listener stopped after processing {messageCount} message(s)."
+                    : $"OSC listener stopped with failure after {messageCount} message(s): {failure?.Message}");
+                _bus.Publish(new OscDisconnected(port, failure));
+
+                try
+                {
+                    if (!cts.IsCancellationRequested)
+                    {
+                        cts.Cancel();
+                    }
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                finally
+                {
+                    while (_channel.Reader.TryRead(out _))
+                    {
+                    }
+
+                    lock (_lifecycleLock)
+                    {
+                        if (ReferenceEquals(_listenerCts, cts))
+                        {
+                            _listenerCts = null;
+                        }
+                    }
+
+                    cts.Dispose();
+                }
+            }
+        }
+
+        private async Task ProcessMessagesAsync(CancellationToken token)
         {
             try
             {
                 int dispatched = 0;
                 bool isDebugLoggingEnabled = _logger.IsEnabled(Serilog.Events.LogEventLevel.Debug);
-                await foreach (var msg in _channel.Reader.ReadAllAsync(_cancellation.Token))
+                await foreach (var msg in _channel.Reader.ReadAllAsync(token))
                 {
                     _bus.Publish(new OscMessageReceived(msg));
                     dispatched++;
@@ -104,7 +177,9 @@ namespace ToNRoundCounter.Infrastructure
                     }
                 }
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException)
+            {
+            }
             finally
             {
                 _logger.LogEvent("OSC", "OSC message processing loop completed.");
@@ -114,14 +189,75 @@ namespace ToNRoundCounter.Infrastructure
         public void Stop()
         {
             _logger.LogEvent("OSC", "Stop requested.");
-            _cancellation.Cancel();
+
+            Task? listenerTask;
+            Task? processingTask;
+            CancellationTokenSource? cts;
+
+            lock (_lifecycleLock)
+            {
+                cts = _listenerCts;
+                listenerTask = _listenerTask;
+                processingTask = _processingTask;
+                _listenerCts = null;
+                _listenerTask = null;
+                _processingTask = null;
+            }
+
+            if (cts == null)
+            {
+                _logger.LogEvent("OSC", "Stop requested but listener is not running.", Serilog.Events.LogEventLevel.Debug);
+                return;
+            }
+
+            try
+            {
+                cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+
+            try
+            {
+                listenerTask?.GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                _logger.LogEvent("OSC", $"Listener loop faulted during stop: {ex.Message}", Serilog.Events.LogEventLevel.Error);
+            }
+
+            try
+            {
+                processingTask?.GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                _logger.LogEvent("OSC", $"Message processing task faulted during stop: {ex.Message}", Serilog.Events.LogEventLevel.Error);
+            }
+            finally
+            {
+                while (_channel.Reader.TryRead(out _))
+                {
+                }
+
+                cts.Dispose();
+            }
+
+            _logger.LogEvent("OSC", "Listener stop completed.");
         }
 
         public void Dispose()
         {
             try
             {
-                _processingTask?.GetAwaiter().GetResult();
+                Stop();
             }
             catch (Exception ex)
             {

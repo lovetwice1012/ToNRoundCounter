@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -34,8 +35,8 @@ namespace ToNRoundCounter.Infrastructure
                 return;
             }
 
-            var discoveredFiles = Directory.GetFiles(modulesDirectory, "*.dll", SearchOption.AllDirectories);
-            logger.LogEvent("ModuleLoader", $"Found {discoveredFiles.Length} candidate assembly file(s).");
+            var discoveredFiles = EnumerateModuleAssemblies(modulesDirectory, logger).ToList();
+            logger.LogEvent("ModuleLoader", $"Found {discoveredFiles.Count} candidate assembly file(s).");
 
             foreach (var file in discoveredFiles)
             {
@@ -76,6 +77,52 @@ namespace ToNRoundCounter.Infrastructure
 
             host.NotifyDiscoveryCompleted();
             logger.LogEvent("ModuleLoader", "Module discovery notifications completed.");
+        }
+
+        private static IEnumerable<string> EnumerateModuleAssemblies(string rootDirectory, IEventLogger logger)
+        {
+            var pending = new Stack<string>();
+            pending.Push(rootDirectory);
+
+            while (pending.Count > 0)
+            {
+                var current = pending.Pop();
+                string[]? files = null;
+                try
+                {
+                    files = Directory.GetFiles(current, "*.dll", SearchOption.TopDirectoryOnly);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogEvent("ModuleLoader", $"Failed to enumerate assemblies in '{current}': {ex.Message}", Serilog.Events.LogEventLevel.Warning);
+                }
+
+                if (files != null)
+                {
+                    foreach (var file in files)
+                    {
+                        yield return file;
+                    }
+                }
+
+                string[]? subdirectories = null;
+                try
+                {
+                    subdirectories = Directory.GetDirectories(current);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogEvent("ModuleLoader", $"Failed to enumerate directories in '{current}': {ex.Message}", Serilog.Events.LogEventLevel.Warning);
+                }
+
+                if (subdirectories != null)
+                {
+                    foreach (var directory in subdirectories)
+                    {
+                        pending.Push(directory);
+                    }
+                }
+            }
         }
 
         private static Assembly LoadAssemblySafely(string file, IEventLogger logger)
