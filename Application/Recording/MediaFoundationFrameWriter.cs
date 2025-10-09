@@ -1494,19 +1494,19 @@ namespace ToNRoundCounter.Application.Recording
             public static IMFSample CreateSample()
             {
                 CheckHr(MFCreateSample(out var sample), nameof(MFCreateSample));
-                return sample;
+                return sample ?? throw new InvalidOperationException("MFCreateSample returned a null sample instance.");
             }
 
             public static IMFMediaBuffer CreateMemoryBuffer(int size)
             {
                 CheckHr(MFCreateMemoryBuffer(size, out var buffer), nameof(MFCreateMemoryBuffer));
-                return buffer;
+                return buffer ?? throw new InvalidOperationException("MFCreateMemoryBuffer returned a null buffer instance.");
             }
 
             public static IMFDXGIDeviceManager CreateDxgiDeviceManager(out uint resetToken)
             {
                 CheckHr(MFCreateDXGIDeviceManager(out resetToken, out var manager), nameof(MFCreateDXGIDeviceManager));
-                return manager;
+                return manager ?? throw new InvalidOperationException("MFCreateDXGIDeviceManager returned a null manager instance.");
             }
 
             public static void SetAttributeSize(IMFMediaType type, Guid key, int width, int height)

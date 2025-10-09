@@ -160,6 +160,15 @@ namespace ToNRoundCounter.Application
                 return;
             }
 
+            if (recorder is null)
+            {
+                _logger.LogEvent(
+                    "AutoRecording",
+                    () => "Recorder instance was unexpectedly null after creation.",
+                    LogEventLevel.Error);
+                return;
+            }
+
             _recorder = recorder;
             _currentTriggerDescription = triggerDetails;
             recorder.Completion.ContinueWith(_ => HandleRecorderCompleted(recorder), TaskScheduler.Default);

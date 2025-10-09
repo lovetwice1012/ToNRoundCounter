@@ -147,9 +147,11 @@ namespace ToNRoundCounter.Infrastructure
 
                 if (!string.IsNullOrWhiteSpace(json))
                 {
+                    string jsonContent = json;
+
                     try
                     {
-                        var token = JObject.Parse(json!);
+                        var token = JObject.Parse(jsonContent);
                         if (token.TryGetValue("ThemeKey", out var themeKeyToken))
                         {
                             ThemeKey = NormalizeThemeKey(themeKeyToken?.Value<string>());
@@ -164,15 +166,15 @@ namespace ToNRoundCounter.Infrastructure
                         // Ignore malformed theme information and fall back to defaults.
                     }
 
-                    JsonConvert.PopulateObject(json!, this);
+                    JsonConvert.PopulateObject(jsonContent, this);
 
                     if (loadedFromRepository && !File.Exists(settingsFile))
                     {
-                        TryRegenerateSettingsFile(json);
+                        TryRegenerateSettingsFile(jsonContent);
                     }
                     else if (!loadedFromRepository)
                     {
-                        PersistSettingsSnapshot(json);
+                        PersistSettingsSnapshot(jsonContent);
                     }
                 }
 
@@ -234,9 +236,9 @@ namespace ToNRoundCounter.Infrastructure
             }
         }
 
-        private void PersistSettingsSnapshot(string json)
+        private void PersistSettingsSnapshot(string? json)
         {
-            if (_settingsRepository == null)
+            if (_settingsRepository == null || string.IsNullOrEmpty(json))
             {
                 return;
             }
@@ -251,8 +253,13 @@ namespace ToNRoundCounter.Infrastructure
             }
         }
 
-        private void TryRegenerateSettingsFile(string json)
+        private void TryRegenerateSettingsFile(string? json)
         {
+            if (string.IsNullOrEmpty(json))
+            {
+                return;
+            }
+
             try
             {
                 File.WriteAllText(settingsFile, json);

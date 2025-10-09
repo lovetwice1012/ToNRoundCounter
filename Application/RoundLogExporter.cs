@@ -413,7 +413,14 @@ namespace ToNRoundCounter.Application
                 return new List<string>();
             }
 
-            return terrorKey!
+            string key = terrorKey.Trim();
+
+            if (key.Length == 0)
+            {
+                return new List<string>();
+            }
+
+            return key
                 .Split(TerrorSeparators, StringSplitOptions.RemoveEmptyEntries)
                 .Select(t => t.Trim())
                 .Where(t => !string.IsNullOrWhiteSpace(t))
