@@ -1862,12 +1862,18 @@ namespace ToNRoundCounter.UI
                 {
                     UpdateNextRoundPrediction(historyStatusOverride, roundCycleForHistory);
                     UpdateAggregateStatsDisplay();
-                    _presenter.AppendRoundLog(roundForHistory, status);
+                    if (roundForHistory != null)
+                    {
+                        _presenter.AppendRoundLog(roundForHistory, status);
+                    }
                     ClearEventDisplays();
                     ClearItemDisplay();
                     lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2}";
                 });
-                _ = _presenter.UploadRoundLogAsync(roundForHistory, status);
+                if (roundForHistory != null)
+                {
+                    _ = _presenter.UploadRoundLogAsync(roundForHistory, status);
+                }
                 ResetRoundScopedShortcutButtons();
             }
             SetOverlayTemporarilyHidden(false);

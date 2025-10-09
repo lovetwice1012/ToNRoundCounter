@@ -245,6 +245,11 @@ namespace ToNRoundCounter.Application.Recording
                     {
                         var elapsedBeforeCapture = captureStopwatch.Elapsed;
                         long expectedFramesBeforeCapture = (elapsedBeforeCapture.Ticks / frameIntervalTicks) + 1;
+                        if (duplicateFrame is null)
+                        {
+                            throw new InvalidOperationException("Duplicate frame buffer is unavailable.");
+                        }
+
                         while (framesProduced < expectedFramesBeforeCapture - 1)
                         {
                             _writer.WriteVideoFrame(duplicateFrame);
@@ -323,9 +328,14 @@ namespace ToNRoundCounter.Application.Recording
                         {
                             var elapsedAfterCapture = captureStopwatch.Elapsed;
                             long expectedFramesAfterCapture = (elapsedAfterCapture.Ticks / frameIntervalTicks) + 1;
+                            if (duplicateFrame is null)
+                            {
+                                throw new InvalidOperationException("Duplicate frame buffer is unavailable.");
+                            }
+
                             while (framesProduced < expectedFramesAfterCapture)
                             {
-                                _writer.WriteVideoFrame(duplicateFrame!);
+                                _writer.WriteVideoFrame(duplicateFrame);
                                 framesProduced++;
                             }
                         }

@@ -147,33 +147,33 @@ namespace ToNRoundCounter.Application
                 if (targetSize.HasValue && HardwareResolutionLimits != null && HardwareResolutionLimits.Length > 0)
                 {
                     long pixels = Math.Max(1L, (long)targetSize.Value.Width * targetSize.Value.Height);
-                    foreach (var limit in HardwareResolutionLimits)
+                    foreach (var resolutionLimit in HardwareResolutionLimits)
                     {
-                        if (pixels <= limit.MaxPixels)
+                        if (pixels <= resolutionLimit.MaxPixels)
                         {
-                            if (limit.MaxFrameRate > 0)
+                            if (resolutionLimit.MaxFrameRate > 0)
                             {
-                                return limit.MaxFrameRate;
+                                return resolutionLimit.MaxFrameRate;
                             }
 
                             break;
                         }
                     }
 
-                    var largest = HardwareResolutionLimits[HardwareResolutionLimits.Length - 1];
-                    if (largest.MaxFrameRate > 0)
+                    var largestLimit = HardwareResolutionLimits[HardwareResolutionLimits.Length - 1];
+                    if (largestLimit.MaxFrameRate > 0)
                     {
-                        hardwareLimit = largest.MaxFrameRate;
+                        hardwareLimit = largestLimit.MaxFrameRate;
                     }
                 }
 
-                int limit = hardwareLimit > 0 ? hardwareLimit : fallbackSoftware;
-                if (limit <= 0)
+                int resolvedLimit = hardwareLimit > 0 ? hardwareLimit : fallbackSoftware;
+                if (resolvedLimit <= 0)
                 {
-                    limit = fallbackSoftware;
+                    resolvedLimit = fallbackSoftware;
                 }
 
-                return limit > 0 ? limit : GlobalMaxFrameRate;
+                return resolvedLimit > 0 ? resolvedLimit : GlobalMaxFrameRate;
             }
         }
 
@@ -215,7 +215,7 @@ namespace ToNRoundCounter.Application
             ["gif"] = new CodecFrameRateLimit(60, 0),
         };
 
-        public static IReadOnlyList<RecordingCodecInfo> GetCodecOptions(string extension)
+        public static IReadOnlyList<RecordingCodecInfo> GetCodecOptions(string? extension)
         {
             string normalized = NormalizeExtension(extension);
 
@@ -238,7 +238,7 @@ namespace ToNRoundCounter.Application
             return codecs;
         }
 
-        public static string NormalizeCodec(string extension, string? codecId)
+        public static string NormalizeCodec(string? extension, string? codecId)
         {
             var options = GetCodecOptions(extension);
             if (options.Count == 0)

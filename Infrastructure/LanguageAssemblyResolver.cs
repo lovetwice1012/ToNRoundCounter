@@ -234,7 +234,7 @@ namespace ToNRoundCounter.Infrastructure
             var candidates = new LinkedList<string>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            void TryAdd(string candidate)
+            void TryAdd(string? candidate)
             {
                 if (string.IsNullOrEmpty(candidate) || !seen.Add(candidate))
                 {
