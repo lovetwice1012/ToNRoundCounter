@@ -329,6 +329,33 @@ Please obtain an API key from the website.</value>
   <data name="AutoRecording_HardwareEncoderHelp" xml:space="preserve">
     <value>Select the GPU and API used for encoding. Auto chooses the best available device.</value>
   </data>
+  <data name="AutoRecording_FrameRateLimited" xml:space="preserve">
+    <value>The selected encoder limits recording to {0} fps (requested {1} fps).</value>
+  </data>
+  <data name="AutoRecording_ResolutionLabel" xml:space="preserve">
+    <value>Recording resolution</value>
+  </data>
+  <data name="AutoRecording_ResolutionOption_Window" xml:space="preserve">
+    <value>Match window size</value>
+  </data>
+  <data name="AutoRecording_ResolutionOption_2160p" xml:space="preserve">
+    <value>3840 × 2160 (4K UHD)</value>
+  </data>
+  <data name="AutoRecording_ResolutionOption_1440p" xml:space="preserve">
+    <value>2560 × 1440 (QHD)</value>
+  </data>
+  <data name="AutoRecording_ResolutionOption_1080p" xml:space="preserve">
+    <value>1920 × 1080 (Full HD)</value>
+  </data>
+  <data name="AutoRecording_ResolutionOption_900p" xml:space="preserve">
+    <value>1600 × 900</value>
+  </data>
+  <data name="AutoRecording_ResolutionOption_720p" xml:space="preserve">
+    <value>1280 × 720 (HD)</value>
+  </data>
+  <data name="AutoRecording_ResolutionOption_480p" xml:space="preserve">
+    <value>854 × 480 (SD)</value>
+  </data>
   <data name="AutoRecording_HardwareOption_Auto" xml:space="preserve">
     <value>Auto (best available)</value>
   </data>

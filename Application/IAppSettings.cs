@@ -70,6 +70,7 @@ namespace ToNRoundCounter.Application
         string AutoRecordingWindowTitle { get; set; }
         string AutoRecordingCommand { get; set; }
         int AutoRecordingFrameRate { get; set; }
+        string AutoRecordingResolution { get; set; }
         string AutoRecordingArguments { get; set; }
         string AutoRecordingOutputDirectory { get; set; }
         string AutoRecordingOutputExtension { get; set; }

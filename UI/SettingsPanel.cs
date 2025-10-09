@@ -115,6 +115,7 @@ namespace ToNRoundCounter.UI
         public CheckBox AutoRecordingEnabledCheckBox { get; private set; } = null!;
         public TextBox AutoRecordingWindowTitleTextBox { get; private set; } = null!;
         public NumericUpDown AutoRecordingFrameRateNumeric { get; private set; } = null!;
+        public ComboBox AutoRecordingResolutionComboBox { get; private set; } = null!;
         public CheckBox AutoRecordingIncludeOverlayCheckBox { get; private set; } = null!;
         public TextBox AutoRecordingOutputDirectoryTextBox { get; private set; } = null!;
         public ComboBox AutoRecordingFormatComboBox { get; private set; } = null!;
@@ -127,6 +128,8 @@ namespace ToNRoundCounter.UI
         private Button autoRecordingBrowseOutputButton = null!;
         private Button roundLogExportButton = null!;
         private Label? autoRecordingCodecHelpLabel;
+        private Label? autoRecordingFrameRateLimitLabel;
+        private Label? autoRecordingResolutionLabel;
         private Label? autoRecordingVideoBitrateHelpLabel;
         private Label? autoRecordingVideoBitrateUnitLabel;
         private Label? autoRecordingAudioBitrateLabel;
@@ -1047,6 +1050,7 @@ namespace ToNRoundCounter.UI
             AutoRecordingFrameRateNumeric.Minimum = 5;
             AutoRecordingFrameRateNumeric.Maximum = 240;
             AutoRecordingFrameRateNumeric.Value = Math.Min(Math.Max(_settings.AutoRecordingFrameRate, 5), 240);
+            AutoRecordingFrameRateNumeric.ValueChanged += AutoRecordingFrameRateNumeric_ValueChanged;
             grpAutoRecording.Controls.Add(AutoRecordingFrameRateNumeric);
 
             Label autoRecordingFpsLabel = new Label();
@@ -1055,7 +1059,31 @@ namespace ToNRoundCounter.UI
             autoRecordingFpsLabel.Location = new Point(AutoRecordingFrameRateNumeric.Right + 8, AutoRecordingFrameRateNumeric.Top + 4);
             grpAutoRecording.Controls.Add(autoRecordingFpsLabel);
 
-            autoRecordingInnerY = AutoRecordingFrameRateNumeric.Bottom + 8;
+            autoRecordingFrameRateLimitLabel = new Label();
+            autoRecordingFrameRateLimitLabel.AutoSize = true;
+            autoRecordingFrameRateLimitLabel.MaximumSize = new Size(columnWidth - innerMargin * 2, 0);
+            autoRecordingFrameRateLimitLabel.Location = new Point(innerMargin, AutoRecordingFrameRateNumeric.Bottom + 4);
+            autoRecordingFrameRateLimitLabel.Visible = false;
+            grpAutoRecording.Controls.Add(autoRecordingFrameRateLimitLabel);
+
+            autoRecordingInnerY = autoRecordingFrameRateLimitLabel.Bottom + 8;
+
+            autoRecordingResolutionLabel = new Label();
+            autoRecordingResolutionLabel.Text = LanguageManager.Translate("AutoRecording_ResolutionLabel");
+            autoRecordingResolutionLabel.AutoSize = true;
+            autoRecordingResolutionLabel.Location = new Point(innerMargin, autoRecordingInnerY);
+            grpAutoRecording.Controls.Add(autoRecordingResolutionLabel);
+
+            AutoRecordingResolutionComboBox = new ComboBox();
+            AutoRecordingResolutionComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            AutoRecordingResolutionComboBox.Location = new Point(innerMargin, autoRecordingResolutionLabel.Bottom + 4);
+            AutoRecordingResolutionComboBox.Width = columnWidth - innerMargin * 2;
+            AutoRecordingResolutionComboBox.DisplayMember = nameof(RecordingResolutionOptionItem.Display);
+            AutoRecordingResolutionComboBox.ValueMember = nameof(RecordingResolutionOptionItem.Id);
+            AutoRecordingResolutionComboBox.SelectedIndexChanged += AutoRecordingResolutionComboBox_SelectedIndexChanged;
+            grpAutoRecording.Controls.Add(AutoRecordingResolutionComboBox);
+
+            autoRecordingInnerY = AutoRecordingResolutionComboBox.Bottom + 10;
 
             AutoRecordingIncludeOverlayCheckBox = new CheckBox();
             AutoRecordingIncludeOverlayCheckBox.Text = LanguageManager.Translate("AutoRecording_IncludeOverlay");
@@ -1211,6 +1239,7 @@ namespace ToNRoundCounter.UI
             AutoRecordingHardwareEncoderComboBox.Width = columnWidth - innerMargin * 2;
             AutoRecordingHardwareEncoderComboBox.DisplayMember = nameof(HardwareEncoderOption.Display);
             AutoRecordingHardwareEncoderComboBox.ValueMember = nameof(HardwareEncoderOption.Id);
+            AutoRecordingHardwareEncoderComboBox.SelectedIndexChanged += AutoRecordingHardwareEncoderComboBox_SelectedIndexChanged;
             grpAutoRecording.Controls.Add(AutoRecordingHardwareEncoderComboBox);
 
             autoRecordingHardwareEncoderHelpLabel = new Label();
@@ -1265,6 +1294,7 @@ namespace ToNRoundCounter.UI
             AutoRecordingIncludeOverlayCheckBox.Checked = _settings.AutoRecordingIncludeOverlay;
             SetAutoRecordingFormat(_settings.AutoRecordingOutputExtension);
             RefreshAutoRecordingCodecOptions(_settings.AutoRecordingVideoCodec);
+            RefreshAutoRecordingResolutionOptions(_settings.AutoRecordingResolution);
             if (AutoRecordingVideoBitrateNumeric != null)
             {
                 AutoRecordingVideoBitrateNumeric.Value = ClampToNumericRange(AutoRecordingVideoBitrateNumeric, _settings.AutoRecordingVideoBitrate);
@@ -2327,6 +2357,7 @@ namespace ToNRoundCounter.UI
                 AutoRecordingCodecComboBox.Items.Clear();
                 autoRecordingCodecSupportsAudio = true;
                 UpdateAudioBitrateEnabledState();
+                UpdateAutoRecordingFrameRateLimitLabel();
                 return;
             }
 
@@ -2374,6 +2405,7 @@ namespace ToNRoundCounter.UI
             }
 
             UpdateAudioBitrateEnabledState();
+            UpdateAutoRecordingFrameRateLimitLabel();
         }
 
         private void RefreshAutoRecordingHardwareOptions(string? preferredId = null)
@@ -2422,6 +2454,45 @@ namespace ToNRoundCounter.UI
             {
                 AutoRecordingHardwareEncoderComboBox.SelectedItem = selected ?? AutoRecordingHardwareEncoderComboBox.Items[0];
             }
+
+            UpdateAutoRecordingFrameRateLimitLabel();
+        }
+
+        private void RefreshAutoRecordingResolutionOptions(string? preferredId = null)
+        {
+            if (AutoRecordingResolutionComboBox == null)
+            {
+                return;
+            }
+
+            string? selection = preferredId ?? (AutoRecordingResolutionComboBox.SelectedItem as RecordingResolutionOptionItem)?.Id;
+            var uiOptions = new List<RecordingResolutionOptionItem>();
+
+            foreach (var option in AutoRecordingService.GetRecordingResolutionOptions())
+            {
+                string display = LanguageManager.Translate(option.LocalizationKey);
+                uiOptions.Add(new RecordingResolutionOptionItem(option.Id, display));
+            }
+
+            AutoRecordingResolutionComboBox.BeginUpdate();
+            AutoRecordingResolutionComboBox.Items.Clear();
+            RecordingResolutionOptionItem? selected = null;
+            foreach (var option in uiOptions)
+            {
+                AutoRecordingResolutionComboBox.Items.Add(option);
+                if (selected == null && selection != null && string.Equals(option.Id, selection, StringComparison.OrdinalIgnoreCase))
+                {
+                    selected = option;
+                }
+            }
+            AutoRecordingResolutionComboBox.EndUpdate();
+
+            if (AutoRecordingResolutionComboBox.Items.Count > 0)
+            {
+                AutoRecordingResolutionComboBox.SelectedItem = selected ?? AutoRecordingResolutionComboBox.Items[0];
+            }
+
+            UpdateAutoRecordingFrameRateLimitLabel();
         }
 
         private void AutoRecordingFormatComboBox_SelectedIndexChanged(object? sender, EventArgs e)
@@ -2441,6 +2512,22 @@ namespace ToNRoundCounter.UI
             }
 
             UpdateAudioBitrateEnabledState();
+            UpdateAutoRecordingFrameRateLimitLabel();
+        }
+
+        private void AutoRecordingFrameRateNumeric_ValueChanged(object? sender, EventArgs e)
+        {
+            UpdateAutoRecordingFrameRateLimitLabel();
+        }
+
+        private void AutoRecordingHardwareEncoderComboBox_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            UpdateAutoRecordingFrameRateLimitLabel();
+        }
+
+        private void AutoRecordingResolutionComboBox_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            UpdateAutoRecordingFrameRateLimitLabel();
         }
 
         private void UpdateAudioBitrateEnabledState()
@@ -2470,6 +2557,57 @@ namespace ToNRoundCounter.UI
                     : "AutoRecording_AudioBitrateNotAvailable";
                 autoRecordingAudioBitrateHelpLabel.Text = LanguageManager.Translate(key);
                 autoRecordingAudioBitrateHelpLabel.Enabled = enabled;
+            }
+        }
+
+        private void UpdateAutoRecordingFrameRateLimitLabel()
+        {
+            if (autoRecordingFrameRateLimitLabel == null || AutoRecordingFrameRateNumeric == null)
+            {
+                return;
+            }
+
+            bool recordingEnabled = AutoRecordingEnabledCheckBox?.Checked ?? false;
+            if (!recordingEnabled)
+            {
+                autoRecordingFrameRateLimitLabel.Visible = false;
+                autoRecordingFrameRateLimitLabel.Text = string.Empty;
+                return;
+            }
+
+            string codecId = AutoRecordingService.DefaultCodec;
+            if (AutoRecordingCodecComboBox?.SelectedItem is RecordingCodecOption codecOption)
+            {
+                codecId = codecOption.CodecId;
+            }
+
+            string hardwareId = AutoRecordingService.DefaultHardwareEncoderOptionId;
+            if (AutoRecordingHardwareEncoderComboBox?.SelectedItem is HardwareEncoderOption hardwareOption)
+            {
+                hardwareId = hardwareOption.Id;
+            }
+
+            string resolutionId = AutoRecordingService.DefaultResolutionOptionId;
+            if (AutoRecordingResolutionComboBox?.SelectedItem is RecordingResolutionOptionItem resolutionOption)
+            {
+                resolutionId = resolutionOption.Id;
+            }
+
+            int requested = Convert.ToInt32(AutoRecordingFrameRateNumeric.Value);
+            int limit = AutoRecordingService.ResolveConfiguredFrameRateLimit(codecId, hardwareId, resolutionId);
+
+            if (requested > limit)
+            {
+                autoRecordingFrameRateLimitLabel.Text = string.Format(
+                    LanguageManager.Translate("AutoRecording_FrameRateLimited"),
+                    limit,
+                    requested);
+                autoRecordingFrameRateLimitLabel.Visible = true;
+            }
+            else
+            {
+                autoRecordingFrameRateLimitLabel.Visible = false;
+                autoRecordingFrameRateLimitLabel.Text = string.Empty;
             }
         }
 
@@ -2520,6 +2658,16 @@ namespace ToNRoundCounter.UI
             }
 
             return AutoRecordingService.SupportedExtensions[0];
+        }
+
+        public string GetAutoRecordingResolution()
+        {
+            if (AutoRecordingResolutionComboBox?.SelectedItem is RecordingResolutionOptionItem option)
+            {
+                return option.Id;
+            }
+
+            return AutoRecordingService.DefaultResolutionOptionId;
         }
 
         public string GetAutoRecordingVideoCodec()
@@ -2919,6 +3067,10 @@ namespace ToNRoundCounter.UI
             {
                 AutoRecordingFrameRateNumeric.Enabled = enabled;
             }
+            if (AutoRecordingResolutionComboBox != null)
+            {
+                AutoRecordingResolutionComboBox.Enabled = enabled;
+            }
             if (AutoRecordingIncludeOverlayCheckBox != null)
             {
                 AutoRecordingIncludeOverlayCheckBox.Enabled = enabled;
@@ -2972,7 +3124,18 @@ namespace ToNRoundCounter.UI
                 autoRecordingHardwareEncoderHelpLabel.Enabled = enabled;
             }
 
+            if (autoRecordingFrameRateLimitLabel != null)
+            {
+                autoRecordingFrameRateLimitLabel.Enabled = enabled;
+            }
+
+            if (autoRecordingResolutionLabel != null)
+            {
+                autoRecordingResolutionLabel.Enabled = enabled;
+            }
+
             UpdateAudioBitrateEnabledState();
+            UpdateAutoRecordingFrameRateLimitLabel();
         }
 
         private void RefreshItemMusicControlsState()
@@ -3077,6 +3240,24 @@ namespace ToNRoundCounter.UI
             public string Extension { get; }
 
             public string Display { get; }
+        }
+
+        private sealed class RecordingResolutionOptionItem
+        {
+            public RecordingResolutionOptionItem(string id, string display)
+            {
+                Id = id;
+                Display = display;
+            }
+
+            public string Id { get; }
+
+            public string Display { get; }
+
+            public override string ToString()
+            {
+                return Display;
+            }
         }
 
         private sealed class RecordingCodecOption

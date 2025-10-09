@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -114,7 +115,7 @@ namespace ToNRoundCounter.Application
             string extension = NormalizeExtension(_settings.AutoRecordingOutputExtension);
             string fileName = GenerateOutputFileName(triggerDetails, extension);
             string outputPath = Path.Combine(outputDirectory, fileName);
-            int frameRate = NormalizeFrameRate(_settings.AutoRecordingFrameRate);
+            int requestedFrameRate = NormalizeFrameRate(_settings.AutoRecordingFrameRate);
             string windowHint = string.IsNullOrWhiteSpace(_settings.AutoRecordingWindowTitle)
                 ? "VRChat"
                 : _settings.AutoRecordingWindowTitle.Trim();
@@ -125,6 +126,7 @@ namespace ToNRoundCounter.Application
             int videoBitrate = NormalizeVideoBitrate(_settings.AutoRecordingVideoBitrate);
             int audioBitrate = NormalizeAudioBitrate(_settings.AutoRecordingAudioBitrate);
             string hardwareOptionId = NormalizeHardwareOption(_settings.AutoRecordingHardwareEncoder);
+            string resolutionOptionId = NormalizeResolutionOption(_settings.AutoRecordingResolution);
             bool codecSupportsAudio = CodecSupportsAudio(extension, codec);
             bool captureAudio = codecSupportsAudio;
             if (!captureAudio)
@@ -136,7 +138,8 @@ namespace ToNRoundCounter.Application
 
             if (!InternalScreenRecorder.TryCreate(
                 windowHint,
-                frameRate,
+                requestedFrameRate,
+                resolutionOptionId,
                 outputPath,
                 extension,
                 codec,
@@ -146,6 +149,8 @@ namespace ToNRoundCounter.Application
                 hardwareSelection,
                 captureAudio,
                 out var recorder,
+                out int resolvedFrameRate,
+                out Size targetResolution,
                 out var error))
             {
                 _logger.LogEvent(
@@ -162,10 +167,11 @@ namespace ToNRoundCounter.Application
             string videoBitrateDisplay = videoBitrate > 0 ? $"{videoBitrate / 1000.0:F1} kbps" : "auto";
             string audioBitrateDisplay = captureAudio ? (audioBitrate > 0 ? $"{audioBitrate / 1000.0:F1} kbps" : "auto") : "disabled";
             string hardwareDescription = GetHardwareOptionDisplay(hardwareOptionId);
+            string resolutionDisplay = $"{targetResolution.Width}x{targetResolution.Height}";
             _logger.LogEvent(
                 "AutoRecording",
                 () =>
-                    $"Recording started. Output: {outputPath}. Trigger: {triggerDetails}. Codec: {codec}. FPS: {frameRate}. Video bitrate: {videoBitrateDisplay}. Audio: {audioBitrateDisplay}. Hardware: {hardwareDescription} ({encoderMode}).");
+                    $"Recording started. Output: {outputPath}. Trigger: {triggerDetails}. Codec: {codec}. Resolution: {resolutionDisplay}. FPS: {resolvedFrameRate}. Video bitrate: {videoBitrateDisplay}. Audio: {audioBitrateDisplay}. Hardware: {hardwareDescription} ({encoderMode}).");
         }
 
         private void HandleRecorderCompleted(InternalScreenRecorder recorder)

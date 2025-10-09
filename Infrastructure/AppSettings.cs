@@ -94,6 +94,7 @@ namespace ToNRoundCounter.Infrastructure
         public string AutoRecordingWindowTitle { get; set; } = "VRChat";
         public string AutoRecordingCommand { get; set; } = string.Empty;
         public int AutoRecordingFrameRate { get; set; } = 30;
+        public string AutoRecordingResolution { get; set; } = AutoRecordingService.DefaultResolutionOptionId;
         public string AutoRecordingArguments { get; set; } = string.Empty;
         public string AutoRecordingOutputDirectory { get; set; } = "recordings";
         public string AutoRecordingOutputExtension { get; set; } = "avi";
@@ -383,6 +384,7 @@ namespace ToNRoundCounter.Infrastructure
                 ? string.Empty
                 : AutoRecordingCommand.Trim();
             AutoRecordingFrameRate = NormalizeRecordingFrameRate(AutoRecordingFrameRate);
+            AutoRecordingResolution = AutoRecordingService.NormalizeResolutionOption(AutoRecordingResolution);
             AutoRecordingArguments = string.IsNullOrWhiteSpace(AutoRecordingArguments)
                 ? string.Empty
                 : AutoRecordingArguments.Trim();
@@ -570,6 +572,7 @@ namespace ToNRoundCounter.Infrastructure
                 AutoRecordingWindowTitle = AutoRecordingWindowTitle,
                 AutoRecordingCommand = AutoRecordingCommand,
                 AutoRecordingFrameRate = AutoRecordingFrameRate,
+                AutoRecordingResolution = AutoRecordingResolution,
                 AutoRecordingArguments = AutoRecordingArguments,
                 AutoRecordingOutputDirectory = AutoRecordingOutputDirectory,
                 AutoRecordingOutputExtension = AutoRecordingOutputExtension,
@@ -670,6 +673,7 @@ namespace ToNRoundCounter.Infrastructure
         public string AutoRecordingWindowTitle { get; set; } = "VRChat";
         public string AutoRecordingCommand { get; set; } = string.Empty;
         public int AutoRecordingFrameRate { get; set; } = 30;
+        public string AutoRecordingResolution { get; set; } = AutoRecordingService.DefaultResolutionOptionId;
         public string AutoRecordingArguments { get; set; } = string.Empty;
         public string AutoRecordingOutputDirectory { get; set; } = "recordings";
         public string AutoRecordingOutputExtension { get; set; } = "avi";

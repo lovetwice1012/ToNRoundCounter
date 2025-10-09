@@ -329,6 +329,33 @@ APIキーはwebサイトから取得してください。</value>
   <data name="AutoRecording_HardwareEncoderHelp" xml:space="preserve">
     <value>使用するGPUとAPIを選択します。自動は利用可能な最適なデバイスを選びます。</value>
   </data>
+  <data name="AutoRecording_FrameRateLimited" xml:space="preserve">
+    <value>選択したエンコーダーでは最大 {0} fps までしか録画できません（設定値: {1} fps）。</value>
+  </data>
+  <data name="AutoRecording_ResolutionLabel" xml:space="preserve">
+    <value>録画解像度</value>
+  </data>
+  <data name="AutoRecording_ResolutionOption_Window" xml:space="preserve">
+    <value>ウィンドウサイズに合わせる</value>
+  </data>
+  <data name="AutoRecording_ResolutionOption_2160p" xml:space="preserve">
+    <value>3840×2160（4K UHD）</value>
+  </data>
+  <data name="AutoRecording_ResolutionOption_1440p" xml:space="preserve">
+    <value>2560×1440（QHD）</value>
+  </data>
+  <data name="AutoRecording_ResolutionOption_1080p" xml:space="preserve">
+    <value>1920×1080（フルHD）</value>
+  </data>
+  <data name="AutoRecording_ResolutionOption_900p" xml:space="preserve">
+    <value>1600×900</value>
+  </data>
+  <data name="AutoRecording_ResolutionOption_720p" xml:space="preserve">
+    <value>1280×720（HD）</value>
+  </data>
+  <data name="AutoRecording_ResolutionOption_480p" xml:space="preserve">
+    <value>854×480（SD）</value>
+  </data>
   <data name="AutoRecording_HardwareOption_Auto" xml:space="preserve">
     <value>自動 (最適)</value>
   </data>
