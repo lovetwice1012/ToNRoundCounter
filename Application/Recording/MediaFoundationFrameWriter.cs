@@ -325,7 +325,7 @@ namespace ToNRoundCounter.Application.Recording
                 MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BITS_PER_SAMPLE, format.BitsPerSample), "Audio input bits per sample");
 
                 // Set valid bits per sample (important for non-float formats)
-                if (!format.IsFloat)
+                if (!format.IsFloat && format.BitsPerSample > 0)
                 {
                     int validBits = format.ValidBitsPerSample > 0 && format.ValidBitsPerSample <= format.BitsPerSample
                         ? format.ValidBitsPerSample
@@ -335,7 +335,7 @@ namespace ToNRoundCounter.Application.Recording
 
                 // Set channel mask with proper defaults
                 uint channelMask = format.ChannelMask;
-                if (channelMask == 0)
+                if (channelMask == 0 && format.Channels > 0)
                 {
                     // Provide default channel masks for common configurations
                     channelMask = format.Channels switch
@@ -353,6 +353,10 @@ namespace ToNRoundCounter.Application.Recording
                 {
                     MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_CHANNEL_MASK, unchecked((int)channelMask)), "Audio input channel mask");
                 }
+
+                // Set WAVEFORMATEX preference for better encoder compatibility
+                var preferWaveFormatExGuid = MediaFoundationInterop.MF_MT_AUDIO_PREFER_WAVEFORMATEX;
+                MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(ref preferWaveFormatExGuid, 1), "Audio prefer WAVEFORMATEX");
 
                 // Set this flag for better encoder compatibility
                 MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_ALL_SAMPLES_INDEPENDENT, 1), "Audio all samples independent");
