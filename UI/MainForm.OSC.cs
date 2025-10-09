@@ -28,8 +28,8 @@ namespace ToNRoundCounter.UI
         private bool afkSoundPlayed = false;
         private bool punishSoundPlayed = false;
         private double lastIdleSeconds = 0d;
-        private int oscMessageSkipCounter = 0; // OSCƒƒbƒZ[ƒWˆ—ŠÔˆø‚«—pƒJƒEƒ“ƒ^[
-        private const int OscMessageProcessInterval = 3; // 3Œ‚É1Œ‚¾‚¯ˆ—
+        private int oscMessageSkipCounter = 0; // OSCãƒ¡ãƒƒã‚»ãƒ¼ã‚¸å‡¦ç†é–“å¼•ãç”¨ã‚«ã‚¦ãƒ³ã‚¿ãƒ¼
+        private const int OscMessageProcessInterval = 3; // 3ä»¶ã«1ä»¶ã ã‘å‡¦ç†
 
         private async Task InitializeOSCRepeater()
         {
@@ -121,13 +121,12 @@ namespace ToNRoundCounter.UI
                 return;
             }
             
-            // VelocityMagnitudeƒƒbƒZ[ƒW‚Ì‚Ý‚•p“x‚Åˆ—‚ª•K—v
-            // ‚»‚êˆÈŠO‚ÌƒƒbƒZ[ƒW‚Í—Dæ“x‚ª‚‚¢‚½‚ßí‚Éˆ—
+            bool isHighFrequencyMessage = message.Address == "/avatar/parameters/VelocityX" ||
             bool isHighFrequencyMessage = message.Address == "/avatar/parameters/VelocityMagnitude" ||
                                          message.Address == "/avatar/parameters/VelocityX" ||
                                          message.Address == "/avatar/parameters/VelocityZ";
             
-            // ‚•p“xƒƒbƒZ[ƒW‚ðŠÔˆø‚«ˆ—
+            // é«˜é »åº¦ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸ã‚’é–“å¼•ãå‡¦ç†
             if (isHighFrequencyMessage)
             {
                 oscMessageSkipCounter++;
