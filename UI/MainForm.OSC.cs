@@ -120,12 +120,10 @@ namespace ToNRoundCounter.UI
                 LogUi("Received null OSC message.", LogEventLevel.Warning);
                 return;
             }
-            
+
             bool isHighFrequencyMessage = message.Address == "/avatar/parameters/VelocityX" ||
-            bool isHighFrequencyMessage = message.Address == "/avatar/parameters/VelocityMagnitude" ||
-                                         message.Address == "/avatar/parameters/VelocityX" ||
                                          message.Address == "/avatar/parameters/VelocityZ";
-            
+
             // 高頻度メッセージを間引き処理
             if (isHighFrequencyMessage)
             {
@@ -135,7 +133,7 @@ namespace ToNRoundCounter.UI
                     return;
                 }
             }
-            
+
             if (message.Address == "/avatar/parameters/VelocityMagnitude")
             {
                 try
