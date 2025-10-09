@@ -10,6 +10,8 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 
+using RecordingCodecInfo = ToNRoundCounter.Application.AutoRecordingService.RecordingCodecInfo;
+
 namespace ToNRoundCounter.Application.Recording
 {
     internal sealed class MediaFoundationFrameWriter : IMediaWriter
@@ -1718,12 +1720,13 @@ namespace ToNRoundCounter.Application.Recording
             }
 
             [StructLayout(LayoutKind.Explicit)]
-        public struct PropVariant
-        {
-            [FieldOffset(0)] public ushort vt;
-            [FieldOffset(8)] public IntPtr pointerValue;
-            [FieldOffset(8)] public int intValue;
-            [FieldOffset(8)] public long longValue;
+            public struct PropVariant
+            {
+                [FieldOffset(0)] public ushort vt;
+                [FieldOffset(8)] public IntPtr pointerValue;
+                [FieldOffset(8)] public int intValue;
+                [FieldOffset(8)] public long longValue;
+            }
         }
     }
 }
