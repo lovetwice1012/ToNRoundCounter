@@ -122,6 +122,7 @@ namespace ToNRoundCounter.Application.Recording
 
             IMediaWriter? writer = null;
             WasapiAudioCapture? audioCapture = null;
+            WasapiAudioCapture? audioCaptureToTransfer = null;
             AudioFormat? audioFormat = null;
 
             try
@@ -140,8 +141,10 @@ namespace ToNRoundCounter.Application.Recording
                 }
 
                 writer = CreateWriter(extension, codecId, outputPath, bounds.Width, bounds.Height, frameRate, audioFormat, videoBitrate, audioBitrate, hardwareSelection);
-                recorder = new InternalScreenRecorder(handle, bounds, frameRate, includeOverlay, writer, audioCapture);
+                audioCaptureToTransfer = audioCapture;
                 audioCapture = null;
+                recorder = new InternalScreenRecorder(handle, bounds, frameRate, includeOverlay, writer, audioCaptureToTransfer);
+                audioCaptureToTransfer = null;
                 return true;
             }
             catch (Exception ex)
@@ -149,6 +152,7 @@ namespace ToNRoundCounter.Application.Recording
                 failureReason = ex.Message;
                 writer?.Dispose();
                 audioCapture?.Dispose();
+                audioCaptureToTransfer?.Dispose();
                 recorder?.Dispose();
                 recorder = null;
                 return false;
@@ -157,7 +161,9 @@ namespace ToNRoundCounter.Application.Recording
 
         private static IMediaWriter CreateWriter(string extension, string codecId, string outputPath, int width, int height, int frameRate, AudioFormat? audioFormat, int videoBitrate, int audioBitrate, HardwareEncoderSelection hardwareSelection)
         {
-            switch ((extension ?? string.Empty).ToLowerInvariant())
+            string normalizedExtension = (extension ?? string.Empty).ToLowerInvariant();
+            
+            switch (normalizedExtension)
             {
                 case "gif":
                     if (audioFormat.HasValue)
@@ -174,7 +180,7 @@ namespace ToNRoundCounter.Application.Recording
 
                     return new SimpleAviWriter(outputPath, width, height, frameRate);
                 default:
-                    return MediaFoundationFrameWriter.Create(extension!, codecId, outputPath, width, height, frameRate, audioFormat, videoBitrate, audioBitrate, hardwareSelection);
+                    return MediaFoundationFrameWriter.Create(normalizedExtension, codecId, outputPath, width, height, frameRate, audioFormat, videoBitrate, audioBitrate, hardwareSelection);
             }
         }
 
@@ -368,22 +374,28 @@ namespace ToNRoundCounter.Application.Recording
 
         public void Dispose()
         {
+            bool shouldDispose;
+            
+            lock (_stateLock)
+            {
+                shouldDispose = !_disposed;
+                if (shouldDispose)
+                {
+                    _disposed = true;
+                }
+            }
+
+            if (!shouldDispose)
+            {
+                return;
+            }
+
             try
             {
                 Stop("Recorder disposed");
             }
             catch
             {
-            }
-
-            lock (_stateLock)
-            {
-                if (_disposed)
-                {
-                    return;
-                }
-
-                _disposed = true;
             }
 
             _cts.Dispose();

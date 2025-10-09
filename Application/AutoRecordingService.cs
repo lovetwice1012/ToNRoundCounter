@@ -159,8 +159,8 @@ namespace ToNRoundCounter.Application
             _currentTriggerDescription = triggerDetails;
             recorder.Completion.ContinueWith(_ => HandleRecorderCompleted(recorder), TaskScheduler.Default);
             string encoderMode = recorder.IsHardwareAccelerated ? "hardware" : "software";
-            string videoBitrateDisplay = videoBitrate > 0 ? $"{videoBitrate / 1000} kbps" : "auto";
-            string audioBitrateDisplay = captureAudio ? (audioBitrate > 0 ? $"{audioBitrate / 1000} kbps" : "auto") : "disabled";
+            string videoBitrateDisplay = videoBitrate > 0 ? $"{videoBitrate / 1000.0:F1} kbps" : "auto";
+            string audioBitrateDisplay = captureAudio ? (audioBitrate > 0 ? $"{audioBitrate / 1000.0:F1} kbps" : "auto") : "disabled";
             string hardwareDescription = GetHardwareOptionDisplay(hardwareOptionId);
             _logger.LogEvent(
                 "AutoRecording",
@@ -170,7 +170,7 @@ namespace ToNRoundCounter.Application
 
         private void HandleRecorderCompleted(InternalScreenRecorder recorder)
         {
-            string? trigger = null;
+            string trigger;
             string? reason = null;
             LogEventLevel level = LogEventLevel.Information;
             bool shouldLog = false;
@@ -211,11 +211,10 @@ namespace ToNRoundCounter.Application
 
             if (shouldLog)
             {
-                string triggerText = trigger ?? "<unknown>";
                 string reasonText = reason ?? "<unknown>";
                 _logger.LogEvent(
                     "AutoRecording",
-                    () => $"Recording stopped automatically. Reason: {reasonText}. Last trigger: {triggerText}.",
+                    () => $"Recording stopped automatically. Reason: {reasonText}. Last trigger: {trigger}.",
                     level);
             }
         }
@@ -233,10 +232,12 @@ namespace ToNRoundCounter.Application
             _currentTriggerDescription = null;
 
             LogEventLevel level = LogEventLevel.Information;
+            string stopReason = reason;
 
             try
             {
                 recorder.Stop(reason);
+                stopReason = recorder.StopReason;
                 if (recorder.HasError)
                 {
                     level = LogEventLevel.Warning;
@@ -262,7 +263,7 @@ namespace ToNRoundCounter.Application
 
                 _logger.LogEvent(
                     "AutoRecording",
-                    () => $"Recording stopped. Reason: {recorder.StopReason}. Last trigger: {trigger}.",
+                    () => $"Recording stopped. Reason: {stopReason}. Last trigger: {trigger}.",
                     level);
             }
         }
