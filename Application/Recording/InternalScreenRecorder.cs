@@ -16,7 +16,6 @@ namespace ToNRoundCounter.Application.Recording
     internal sealed class InternalScreenRecorder : IDisposable
     {
         private readonly IntPtr _windowHandle;
-        private readonly Rectangle _bounds;
         private readonly int _frameRate;
         private readonly bool _includeOverlay;
         private readonly IMediaWriter _writer;
@@ -33,12 +32,13 @@ namespace ToNRoundCounter.Application.Recording
         private bool _stopRequested;
         private bool _disposed;
         private readonly bool _isHardwareAccelerated;
+        private readonly Size _targetSize;
 
-        private InternalScreenRecorder(IntPtr windowHandle, Rectangle bounds, int frameRate, bool includeOverlay, IMediaWriter writer, WasapiAudioCapture? audioCapture)
+        private InternalScreenRecorder(IntPtr windowHandle, int frameRate, Size targetSize, bool includeOverlay, IMediaWriter writer, WasapiAudioCapture? audioCapture)
         {
             _windowHandle = windowHandle;
-            _bounds = bounds;
             _frameRate = frameRate;
+            _targetSize = targetSize;
             _includeOverlay = includeOverlay;
             _cts = new CancellationTokenSource();
             _writer = writer;
@@ -91,9 +91,11 @@ namespace ToNRoundCounter.Application.Recording
 
         public bool IsHardwareAccelerated => _isHardwareAccelerated;
 
-        public static bool TryCreate(string windowHint, int frameRate, string outputPath, string extension, string codecId, bool includeOverlay, int videoBitrate, int audioBitrate, HardwareEncoderSelection hardwareSelection, bool captureAudio, out InternalScreenRecorder? recorder, out string? failureReason)
+        public static bool TryCreate(string windowHint, int requestedFrameRate, string resolutionOptionId, string outputPath, string extension, string codecId, bool includeOverlay, int videoBitrate, int audioBitrate, HardwareEncoderSelection hardwareSelection, bool captureAudio, out InternalScreenRecorder? recorder, out int actualFrameRate, out Size targetResolution, out string? failureReason)
         {
             recorder = null;
+            actualFrameRate = 0;
+            targetResolution = Size.Empty;
             failureReason = null;
 
             string hint = string.IsNullOrWhiteSpace(windowHint) ? "VRChat" : windowHint.Trim();
@@ -118,7 +120,12 @@ namespace ToNRoundCounter.Application.Recording
                 return false;
             }
 
-            var bounds = Rectangle.FromLTRB(rect.Left, rect.Top, rect.Right, rect.Bottom);
+            targetResolution = AutoRecordingService.ResolveRecordingTargetSize(resolutionOptionId, width, height);
+            if (targetResolution.Width <= 0 || targetResolution.Height <= 0)
+            {
+                failureReason = "Target resolution is invalid.";
+                return false;
+            }
 
             IMediaWriter? writer = null;
             WasapiAudioCapture? audioCapture = null;
@@ -140,10 +147,12 @@ namespace ToNRoundCounter.Application.Recording
                     audioFormat = audioCapture?.Format;
                 }
 
-                writer = CreateWriter(extension, codecId, outputPath, bounds.Width, bounds.Height, frameRate, audioFormat, videoBitrate, audioBitrate, hardwareSelection);
+                int frameRate = AutoRecordingService.ApplyFrameRateLimits(codecId, hardwareSelection, requestedFrameRate, targetResolution);
+                actualFrameRate = frameRate;
+                writer = CreateWriter(extension, codecId, outputPath, targetResolution.Width, targetResolution.Height, frameRate, audioFormat, videoBitrate, audioBitrate, hardwareSelection);
                 audioCaptureToTransfer = audioCapture;
                 audioCapture = null;
-                recorder = new InternalScreenRecorder(handle, bounds, frameRate, includeOverlay, writer, audioCaptureToTransfer);
+                recorder = new InternalScreenRecorder(handle, frameRate, targetResolution, includeOverlay, writer, audioCaptureToTransfer);
                 audioCaptureToTransfer = null;
                 return true;
             }
@@ -155,6 +164,8 @@ namespace ToNRoundCounter.Application.Recording
                 audioCaptureToTransfer?.Dispose();
                 recorder?.Dispose();
                 recorder = null;
+                actualFrameRate = 0;
+                targetResolution = Size.Empty;
                 return false;
             }
         }
@@ -215,15 +226,50 @@ namespace ToNRoundCounter.Application.Recording
         private async Task CaptureVideoLoopAsync(CancellationToken token)
         {
             var frameInterval = TimeSpan.FromSeconds(1d / Math.Max(1, _frameRate));
-            var nextFrame = DateTime.UtcNow;
-            var targetSize = _bounds.Size;
+            long frameIntervalTicks = Math.Max(1L, frameInterval.Ticks);
+            var captureStopwatch = Stopwatch.StartNew();
+            long framesProduced = 0;
+            var targetSize = _targetSize;
             using var outputFrame = new Bitmap(targetSize.Width, targetSize.Height, PixelFormat.Format32bppArgb);
             Bitmap? captureFrame = null;
+            Bitmap? duplicateFrame = null;
+            bool duplicateFrameValid = false;
 
             try
             {
+                duplicateFrame = new Bitmap(targetSize.Width, targetSize.Height, PixelFormat.Format32bppArgb);
+
                 while (!token.IsCancellationRequested)
                 {
+                    if (duplicateFrameValid)
+                    {
+                        var elapsedBeforeCapture = captureStopwatch.Elapsed;
+                        long expectedFramesBeforeCapture = (elapsedBeforeCapture.Ticks / frameIntervalTicks) + 1;
+                        while (framesProduced < expectedFramesBeforeCapture - 1)
+                        {
+                            _writer.WriteVideoFrame(duplicateFrame);
+                            framesProduced++;
+                        }
+                    }
+
+                    var elapsed = captureStopwatch.Elapsed;
+                    var targetTimestamp = TimeSpan.FromTicks(framesProduced * frameIntervalTicks);
+                    if (elapsed < targetTimestamp)
+                    {
+                        var delay = targetTimestamp - elapsed;
+                        if (delay > TimeSpan.Zero)
+                        {
+                            try
+                            {
+                                await Task.Delay(delay, token).ConfigureAwait(false);
+                            }
+                            catch (TaskCanceledException) when (token.IsCancellationRequested)
+                            {
+                                break;
+                            }
+                        }
+                    }
+
                     if (!IsWindow(_windowHandle))
                     {
                         SetStopReason("Target window is no longer available.", true);
@@ -264,6 +310,25 @@ namespace ToNRoundCounter.Application.Recording
                         }
 
                         _writer.WriteVideoFrame(outputFrame);
+                        framesProduced++;
+
+                        if (duplicateFrame != null)
+                        {
+                            using var duplicateGraphics = Graphics.FromImage(duplicateFrame);
+                            duplicateGraphics.DrawImageUnscaled(outputFrame, 0, 0);
+                            duplicateFrameValid = true;
+                        }
+
+                        if (duplicateFrameValid)
+                        {
+                            var elapsedAfterCapture = captureStopwatch.Elapsed;
+                            long expectedFramesAfterCapture = (elapsedAfterCapture.Ticks / frameIntervalTicks) + 1;
+                            while (framesProduced < expectedFramesAfterCapture)
+                            {
+                                _writer.WriteVideoFrame(duplicateFrame!);
+                                framesProduced++;
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -271,23 +336,6 @@ namespace ToNRoundCounter.Application.Recording
                         break;
                     }
 
-                    nextFrame += frameInterval;
-                    var delay = nextFrame - DateTime.UtcNow;
-                    if (delay > TimeSpan.Zero)
-                    {
-                        try
-                        {
-                            await Task.Delay(delay, token).ConfigureAwait(false);
-                        }
-                        catch (TaskCanceledException) when (token.IsCancellationRequested)
-                        {
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        nextFrame = DateTime.UtcNow;
-                    }
                 }
 
                 if (!_stopReasonSet)
@@ -298,6 +346,7 @@ namespace ToNRoundCounter.Application.Recording
             finally
             {
                 captureFrame?.Dispose();
+                duplicateFrame?.Dispose();
             }
         }
 

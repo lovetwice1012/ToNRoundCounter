@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using ToNRoundCounter.Application.Recording;
@@ -45,9 +46,11 @@ namespace ToNRoundCounter.Application
         };
 
         internal const string DefaultCodec = "h264";
+        internal const string DefaultResolutionOptionId = "match-window";
         internal const string DefaultHardwareEncoderOptionId = "auto";
         internal const string SoftwareHardwareEncoderOptionId = "software";
         private const string D3D11HardwareOptionPrefix = "d3d11:";
+        private const int GlobalMaxFrameRate = 240;
 
         public readonly struct RecordingCodecInfo
         {
@@ -65,6 +68,28 @@ namespace ToNRoundCounter.Application
             public bool SupportsAudio { get; }
         }
 
+        public readonly struct RecordingResolutionOption
+        {
+            public RecordingResolutionOption(string id, string localizationKey, int width, int height, bool isDynamic)
+            {
+                Id = id;
+                LocalizationKey = localizationKey;
+                Width = width;
+                Height = height;
+                IsDynamic = isDynamic;
+            }
+
+            public string Id { get; }
+
+            public string LocalizationKey { get; }
+
+            public int Width { get; }
+
+            public int Height { get; }
+
+            public bool IsDynamic { get; }
+        }
+
         public readonly struct HardwareEncoderOption
         {
             public HardwareEncoderOption(string id, string localizationKey, string? adapterName)
@@ -80,6 +105,115 @@ namespace ToNRoundCounter.Application
 
             public string? AdapterName { get; }
         }
+
+        private readonly struct ResolutionHardwareLimit
+        {
+            public ResolutionHardwareLimit(int maxPixels, int maxFrameRate)
+            {
+                MaxPixels = maxPixels;
+                MaxFrameRate = maxFrameRate;
+            }
+
+            public int MaxPixels { get; }
+
+            public int MaxFrameRate { get; }
+        }
+
+        private readonly struct CodecFrameRateLimit
+        {
+            public CodecFrameRateLimit(int softwareMax, int hardwareDefault, ResolutionHardwareLimit[]? hardwareResolutionLimits = null)
+            {
+                SoftwareMax = softwareMax;
+                HardwareDefault = hardwareDefault;
+                HardwareResolutionLimits = hardwareResolutionLimits;
+            }
+
+            public int SoftwareMax { get; }
+
+            public int HardwareDefault { get; }
+
+            public ResolutionHardwareLimit[]? HardwareResolutionLimits { get; }
+
+            public int ResolveLimit(HardwareEncoderSelection selection, Size? targetSize)
+            {
+                bool preferHardwareLimit = selection.Api != HardwareAccelerationApi.Software;
+                int fallbackSoftware = SoftwareMax > 0 ? SoftwareMax : GlobalMaxFrameRate;
+                if (!preferHardwareLimit)
+                {
+                    return fallbackSoftware;
+                }
+
+                int hardwareLimit = HardwareDefault > 0 ? HardwareDefault : fallbackSoftware;
+                if (targetSize.HasValue && HardwareResolutionLimits != null && HardwareResolutionLimits.Length > 0)
+                {
+                    long pixels = Math.Max(1L, (long)targetSize.Value.Width * targetSize.Value.Height);
+                    foreach (var limit in HardwareResolutionLimits)
+                    {
+                        if (pixels <= limit.MaxPixels)
+                        {
+                            if (limit.MaxFrameRate > 0)
+                            {
+                                return limit.MaxFrameRate;
+                            }
+
+                            break;
+                        }
+                    }
+
+                    var largest = HardwareResolutionLimits[HardwareResolutionLimits.Length - 1];
+                    if (largest.MaxFrameRate > 0)
+                    {
+                        hardwareLimit = largest.MaxFrameRate;
+                    }
+                }
+
+                int limit = hardwareLimit > 0 ? hardwareLimit : fallbackSoftware;
+                if (limit <= 0)
+                {
+                    limit = fallbackSoftware;
+                }
+
+                return limit > 0 ? limit : GlobalMaxFrameRate;
+            }
+        }
+
+        private static readonly ResolutionHardwareLimit[] HighDensityHardwareLimits = new[]
+        {
+            new ResolutionHardwareLimit(1920 * 1080, 120),
+            new ResolutionHardwareLimit(2560 * 1440, 90),
+            new ResolutionHardwareLimit(3840 * 2160, 60),
+            new ResolutionHardwareLimit(7680 * 4320, 30),
+        };
+
+        private static readonly ResolutionHardwareLimit[] LegacyHardwareLimits = new[]
+        {
+            new ResolutionHardwareLimit(1920 * 1080, 60),
+            new ResolutionHardwareLimit(3840 * 2160, 30),
+            new ResolutionHardwareLimit(7680 * 4320, 24),
+        };
+
+        private static readonly RecordingResolutionOption[] RecordingResolutionOptions = new[]
+        {
+            new RecordingResolutionOption(DefaultResolutionOptionId, "AutoRecording_ResolutionOption_Window", 0, 0, true),
+            new RecordingResolutionOption("3840x2160", "AutoRecording_ResolutionOption_2160p", 3840, 2160, false),
+            new RecordingResolutionOption("2560x1440", "AutoRecording_ResolutionOption_1440p", 2560, 1440, false),
+            new RecordingResolutionOption("1920x1080", "AutoRecording_ResolutionOption_1080p", 1920, 1080, false),
+            new RecordingResolutionOption("1600x900", "AutoRecording_ResolutionOption_900p", 1600, 900, false),
+            new RecordingResolutionOption("1280x720", "AutoRecording_ResolutionOption_720p", 1280, 720, false),
+            new RecordingResolutionOption("854x480", "AutoRecording_ResolutionOption_480p", 854, 480, false),
+        };
+
+        private static readonly Dictionary<string, CodecFrameRateLimit> CodecFrameRateLimits = new Dictionary<string, CodecFrameRateLimit>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["h264"] = new CodecFrameRateLimit(GlobalMaxFrameRate, 120, HighDensityHardwareLimits),
+            ["hevc"] = new CodecFrameRateLimit(GlobalMaxFrameRate, 120, HighDensityHardwareLimits),
+            ["av1"] = new CodecFrameRateLimit(GlobalMaxFrameRate, 120, HighDensityHardwareLimits),
+            ["vp9"] = new CodecFrameRateLimit(GlobalMaxFrameRate, 120, HighDensityHardwareLimits),
+            ["wmv3"] = new CodecFrameRateLimit(120, 60, LegacyHardwareLimits),
+            ["mpeg2"] = new CodecFrameRateLimit(120, 60, LegacyHardwareLimits),
+            ["raw"] = new CodecFrameRateLimit(GlobalMaxFrameRate, 0),
+            ["gif"] = new CodecFrameRateLimit(60, 0),
+        };
 
         public static IReadOnlyList<RecordingCodecInfo> GetCodecOptions(string extension)
         {
@@ -142,6 +276,16 @@ namespace ToNRoundCounter.Application
             }
 
             return bitrate > 1_000_000 ? 1_000_000 : bitrate;
+        }
+
+        public static IReadOnlyList<RecordingResolutionOption> GetRecordingResolutionOptions()
+        {
+            return RecordingResolutionOptions;
+        }
+
+        public static string NormalizeResolutionOption(string? optionId)
+        {
+            return FindResolutionOption(optionId).Id;
         }
 
         public static IReadOnlyList<HardwareEncoderOption> GetHardwareEncoderOptions()
@@ -301,12 +445,88 @@ namespace ToNRoundCounter.Application
                 return 5;
             }
 
-            if (frameRate > 240)
+            if (frameRate > GlobalMaxFrameRate)
             {
-                return 240;
+                return GlobalMaxFrameRate;
             }
 
             return frameRate;
+        }
+
+        internal static int ApplyFrameRateLimits(string codecId, HardwareEncoderSelection selection, int frameRate, Size targetSize)
+        {
+            int limit = GetFrameRateLimit(codecId, selection, targetSize);
+            return frameRate > limit ? limit : frameRate;
+        }
+
+        public static int ResolveConfiguredFrameRateLimit(string? codecId, string? hardwareOptionId, string? resolutionOptionId)
+        {
+            string normalizedCodec = (codecId ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(normalizedCodec))
+            {
+                normalizedCodec = DefaultCodec;
+            }
+
+            string normalizedHardware = NormalizeHardwareOption(hardwareOptionId);
+            var selection = ParseHardwareSelection(normalizedHardware);
+            Size? referenceSize = GetResolutionReferenceSize(resolutionOptionId);
+            return GetFrameRateLimit(normalizedCodec, selection, referenceSize);
+        }
+
+        internal static Size ResolveRecordingTargetSize(string? resolutionOptionId, int windowWidth, int windowHeight)
+        {
+            var option = FindResolutionOption(resolutionOptionId);
+            if (option.IsDynamic)
+            {
+                int width = Math.Max(16, windowWidth);
+                int height = Math.Max(16, windowHeight);
+                return new Size(width, height);
+            }
+
+            int targetWidth = Math.Max(16, option.Width);
+            int targetHeight = Math.Max(16, option.Height);
+            return new Size(targetWidth, targetHeight);
+        }
+
+        private static Size? GetResolutionReferenceSize(string? resolutionOptionId)
+        {
+            var option = FindResolutionOption(resolutionOptionId);
+            if (option.IsDynamic)
+            {
+                if (option.Width > 0 && option.Height > 0)
+                {
+                    return new Size(option.Width, option.Height);
+                }
+
+                return null;
+            }
+
+            return new Size(option.Width, option.Height);
+        }
+
+        private static RecordingResolutionOption FindResolutionOption(string? optionId)
+        {
+            string normalized = (optionId ?? string.Empty).Trim();
+            foreach (var option in RecordingResolutionOptions)
+            {
+                if (!string.IsNullOrEmpty(normalized) && option.Id.Equals(normalized, StringComparison.OrdinalIgnoreCase))
+                {
+                    return option;
+                }
+            }
+
+            return RecordingResolutionOptions[0];
+        }
+
+        private static int GetFrameRateLimit(string codecId, HardwareEncoderSelection selection, Size? targetSize)
+        {
+            string normalizedCodec = (codecId ?? string.Empty).Trim();
+            if (CodecFrameRateLimits.TryGetValue(normalizedCodec, out var limits))
+            {
+                return limits.ResolveLimit(selection, targetSize);
+            }
+
+            return GlobalMaxFrameRate;
         }
 
         private string ResolveOutputDirectory()
