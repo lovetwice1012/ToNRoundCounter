@@ -992,7 +992,8 @@ namespace ToNRoundCounter.UI
             roundLogExportGroup.Controls.Add(roundLogExportDescriptionLabel);
 
             roundLogExportButton = new Button();
-            roundLogExportButton.Text = LanguageManager.Translate("ラウンドログをエクスポート");
+            roundLogExportButton.Text = LanguageManager.Translate("ラウンドログをエクスポート(開発中)");
+            roundLogExportButton.Enabled = false;
             roundLogExportButton.AutoSize = true;
             roundLogExportButton.Location = new Point(exportInnerMargin, roundLogExportDescriptionLabel.Bottom + 12);
             roundLogExportButton.Click += RoundLogExportButton_Click;
@@ -1010,7 +1011,9 @@ namespace ToNRoundCounter.UI
             int autoRecordingInnerY = 25;
 
             AutoRecordingEnabledCheckBox = new CheckBox();
-            AutoRecordingEnabledCheckBox.Text = LanguageManager.Translate("指定条件でVRChatを自動録画する");
+            AutoRecordingEnabledCheckBox.Text = LanguageManager.Translate("指定条件でVRChatを自動録画する(開発中)");
+            AutoRecordingEnabledCheckBox.Enabled = false;
+            AutoRecordingEnabledCheckBox.Checked = false;
             AutoRecordingEnabledCheckBox.AutoSize = true;
             AutoRecordingEnabledCheckBox.Location = new Point(innerMargin, autoRecordingInnerY);
             grpAutoRecording.Controls.Add(AutoRecordingEnabledCheckBox);
