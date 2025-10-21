@@ -222,8 +222,8 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
             finally
             {
                 _cts.Dispose();
-                await _connection.CloseAsync().ConfigureAwait(false);
-                await _connection.DisposeAsync().ConfigureAwait(false);
+                _connection.Close();
+                _connection.Dispose();
             }
         }
 
