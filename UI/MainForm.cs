@@ -2282,6 +2282,14 @@ namespace ToNRoundCounter.UI
 
         private void ScheduleAutoSuicide(TimeSpan delay, bool resetStartTime, bool fromAllRoundsMode = false, bool isManualAction = false)
         {
+            if (!isManualAction && autoSuicideManualCancelRequested)
+            {
+                autoSuicideManualCancelRequested = false;
+                autoSuicideManualDelayUntil = null;
+                UpdateShortcutOverlayState();
+                return;
+            }
+
             if (resetStartTime)
             {
                 autoSuicideManualCancelRequested = false;
@@ -2290,12 +2298,6 @@ namespace ToNRoundCounter.UI
 
             if (!isManualAction)
             {
-                if (autoSuicideManualCancelRequested)
-                {
-                    UpdateShortcutOverlayState();
-                    return;
-                }
-
                 if (autoSuicideManualDelayUntil.HasValue)
                 {
                     DateTime now = DateTime.UtcNow;

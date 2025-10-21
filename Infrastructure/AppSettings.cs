@@ -293,30 +293,108 @@ namespace ToNRoundCounter.Infrastructure
 
         private void NormalizeAutoLaunchEntries()
         {
-            AutoLaunchEntries ??= new List<AutoLaunchEntry>();
+            var entries = AutoLaunchEntries ?? new List<AutoLaunchEntry>();
+            var normalizedEntries = new List<AutoLaunchEntry>(entries.Count + 1);
+            var deduplicationMap = new Dictionary<AutoLaunchKey, AutoLaunchEntry>();
 
-            foreach (var entry in AutoLaunchEntries)
+            foreach (var entry in entries)
             {
                 if (entry == null)
                 {
                     continue;
                 }
 
-                entry.ExecutablePath ??= string.Empty;
-                entry.Arguments ??= string.Empty;
+                var normalizedPath = (entry.ExecutablePath ?? string.Empty).Trim();
+                var normalizedArguments = (entry.Arguments ?? string.Empty).Trim();
+
+                if (string.IsNullOrWhiteSpace(normalizedPath))
+                {
+                    continue;
+                }
+
+                var key = new AutoLaunchKey(normalizedPath, normalizedArguments);
+                if (deduplicationMap.TryGetValue(key, out var existing))
+                {
+                    existing.Enabled |= entry.Enabled;
+                    continue;
+                }
+
+                var normalizedEntry = new AutoLaunchEntry
+                {
+                    Enabled = entry.Enabled,
+                    ExecutablePath = normalizedPath,
+                    Arguments = normalizedArguments
+                };
+
+                deduplicationMap[key] = normalizedEntry;
+                normalizedEntries.Add(normalizedEntry);
             }
 
             if (!string.IsNullOrWhiteSpace(AutoLaunchExecutablePath))
             {
-                AutoLaunchEntries.Add(new AutoLaunchEntry
+                var fallbackPath = AutoLaunchExecutablePath.Trim();
+                var fallbackArguments = (AutoLaunchArguments ?? string.Empty).Trim();
+
+                if (!string.IsNullOrWhiteSpace(fallbackPath))
                 {
-                    Enabled = AutoLaunchEnabled,
-                    ExecutablePath = AutoLaunchExecutablePath ?? string.Empty,
-                    Arguments = AutoLaunchArguments ?? string.Empty
-                });
+                    var fallbackKey = new AutoLaunchKey(fallbackPath, fallbackArguments);
+                    if (deduplicationMap.TryGetValue(fallbackKey, out var existing))
+                    {
+                        existing.Enabled |= AutoLaunchEnabled;
+                    }
+                    else
+                    {
+                        var fallbackEntry = new AutoLaunchEntry
+                        {
+                            Enabled = AutoLaunchEnabled,
+                            ExecutablePath = fallbackPath,
+                            Arguments = fallbackArguments
+                        };
+
+                        deduplicationMap[fallbackKey] = fallbackEntry;
+                        normalizedEntries.Add(fallbackEntry);
+                    }
+                }
 
                 AutoLaunchExecutablePath = string.Empty;
                 AutoLaunchArguments = string.Empty;
+            }
+
+            AutoLaunchEntries = normalizedEntries;
+        }
+
+        private struct AutoLaunchKey : IEquatable<AutoLaunchKey>
+        {
+            public AutoLaunchKey(string path, string arguments)
+            {
+                Path = path;
+                Arguments = arguments;
+            }
+
+            public string Path { get; }
+
+            public string Arguments { get; }
+
+            public bool Equals(AutoLaunchKey other)
+            {
+                return string.Equals(Path, other.Path, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(Arguments, other.Arguments, StringComparison.Ordinal);
+            }
+
+            public override bool Equals(object? obj)
+            {
+                return obj is AutoLaunchKey other && Equals(other);
+            }
+
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    int hash = 17;
+                    hash = hash * 23 + StringComparer.OrdinalIgnoreCase.GetHashCode(Path);
+                    hash = hash * 23 + StringComparer.Ordinal.GetHashCode(Arguments);
+                    return hash;
+                }
             }
         }
 
@@ -546,6 +624,7 @@ namespace ToNRoundCounter.Infrastructure
                 OverlayShowNextRound = OverlayShowNextRound,
                 OverlayShowRoundStatus = OverlayShowRoundStatus,
                 OverlayShowRoundHistory = OverlayShowRoundHistory,
+                OverlayShowRoundStats = OverlayShowRoundStats,
                 OverlayShowTerrorInfo = OverlayShowTerrorInfo,
                 OverlayShowShortcuts = OverlayShowShortcuts,
                 OverlayShowAngle = OverlayShowAngle,
@@ -647,6 +726,7 @@ namespace ToNRoundCounter.Infrastructure
         public bool OverlayShowNextRound { get; set; }
         public bool OverlayShowRoundStatus { get; set; }
         public bool OverlayShowRoundHistory { get; set; }
+        public bool OverlayShowRoundStats { get; set; }
         public bool OverlayShowTerrorInfo { get; set; }
         public bool OverlayShowShortcuts { get; set; }
         public bool OverlayShowAngle { get; set; }
