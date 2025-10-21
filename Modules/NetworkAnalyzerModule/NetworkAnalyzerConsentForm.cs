@@ -33,13 +33,23 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                 Text = string.Join(Environment.NewLine + Environment.NewLine, new[]
                 {
                     "以下の内容を十分に理解したうえで同意してください。",
-                    "NetworkAnalyzer はローカルからのみアクセスできるプロキシを起動し、通信内容を記録・解析します。暗号化された HTTPS/WSS 通信も復号して確認できるため、取り扱いには細心の注意が必要です。",
+                    "NetworkAnalyzer はローカルからのみアクセスできるプロキシと VPN サーバーを起動し、通信内容を記録・解析します。暗号化された HTTPS/WSS 通信も復号して確認できるため、取り扱いには細心の注意が必要です。",
+                    "ローカル VPN は、通信経路を書き換えるために一時的にシステム設定へ変更を加えますが、モジュールの停止時に元の状態へ確実に戻します。",
                     "収集されたデータは本モジュールの動作を支援する目的に限って利用され、あなたの許可なく外部へ送信されることはありません。ログがあなたの PC 内に保存される可能性がある点をご理解ください。",
                     "同意後であっても modules フォルダから本モジュールを削除すれば動作は停止し、それ以降は同意を撤回したものとみなします。",
                     "本モジュールにはプライバシーに影響を与えかねない機能が含まれています。開発者はプライバシー保護とセキュリティリスクの最小化に最大限努めます。",
                     "同意の手続きを進めると、あなた専用の暗号鍵を生成し、システムへのインストールを試みます。途中で拒否すれば処理は中断され、モジュールは動作しません。",
                     "アンインストールについて不明な点があれば discordId:yussy までお問い合わせください。"
                 })
+            };
+
+            descriptionBox.SelectionStart = descriptionBox.TextLength;
+            descriptionBox.SelectionLength = 0;
+
+            descriptionBox.Enter += (_, _) =>
+            {
+                descriptionBox.SelectionStart = descriptionBox.TextLength;
+                descriptionBox.SelectionLength = 0;
             };
 
             _confirmButton = new Button
@@ -101,6 +111,14 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
             Controls.Add(container);
 
             CancelButton = declineButton;
+            ActiveControl = _confirmButton;
+
+            Shown += (_, _) =>
+            {
+                _confirmButton.Focus();
+                descriptionBox.SelectionStart = descriptionBox.TextLength;
+                descriptionBox.SelectionLength = 0;
+            };
         }
 
         public bool ConsentConfirmed { get; private set; }

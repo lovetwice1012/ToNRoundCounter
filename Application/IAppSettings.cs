@@ -88,6 +88,7 @@ namespace ToNRoundCounter.Application
         bool CoordinatedAutoSuicideBrainEnabled { get; set; }
         bool NetworkAnalyzerConsentGranted { get; set; }
         DateTimeOffset? NetworkAnalyzerConsentTimestamp { get; set; }
+        string? NetworkAnalyzerConsentMarkerId { get; set; }
         int NetworkAnalyzerProxyPort { get; set; }
         void Load();
         Task SaveAsync();
