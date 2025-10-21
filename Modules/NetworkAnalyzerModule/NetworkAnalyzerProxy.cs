@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Serilog.Events;
 using Titanium.Web.Proxy;
 using Titanium.Web.Proxy.EventArguments;
+using Titanium.Web.Proxy.EventArguments.WebSocket;
 using Titanium.Web.Proxy.Models;
 using ToNRoundCounter.Application;
 

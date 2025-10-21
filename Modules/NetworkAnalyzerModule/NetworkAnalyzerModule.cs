@@ -348,6 +348,150 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
         {
         }
 
+        public void OnAutoSuicideScheduled(ModuleAutoSuicideScheduleContext context)
+        {
+        }
+
+        public void OnAutoSuicideCancelled(ModuleAutoSuicideScheduleContext context)
+        {
+        }
+
+        public void OnAutoSuicideTriggered(ModuleAutoSuicideTriggerContext context)
+        {
+        }
+
+        public void OnAutoLaunchEvaluating(ModuleAutoLaunchEvaluationContext context)
+        {
+        }
+
+        public void OnAutoLaunchStarting(ModuleAutoLaunchExecutionContext context)
+        {
+        }
+
+        public void OnAutoLaunchFailed(ModuleAutoLaunchFailureContext context)
+        {
+        }
+
+        public void OnAutoLaunchCompleted(ModuleAutoLaunchExecutionContext context)
+        {
+        }
+
+        public void OnThemeCatalogBuilding(ModuleThemeCatalogContext context)
+        {
+        }
+
+        public void OnMainWindowMenuBuilding(ModuleMainWindowMenuContext context)
+        {
+        }
+
+        public void OnMainWindowUiComposed(ModuleMainWindowUiContext context)
+        {
+        }
+
+        public void OnAuxiliaryWindowCatalogBuilding(ModuleAuxiliaryWindowCatalogContext context)
+        {
+        }
+
+        public void OnAuxiliaryWindowOpening(ModuleAuxiliaryWindowLifecycleContext context)
+        {
+        }
+
+        public void OnAuxiliaryWindowOpened(ModuleAuxiliaryWindowLifecycleContext context)
+        {
+        }
+
+        public void OnAuxiliaryWindowClosing(ModuleAuxiliaryWindowLifecycleContext context)
+        {
+        }
+
+        public void OnAuxiliaryWindowClosed(ModuleAuxiliaryWindowLifecycleContext context)
+        {
+        }
+
+        public void OnMainWindowThemeChanged(ModuleMainWindowThemeContext context)
+        {
+        }
+
+        public void OnMainWindowLayoutUpdated(ModuleMainWindowLayoutContext context)
+        {
+        }
+
+        public void OnPeerModuleLoaded(ModulePeerNotificationContext<ModuleDiscoveryContext> context)
+        {
+        }
+
+        public void OnPeerModuleBeforeServiceRegistration(ModulePeerNotificationContext<ModuleServiceRegistrationContext> context)
+        {
+        }
+
+        public void OnPeerModuleRegisteringServices(ModulePeerNotificationContext<ModuleServiceRegistrationContext> context)
+        {
+        }
+
+        public void OnPeerModuleAfterServiceRegistration(ModulePeerNotificationContext<ModuleServiceRegistrationContext> context)
+        {
+        }
+
+        public void OnPeerModuleBeforeServiceProviderBuild(ModulePeerNotificationContext<ModuleServiceProviderBuildContext> context)
+        {
+        }
+
+        public void OnPeerModuleAfterServiceProviderBuild(ModulePeerNotificationContext<ModuleServiceProviderContext> context)
+        {
+        }
+
+        public void OnPeerModuleBeforeMainWindowCreation(ModulePeerNotificationContext<ModuleMainWindowCreationContext> context)
+        {
+        }
+
+        public void OnPeerModuleAfterMainWindowCreation(ModulePeerNotificationContext<ModuleMainWindowContext> context)
+        {
+        }
+
+        public void OnPeerModuleMainWindowShown(ModulePeerNotificationContext<ModuleMainWindowLifecycleContext> context)
+        {
+        }
+
+        public void OnPeerModuleMainWindowClosing(ModulePeerNotificationContext<ModuleMainWindowLifecycleContext> context)
+        {
+        }
+
+        public void OnPeerModuleSettingsLoading(ModulePeerNotificationContext<ModuleSettingsContext> context)
+        {
+        }
+
+        public void OnPeerModuleSettingsLoaded(ModulePeerNotificationContext<ModuleSettingsContext> context)
+        {
+        }
+
+        public void OnPeerModuleSettingsSaving(ModulePeerNotificationContext<ModuleSettingsContext> context)
+        {
+        }
+
+        public void OnPeerModuleSettingsSaved(ModulePeerNotificationContext<ModuleSettingsContext> context)
+        {
+        }
+
+        public void OnPeerModuleAppRunStarting(ModulePeerNotificationContext<ModuleAppRunContext> context)
+        {
+        }
+
+        public void OnPeerModuleAppRunCompleted(ModulePeerNotificationContext<ModuleAppRunContext> context)
+        {
+        }
+
+        public void OnPeerModuleBeforeAppShutdown(ModulePeerNotificationContext<ModuleAppShutdownContext> context)
+        {
+        }
+
+        public void OnPeerModuleAfterAppShutdown(ModulePeerNotificationContext<ModuleAppShutdownContext> context)
+        {
+        }
+
+        public void OnPeerModuleUnhandledException(ModulePeerNotificationContext<ModuleExceptionContext> context)
+        {
+        }
+
         private void StartProxyAsync(IAppSettings settings, IEventLogger? logger, Form owner)
         {
             if (_proxy == null || settings == null || owner == null)
