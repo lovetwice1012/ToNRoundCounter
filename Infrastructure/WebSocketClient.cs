@@ -17,7 +17,6 @@ namespace ToNRoundCounter.Infrastructure
     {
         private const int ReceiveBufferSize = 8192;
         private const int MaxMessagePreviewLength = 200;
-        private const int MessageChannelCapacity = 256;
 
         private readonly Uri _uri;
         private ClientWebSocket? _socket;
@@ -36,11 +35,10 @@ namespace ToNRoundCounter.Infrastructure
             _bus = bus;
             _cancellation = cancellation;
             _logger = logger;
-            _channel = Channel.CreateBounded<string>(new BoundedChannelOptions(MessageChannelCapacity)
+            _channel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
             {
                 SingleReader = true,
-                SingleWriter = true,
-                FullMode = BoundedChannelFullMode.Wait
+                SingleWriter = true
             });
         }
 
