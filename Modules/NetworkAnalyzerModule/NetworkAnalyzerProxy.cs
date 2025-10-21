@@ -1,13 +1,14 @@
 using System;
 using System.IO;
 using System.Net;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using Serilog.Events;
 using Titanium.Web.Proxy;
 using Titanium.Web.Proxy.EventArguments;
-using Titanium.Web.Proxy.EventArguments.WebSocket;
 using Titanium.Web.Proxy.Models;
+using Titanium.Web.Proxy.StreamExtended.Network;
 using ToNRoundCounter.Application;
 
 namespace ToNRoundCounter.Modules.NetworkAnalyzer
@@ -36,11 +37,6 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
 
             _proxyServer.BeforeRequest += OnBeforeRequest;
             _proxyServer.BeforeResponse += OnBeforeResponse;
-            _proxyServer.WebSocketTextReceived += OnWebSocketTextReceived;
-            _proxyServer.WebSocketDataReceived += OnWebSocketBinaryReceived;
-            _proxyServer.WebSocketOpened += OnWebSocketOpened;
-            _proxyServer.WebSocketClosed += OnWebSocketClosed;
-
             var baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
             if (string.IsNullOrEmpty(baseDirectory))
             {
@@ -264,6 +260,11 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                 {
                     await RequestManipulation.Invoke(e).ConfigureAwait(false);
                 }
+
+                if (request.UpgradeToWebSocket)
+                {
+                    AttachWebSocketListeners(e);
+                }
             }
             catch (Exception ex)
             {
@@ -311,6 +312,17 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                 {
                     await ResponseManipulation.Invoke(e).ConfigureAwait(false);
                 }
+
+                if (response.StatusCode == (int)HttpStatusCode.SwitchingProtocols &&
+                    e.HttpClient.Request.UpgradeToWebSocket)
+                {
+                    var state = GetOrCreateWebSocketState(e);
+                    if (!state.OpenLogged)
+                    {
+                        LogLine($"[WEBSOCKET] Opened {e.HttpClient.Request.Url}");
+                        state.OpenLogged = true;
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -318,34 +330,288 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
             }
         }
 
-        private Task OnWebSocketOpened(object sender, WebSocketSessionEventArgs e)
+        private void AttachWebSocketListeners(SessionEventArgs session)
         {
-            LogLine($"[WEBSOCKET] Opened {e.WebSocketSession.RequestUrl}");
-            return Task.CompletedTask;
+            var state = GetOrCreateWebSocketState(session);
+            if (state.ListenersAttached)
+            {
+                return;
+            }
+
+            session.DataReceived += OnWebSocketDataReceived;
+            session.DataSent += OnWebSocketDataSent;
+            state.ListenersAttached = true;
         }
 
-        private Task OnWebSocketClosed(object sender, WebSocketSessionEventArgs e)
+        private void OnWebSocketDataSent(object? sender, DataEventArgs e)
         {
-            LogLine($"[WEBSOCKET] Closed {e.WebSocketSession.RequestUrl}");
-            return Task.CompletedTask;
+            if (sender is SessionEventArgs session)
+            {
+                HandleWebSocketFrames(session, e, false);
+            }
         }
 
-        private Task OnWebSocketTextReceived(object sender, WebSocketTextReceivedEventArgs e)
+        private void OnWebSocketDataReceived(object? sender, DataEventArgs e)
         {
-            LogLine($"[WEBSOCKET][TEXT] {e.WebSocketSession.RequestUrl} <= {e.Message}");
-            return Task.CompletedTask;
+            if (sender is SessionEventArgs session)
+            {
+                HandleWebSocketFrames(session, e, true);
+            }
         }
 
-        private Task OnWebSocketBinaryReceived(object sender, WebSocketDataReceivedEventArgs e)
+        private void HandleWebSocketFrames(SessionEventArgs session, DataEventArgs e, bool isIncoming)
         {
-            LogLine($"[WEBSOCKET][BINARY] {e.WebSocketSession.RequestUrl} <= {e.Count} bytes");
-            return Task.CompletedTask;
+            try
+            {
+                var state = GetOrCreateWebSocketState(session);
+                var decoder = isIncoming ? session.WebSocketDecoderReceive : session.WebSocketDecoderSend;
+                var direction = isIncoming ? "<=" : "=>";
+
+                foreach (var frame in decoder.Decode(e.Buffer, e.Offset, e.Count))
+                {
+                    switch (frame.OpCode)
+                    {
+                        case WebsocketOpCode.Text:
+                            HandleTextFrame(session, state, frame, direction, isIncoming);
+                            break;
+                        case WebsocketOpCode.Binary:
+                            HandleBinaryFrame(session, state, frame, direction, isIncoming);
+                            break;
+                        case WebsocketOpCode.Continuation:
+                            HandleContinuationFrame(session, state, frame, direction, isIncoming);
+                            break;
+                        case WebsocketOpCode.ConnectionClose:
+                            HandleCloseFrame(session, state);
+                            break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogEvent("NetworkAnalyzer", $"Failed to process WebSocket frame: {ex}", LogEventLevel.Error);
+            }
         }
 
         private Task OnBeforeTunnelConnect(object sender, TunnelConnectSessionEventArgs e)
         {
             LogLine($"[TUNNEL] {e.WebSession.Request.Host}");
             return Task.CompletedTask;
+        }
+
+        private void HandleTextFrame(SessionEventArgs session, WebSocketSessionState state, WebSocketFrame frame,
+            string direction, bool isIncoming)
+        {
+            var message = frame.GetText();
+            var accumulator = isIncoming ? state.IncomingTextBuilder : state.OutgoingTextBuilder;
+
+            if (frame.IsFinal)
+            {
+                if (accumulator != null)
+                {
+                    accumulator.Append(message);
+                    message = accumulator.ToString();
+                    if (isIncoming)
+                    {
+                        state.IncomingTextBuilder = null;
+                    }
+                    else
+                    {
+                        state.OutgoingTextBuilder = null;
+                    }
+                }
+
+                LogLine($"[WEBSOCKET][TEXT] {session.HttpClient.Request.Url} {direction} {message}");
+                ClearContinuationState(state, isIncoming);
+            }
+            else
+            {
+                accumulator ??= new StringBuilder();
+                accumulator.Append(message);
+                if (isIncoming)
+                {
+                    state.IncomingTextBuilder = accumulator;
+                    state.IncomingContinuationType = WebsocketOpCode.Text;
+                }
+                else
+                {
+                    state.OutgoingTextBuilder = accumulator;
+                    state.OutgoingContinuationType = WebsocketOpCode.Text;
+                }
+            }
+        }
+
+        private void HandleBinaryFrame(SessionEventArgs session, WebSocketSessionState state, WebSocketFrame frame,
+            string direction, bool isIncoming)
+        {
+            if (frame.IsFinal)
+            {
+                var totalLength = frame.Data.Length + GetAccumulatedBinaryLength(state, isIncoming, reset: true);
+                LogLine($"[WEBSOCKET][BINARY] {session.HttpClient.Request.Url} {direction} {totalLength} bytes");
+                ClearContinuationState(state, isIncoming);
+            }
+            else
+            {
+                SetAccumulatedBinaryLength(state, isIncoming, frame.Data.Length);
+                SetContinuationType(state, isIncoming, WebsocketOpCode.Binary);
+            }
+        }
+
+        private void HandleContinuationFrame(SessionEventArgs session, WebSocketSessionState state, WebSocketFrame frame,
+            string direction, bool isIncoming)
+        {
+            var continuationType = GetContinuationType(state, isIncoming);
+            if (continuationType == WebsocketOpCode.Binary)
+            {
+                var accumulated = AddAccumulatedBinaryLength(state, isIncoming, frame.Data.Length);
+                if (frame.IsFinal)
+                {
+                    LogLine($"[WEBSOCKET][BINARY] {session.HttpClient.Request.Url} {direction} {accumulated} bytes");
+                    ClearContinuationState(state, isIncoming);
+                }
+            }
+            else
+            {
+                var accumulator = isIncoming ? state.IncomingTextBuilder : state.OutgoingTextBuilder;
+                accumulator ??= new StringBuilder();
+                accumulator.Append(frame.GetText());
+                if (frame.IsFinal)
+                {
+                    LogLine($"[WEBSOCKET][TEXT] {session.HttpClient.Request.Url} {direction} {accumulator}");
+                    if (isIncoming)
+                    {
+                        state.IncomingTextBuilder = null;
+                    }
+                    else
+                    {
+                        state.OutgoingTextBuilder = null;
+                    }
+                    ClearContinuationState(state, isIncoming);
+                }
+                else
+                {
+                    if (isIncoming)
+                    {
+                        state.IncomingTextBuilder = accumulator;
+                        state.IncomingContinuationType = WebsocketOpCode.Text;
+                    }
+                    else
+                    {
+                        state.OutgoingTextBuilder = accumulator;
+                        state.OutgoingContinuationType = WebsocketOpCode.Text;
+                    }
+                }
+            }
+        }
+
+        private void HandleCloseFrame(SessionEventArgs session, WebSocketSessionState state)
+        {
+            if (!state.ClosedLogged)
+            {
+                LogLine($"[WEBSOCKET] Closed {session.HttpClient.Request.Url}");
+                state.ClosedLogged = true;
+
+                if (state.ListenersAttached)
+                {
+                    session.DataReceived -= OnWebSocketDataReceived;
+                    session.DataSent -= OnWebSocketDataSent;
+                    state.ListenersAttached = false;
+                }
+            }
+        }
+
+        private static WebSocketSessionState GetOrCreateWebSocketState(SessionEventArgs session)
+        {
+            return WebSocketStates.GetValue(session, _ => new WebSocketSessionState());
+        }
+
+        private static WebsocketOpCode? GetContinuationType(WebSocketSessionState state, bool isIncoming)
+        {
+            return isIncoming ? state.IncomingContinuationType : state.OutgoingContinuationType;
+        }
+
+        private static void SetContinuationType(WebSocketSessionState state, bool isIncoming, WebsocketOpCode opCode)
+        {
+            if (isIncoming)
+            {
+                state.IncomingContinuationType = opCode;
+            }
+            else
+            {
+                state.OutgoingContinuationType = opCode;
+            }
+        }
+
+        private static void ClearContinuationState(WebSocketSessionState state, bool isIncoming)
+        {
+            if (isIncoming)
+            {
+                state.IncomingContinuationType = null;
+                state.IncomingBinaryLength = 0;
+                state.IncomingTextBuilder = null;
+            }
+            else
+            {
+                state.OutgoingContinuationType = null;
+                state.OutgoingBinaryLength = 0;
+                state.OutgoingTextBuilder = null;
+            }
+        }
+
+        private static int GetAccumulatedBinaryLength(WebSocketSessionState state, bool isIncoming, bool reset)
+        {
+            var length = isIncoming ? state.IncomingBinaryLength : state.OutgoingBinaryLength;
+            if (reset)
+            {
+                if (isIncoming)
+                {
+                    state.IncomingBinaryLength = 0;
+                }
+                else
+                {
+                    state.OutgoingBinaryLength = 0;
+                }
+            }
+
+            return length;
+        }
+
+        private static void SetAccumulatedBinaryLength(WebSocketSessionState state, bool isIncoming, int length)
+        {
+            if (isIncoming)
+            {
+                state.IncomingBinaryLength = length;
+            }
+            else
+            {
+                state.OutgoingBinaryLength = length;
+            }
+        }
+
+        private static int AddAccumulatedBinaryLength(WebSocketSessionState state, bool isIncoming, int length)
+        {
+            if (isIncoming)
+            {
+                state.IncomingBinaryLength += length;
+                return state.IncomingBinaryLength;
+            }
+
+            state.OutgoingBinaryLength += length;
+            return state.OutgoingBinaryLength;
+        }
+
+        private static readonly ConditionalWeakTable<SessionEventArgs, WebSocketSessionState> WebSocketStates = new();
+
+        private sealed class WebSocketSessionState
+        {
+            public bool ListenersAttached;
+            public bool OpenLogged;
+            public bool ClosedLogged;
+            public StringBuilder? IncomingTextBuilder;
+            public StringBuilder? OutgoingTextBuilder;
+            public int IncomingBinaryLength;
+            public int OutgoingBinaryLength;
+            public WebsocketOpCode? IncomingContinuationType;
+            public WebsocketOpCode? OutgoingContinuationType;
         }
 
         private void LogLine(string message)
@@ -443,10 +709,6 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                 StopInternal();
                 _proxyServer.BeforeRequest -= OnBeforeRequest;
                 _proxyServer.BeforeResponse -= OnBeforeResponse;
-                _proxyServer.WebSocketTextReceived -= OnWebSocketTextReceived;
-                _proxyServer.WebSocketDataReceived -= OnWebSocketBinaryReceived;
-                _proxyServer.WebSocketOpened -= OnWebSocketOpened;
-                _proxyServer.WebSocketClosed -= OnWebSocketClosed;
 
                 _proxyServer.Dispose();
                 _disposed = true;
