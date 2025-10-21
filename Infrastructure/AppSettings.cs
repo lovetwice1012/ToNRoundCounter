@@ -109,6 +109,9 @@ namespace ToNRoundCounter.Infrastructure
         public string LastSaveCode { get; set; } = string.Empty;
         public bool AfkSoundCancelEnabled { get; set; } = true;
         public bool CoordinatedAutoSuicideBrainEnabled { get; set; } = true;
+        public bool NetworkAnalyzerConsentGranted { get; set; }
+        public DateTimeOffset? NetworkAnalyzerConsentTimestamp { get; set; }
+        public int NetworkAnalyzerProxyPort { get; set; } = 8890;
 
         public void Load()
         {
@@ -588,6 +591,10 @@ namespace ToNRoundCounter.Infrastructure
             {
                 errors.Add("Invalid OSCPort value.");
             }
+            if (NetworkAnalyzerProxyPort < 1025 || NetworkAnalyzerProxyPort > 65535)
+            {
+                errors.Add("Invalid NetworkAnalyzerProxyPort value.");
+            }
             return errors;
         }
 
@@ -672,7 +679,10 @@ namespace ToNRoundCounter.Infrastructure
                 DiscordWebhookUrl = DiscordWebhookUrl,
                 LastSaveCode = LastSaveCode,
                 AfkSoundCancelEnabled = AfkSoundCancelEnabled,
-                CoordinatedAutoSuicideBrainEnabled = CoordinatedAutoSuicideBrainEnabled
+                CoordinatedAutoSuicideBrainEnabled = CoordinatedAutoSuicideBrainEnabled,
+                NetworkAnalyzerConsentGranted = NetworkAnalyzerConsentGranted,
+                NetworkAnalyzerConsentTimestamp = NetworkAnalyzerConsentTimestamp,
+                NetworkAnalyzerProxyPort = NetworkAnalyzerProxyPort
             };
 
             string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
@@ -775,5 +785,8 @@ namespace ToNRoundCounter.Infrastructure
         public string LastSaveCode { get; set; } = string.Empty;
         public bool AfkSoundCancelEnabled { get; set; } = true;
         public bool CoordinatedAutoSuicideBrainEnabled { get; set; } = true;
+        public bool NetworkAnalyzerConsentGranted { get; set; }
+        public DateTimeOffset? NetworkAnalyzerConsentTimestamp { get; set; }
+        public int NetworkAnalyzerProxyPort { get; set; }
     }
 }

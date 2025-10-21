@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Threading.Tasks;
@@ -85,6 +86,9 @@ namespace ToNRoundCounter.Application
         string LastSaveCode { get; set; }
         bool AfkSoundCancelEnabled { get; set; }
         bool CoordinatedAutoSuicideBrainEnabled { get; set; }
+        bool NetworkAnalyzerConsentGranted { get; set; }
+        DateTimeOffset? NetworkAnalyzerConsentTimestamp { get; set; }
+        int NetworkAnalyzerProxyPort { get; set; }
         void Load();
         Task SaveAsync();
     }
