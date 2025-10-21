@@ -135,13 +135,24 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
         {
             try
             {
-                if (!_proxyServer.CertificateManager.RootCertificateExists)
+                var certificateManager = _proxyServer.CertificateManager;
+                var rootCertificate = certificateManager.RootCertificate;
+
+                if (rootCertificate == null)
                 {
-                    _proxyServer.CertificateManager.CreateRootCertificate(true);
-                    _logger.LogEvent("NetworkAnalyzer", "Created a dedicated root certificate for the network analyzer proxy.", LogEventLevel.Warning);
+                    rootCertificate = certificateManager.LoadRootCertificate();
+                    if (rootCertificate != null)
+                    {
+                        certificateManager.RootCertificate = rootCertificate;
+                    }
+                    else
+                    {
+                        certificateManager.CreateRootCertificate(true);
+                        _logger.LogEvent("NetworkAnalyzer", "Created a dedicated root certificate for the network analyzer proxy.", LogEventLevel.Warning);
+                    }
                 }
 
-                _proxyServer.CertificateManager.TrustRootCertificate(true);
+                certificateManager.EnsureRootCertificate(true, true);
                 _logger.LogEvent("NetworkAnalyzer", "Attempted to install the network analyzer root certificate.", LogEventLevel.Warning);
             }
             catch (Exception ex)
@@ -153,11 +164,8 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
 
         private void StartInternal(int port)
         {
-            _explicitEndPoint = new ExplicitProxyEndPoint(IPAddress.Loopback, port, true)
-            {
-                GenericCertificateName = "ToNRoundCounter Network Analyzer"
-            };
-            _explicitEndPoint.BeforeTunnelConnect += OnBeforeTunnelConnect;
+            _explicitEndPoint = new ExplicitProxyEndPoint(IPAddress.Loopback, port, true);
+            _explicitEndPoint.BeforeTunnelConnectRequest += OnBeforeTunnelConnect;
 
             _proxyServer.AddEndPoint(_explicitEndPoint);
             _proxyServer.Start();
@@ -176,7 +184,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
         {
             if (_explicitEndPoint != null)
             {
-                _explicitEndPoint.BeforeTunnelConnect -= OnBeforeTunnelConnect;
+                _explicitEndPoint.BeforeTunnelConnectRequest -= OnBeforeTunnelConnect;
                 try
                 {
                     _proxyServer.RemoveEndPoint(_explicitEndPoint);
@@ -186,7 +194,6 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                     // Ignore removal errors during shutdown.
                 }
 
-                _explicitEndPoint.Dispose();
                 _explicitEndPoint = null;
             }
 
