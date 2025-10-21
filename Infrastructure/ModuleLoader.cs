@@ -43,8 +43,19 @@ namespace ToNRoundCounter.Infrastructure
                 try
                 {
                     var asm = LoadAssemblySafely(file, logger);
-                    var modules = asm.GetTypes()
-                        .Where(t => typeof(IModule).IsAssignableFrom(t) && !t.IsAbstract);
+                    IEnumerable<Type> modules;
+                    try
+                    {
+                        modules = asm.GetTypes()
+                            .Where(t => typeof(IModule).IsAssignableFrom(t) && !t.IsAbstract);
+                    }
+                    catch (ReflectionTypeLoadException rtle)
+                    {
+                        LogReflectionTypeLoadException(rtle, file, logger);
+                        modules = rtle.Types
+                            ?.Where(t => t != null && typeof(IModule).IsAssignableFrom(t) && !t.IsAbstract)
+                            ?? Enumerable.Empty<Type>();
+                    }
                     logger.LogEvent("ModuleLoader", $"Loaded assembly '{Path.GetFileName(file)}'. Discovering modules.");
                     foreach (var type in modules)
                     {
@@ -123,6 +134,34 @@ namespace ToNRoundCounter.Infrastructure
                     }
                 }
             }
+        }
+
+        private static void LogReflectionTypeLoadException(ReflectionTypeLoadException exception, string assemblyPath, IEventLogger logger)
+        {
+            if (logger == null)
+            {
+                return;
+            }
+
+            var loaderExceptions = exception.LoaderExceptions;
+            if (loaderExceptions == null || loaderExceptions.Length == 0)
+            {
+                logger.LogEvent(
+                    "ModuleLoader",
+                    () => $"Failed to enumerate types from '{Path.GetFileName(assemblyPath)}': {exception.Message}",
+                    Serilog.Events.LogEventLevel.Error);
+                return;
+            }
+
+            logger.LogEvent(
+                "ModuleLoader",
+                () =>
+                {
+                    var details = string.Join(Environment.NewLine, loaderExceptions.Select((ex, index) =>
+                        $"[{index + 1}] {ex.GetType().Name}: {ex.Message}"));
+                    return $"Failed to enumerate types from '{Path.GetFileName(assemblyPath)}'. Loader exceptions:{Environment.NewLine}{details}";
+                },
+                Serilog.Events.LogEventLevel.Error);
         }
 
         private static Assembly LoadAssemblySafely(string file, IEventLogger logger)

@@ -24,6 +24,13 @@
 
   <Target Name="CopyModuleToOutput" AfterTargets="Build">
     <MakeDir Directories="$(SolutionDir)Modules" />
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(SolutionDir)Modules" SkipUnchangedFiles="true" />
+    <ItemGroup>
+      <ModuleCopyFiles Include="$(TargetPath)" />
+      <ModuleCopyFiles Include="@(ReferenceCopyLocalPaths)"
+                       Condition="'%(ReferenceCopyLocalPaths.Extension)' == '.dll' and '%(ReferenceCopyLocalPaths.Filename)' != 'ToNRoundCounter' and '%(ReferenceCopyLocalPaths.Filename)' != 'NetworkAnalyzerModule'" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ModuleCopyFiles)"
+          DestinationFolder="$(SolutionDir)Modules"
+          SkipUnchangedFiles="true" />
   </Target>
 </Project>
