@@ -111,6 +111,7 @@ namespace ToNRoundCounter.Infrastructure
         public bool CoordinatedAutoSuicideBrainEnabled { get; set; } = true;
         public bool NetworkAnalyzerConsentGranted { get; set; }
         public DateTimeOffset? NetworkAnalyzerConsentTimestamp { get; set; }
+        public string? NetworkAnalyzerConsentMarkerId { get; set; }
         public int NetworkAnalyzerProxyPort { get; set; } = 8890;
 
         public void Load()
@@ -682,6 +683,7 @@ namespace ToNRoundCounter.Infrastructure
                 CoordinatedAutoSuicideBrainEnabled = CoordinatedAutoSuicideBrainEnabled,
                 NetworkAnalyzerConsentGranted = NetworkAnalyzerConsentGranted,
                 NetworkAnalyzerConsentTimestamp = NetworkAnalyzerConsentTimestamp,
+                NetworkAnalyzerConsentMarkerId = NetworkAnalyzerConsentMarkerId,
                 NetworkAnalyzerProxyPort = NetworkAnalyzerProxyPort
             };
 
@@ -787,6 +789,7 @@ namespace ToNRoundCounter.Infrastructure
         public bool CoordinatedAutoSuicideBrainEnabled { get; set; } = true;
         public bool NetworkAnalyzerConsentGranted { get; set; }
         public DateTimeOffset? NetworkAnalyzerConsentTimestamp { get; set; }
+        public string? NetworkAnalyzerConsentMarkerId { get; set; }
         public int NetworkAnalyzerProxyPort { get; set; }
     }
 }

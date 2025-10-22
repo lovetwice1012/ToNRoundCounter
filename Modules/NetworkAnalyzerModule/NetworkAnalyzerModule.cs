@@ -15,6 +15,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
     {
         private IServiceProvider? _serviceProvider;
         private NetworkAnalyzerProxy? _proxy;
+        private LocalVpnService? _vpnService;
         private Label? _statusLabel;
         private NumericUpDown? _portInput;
         private Button? _openLogButton;
@@ -31,6 +32,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
         public void RegisterServices(IServiceCollection services)
         {
             services.AddSingleton<NetworkAnalyzerProxy>();
+            services.AddSingleton<LocalVpnService>();
         }
 
         public void OnAfterServiceRegistration(ModuleServiceRegistrationContext context)
@@ -50,6 +52,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
 
             _serviceProvider = context.ServiceProvider;
             _proxy = context.ServiceProvider.GetService<NetworkAnalyzerProxy>();
+            _vpnService = context.ServiceProvider.GetService<LocalVpnService>();
         }
 
         public void OnBeforeMainWindowCreation(ModuleMainWindowCreationContext context)
@@ -75,6 +78,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
             }
 
             NormalizeSettings(settings);
+            EnsureConsentMarkerValidity(settings, logger);
             UpdateStatusControls(settings);
 
             if (!_consentChecked)
@@ -88,6 +92,8 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                     {
                         settings.NetworkAnalyzerConsentGranted = true;
                         settings.NetworkAnalyzerConsentTimestamp = DateTimeOffset.Now;
+                        settings.NetworkAnalyzerConsentMarkerId = Guid.NewGuid().ToString("N");
+                        PersistConsentMarker(settings, logger);
                         logger?.LogEvent("NetworkAnalyzer", "User granted consent for the network analyzer proxy.");
                         _ = Task.Run(async () => await settings.SaveAsync().ConfigureAwait(false));
                     }
@@ -106,6 +112,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
 
         public void OnMainWindowClosing(ModuleMainWindowLifecycleContext context)
         {
+            _vpnService?.Stop();
             _proxy?.Stop();
             var settings = ResolveSettings(context?.ServiceProvider) ?? ResolveSettings(_serviceProvider);
             if (settings != null)
@@ -165,7 +172,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
             {
                 AutoSize = true,
                 MaximumSize = new Size(520, 0),
-                Text = "NetworkAnalyzer はローカル専用のプロキシを起動し、HTTPS/WSS 通信を解析・記録します。"
+                Text = "NetworkAnalyzer はローカル専用のプロキシと VPN サーバーを起動し、HTTPS/WSS 通信を解析・記録します。ローカル VPN はモジュール停止時に元のネットワーク設定へ自動復元されます。"
             };
 
             _statusLabel = new Label
@@ -280,13 +287,16 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
 
         public void OnBeforeAppShutdown(ModuleAppShutdownContext context)
         {
+            _vpnService?.Stop();
             _proxy?.Stop();
         }
 
         public void OnAfterAppShutdown(ModuleAppShutdownContext context)
         {
+            _vpnService?.Stop();
             _proxy?.Dispose();
             _proxy = null;
+            _vpnService = null;
         }
 
         public void OnUnhandledException(ModuleExceptionContext context)
@@ -503,6 +513,20 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
             _ = Task.Run(async () =>
             {
                 bool started = await _proxy.EnsureRunningAsync(settings).ConfigureAwait(false);
+                bool vpnStarted = true;
+                if (started)
+                {
+                    int proxyPort = _proxy.CurrentPort > 0 ? _proxy.CurrentPort : settings.NetworkAnalyzerProxyPort;
+                    if (_vpnService != null)
+                    {
+                        vpnStarted = await _vpnService.EnsureStartedAsync(proxyPort).ConfigureAwait(false);
+                    }
+                }
+                else
+                {
+                    _vpnService?.Stop();
+                    vpnStarted = false;
+                }
                 try
                 {
                     if (!owner.IsDisposed && owner.IsHandleCreated)
@@ -518,6 +542,14 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                                     MessageBoxButtons.OK,
                                     MessageBoxIcon.Error);
                             }
+                            else if (!vpnStarted)
+                            {
+                                MessageBox.Show(owner,
+                                    "ローカル VPN を開始できませんでした。プロキシのみで動作します。",
+                                    "NetworkAnalyzer",
+                                    MessageBoxButtons.OK,
+                                    MessageBoxIcon.Warning);
+                            }
                         }));
                     }
                 }
@@ -530,7 +562,53 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                 {
                     logger?.LogEvent("NetworkAnalyzer", "Failed to start the proxy. See network logs for details.", LogEventLevel.Error);
                 }
+                else if (!vpnStarted)
+                {
+                    logger?.LogEvent("NetworkAnalyzer", "Local VPN service failed to initialize. Falling back to proxy-only mode.", LogEventLevel.Warning);
+                }
             });
+        }
+
+        private void EnsureConsentMarkerValidity(IAppSettings settings, IEventLogger? logger)
+        {
+            if (settings == null)
+            {
+                return;
+            }
+
+            if (settings.NetworkAnalyzerConsentGranted)
+            {
+                var markerId = settings.NetworkAnalyzerConsentMarkerId;
+                if (string.IsNullOrWhiteSpace(markerId))
+                {
+                    if (TryReadConsentMarker(out var storedId, logger))
+                    {
+                        settings.NetworkAnalyzerConsentMarkerId = storedId;
+                        _ = Task.Run(async () => await settings.SaveAsync().ConfigureAwait(false));
+                    }
+                    else
+                    {
+                        RevokeConsent(settings, logger, "Consent marker missing. Requiring the user to reconfirm usage.");
+                    }
+                }
+                else
+                {
+                    if (!TryReadConsentMarker(out var storedId, logger) || !string.Equals(storedId, markerId, StringComparison.Ordinal))
+                    {
+                        RevokeConsent(settings, logger, "Consent marker mismatch detected. Requiring the user to reconfirm usage.");
+                    }
+                }
+            }
+            else
+            {
+                if (!string.IsNullOrEmpty(settings.NetworkAnalyzerConsentMarkerId))
+                {
+                    settings.NetworkAnalyzerConsentMarkerId = null;
+                    _ = Task.Run(async () => await settings.SaveAsync().ConfigureAwait(false));
+                }
+
+                DeleteConsentMarker(logger);
+            }
         }
 
         private void NormalizeSettings(IAppSettings settings)
@@ -568,10 +646,17 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
             }
 
             var running = _proxy?.IsRunning ?? false;
+            var vpnActive = _vpnService?.IsActive ?? false;
             string status;
             if (!settings.NetworkAnalyzerConsentGranted)
             {
                 status = "ステータス: 未同意のため無効";
+            }
+            else if (running && vpnActive)
+            {
+                var port = _proxy?.CurrentPort > 0 ? _proxy!.CurrentPort : settings.NetworkAnalyzerProxyPort;
+                var vpnPort = _vpnService?.CurrentVpnPort ?? 0;
+                status = $"ステータス: VPN経由で稼働中 (VPN: 127.0.0.1:{vpnPort} → Proxy:127.0.0.1:{port})";
             }
             else if (running)
             {
@@ -653,6 +738,104 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
             }
 
             return port;
+        }
+
+        private void PersistConsentMarker(IAppSettings settings, IEventLogger? logger)
+        {
+            if (settings == null)
+            {
+                return;
+            }
+
+            var markerId = settings.NetworkAnalyzerConsentMarkerId;
+            if (string.IsNullOrEmpty(markerId))
+            {
+                markerId = Guid.NewGuid().ToString("N");
+                settings.NetworkAnalyzerConsentMarkerId = markerId;
+            }
+
+            try
+            {
+                var markerPath = GetConsentMarkerPath();
+                var directory = Path.GetDirectoryName(markerPath);
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                File.WriteAllText(markerPath, markerId);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogEvent("NetworkAnalyzer", $"Failed to persist consent marker: {ex}", LogEventLevel.Warning);
+            }
+        }
+
+        private bool TryReadConsentMarker(out string? markerId, IEventLogger? logger)
+        {
+            markerId = null;
+
+            try
+            {
+                var markerPath = GetConsentMarkerPath();
+                if (!File.Exists(markerPath))
+                {
+                    return false;
+                }
+
+                var contents = File.ReadAllText(markerPath).Trim();
+                if (string.IsNullOrEmpty(contents))
+                {
+                    return false;
+                }
+
+                markerId = contents;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogEvent("NetworkAnalyzer", $"Failed to read consent marker: {ex}", LogEventLevel.Warning);
+                return false;
+            }
+        }
+
+        private void DeleteConsentMarker(IEventLogger? logger)
+        {
+            try
+            {
+                var markerPath = GetConsentMarkerPath();
+                if (File.Exists(markerPath))
+                {
+                    File.Delete(markerPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogEvent("NetworkAnalyzer", $"Failed to delete consent marker: {ex}", LogEventLevel.Warning);
+            }
+        }
+
+        private void RevokeConsent(IAppSettings settings, IEventLogger? logger, string reason)
+        {
+            settings.NetworkAnalyzerConsentGranted = false;
+            settings.NetworkAnalyzerConsentTimestamp = null;
+            settings.NetworkAnalyzerConsentMarkerId = null;
+            DeleteConsentMarker(logger);
+            _vpnService?.Stop();
+            _proxy?.Stop();
+            logger?.LogEvent("NetworkAnalyzer", reason, LogEventLevel.Information);
+            _ = Task.Run(async () => await settings.SaveAsync().ConfigureAwait(false));
+        }
+
+        private static string GetConsentMarkerPath()
+        {
+            var baseDirectory = AppContext.BaseDirectory;
+            if (string.IsNullOrEmpty(baseDirectory))
+            {
+                baseDirectory = Environment.CurrentDirectory;
+            }
+
+            return Path.Combine(baseDirectory, "modules", "NetworkAnalyzerModule", ".consent.marker");
         }
 
         private IEventLogger? ResolveLogger(IServiceProvider? provider)
