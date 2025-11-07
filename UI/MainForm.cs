@@ -77,6 +77,8 @@ namespace ToNRoundCounter.UI
         private readonly IReadOnlyList<IOscRepeaterPolicy> _oscRepeaterPolicies;
         private readonly ModuleHost _moduleHost;
         private readonly AutoRecordingService autoRecordingService;
+        private readonly CloudWebSocketClient? _cloudClient;
+        private bool cloudEventsSubscribed;
 
         private Action<WebSocketConnected>? _wsConnectedHandler;
         private Action<WebSocketDisconnected>? _wsDisconnectedHandler;
@@ -149,6 +151,19 @@ namespace ToNRoundCounter.UI
         private readonly object instanceTimerSync = new();
         private string currentInstanceId = string.Empty;
         private DateTimeOffset currentInstanceEnteredAt = DateTimeOffset.Now;
+        private List<InstanceMemberInfo> currentInstanceMembers = new List<InstanceMemberInfo>();
+        private List<string> currentDesirePlayers = new List<string>();
+        private System.Windows.Forms.Timer? instanceMemberUpdateTimer;
+        
+        // Cloud state update tracking
+        private DateTime lastCloudStateUpdate = DateTime.MinValue;
+        private const double CloudStateUpdateIntervalSeconds = 2.0;
+        private List<string> currentPlayerItems = new List<string>();
+        
+        // Cloud monitoring status tracking
+        private DateTime lastMonitoringStatusUpdate = DateTime.MinValue;
+        private const double MonitoringStatusUpdateIntervalSeconds = 30.0; // Every 30 seconds
+        
         private static readonly CultureInfo JapaneseCulture = CultureInfo.GetCultureInfo("ja-JP");
         private const string NextRoundPredictionUnavailableMessage = "次のラウンドの予測は特殊ラウンドを一回発生させることで利用可能です";
         private bool hasObservedSpecialRound;
@@ -211,7 +226,7 @@ namespace ToNRoundCounter.UI
         }
 
 
-        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, IEnumerable<IOscRepeaterPolicy> oscRepeaterPolicies, AutoRecordingService autoRecordingService, ModuleHost moduleHost)
+        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, IEnumerable<IOscRepeaterPolicy> oscRepeaterPolicies, AutoRecordingService autoRecordingService, ModuleHost moduleHost, CloudWebSocketClient cloudClient)
         {
             InitializeSoundPlayers();
             this.Name = "MainForm";
@@ -219,6 +234,7 @@ namespace ToNRoundCounter.UI
             this.autoSuicideService = autoSuicideService;
             this.oscListener = oscListener;
             this.stateService = stateService;
+            _cloudClient = cloudClient;
             _settings = settings;
             _logger = logger;
             _uiLogQueue = new BlockingCollection<(string Message, LogEventLevel Level)>(
@@ -309,10 +325,36 @@ namespace ToNRoundCounter.UI
             _ = webSocketClient.StartAsync();
             _ = oscListener.StartAsync(_settings.OSCPort);
 
+            // Cloud WebSocketクライアントの起動
+            if (_settings.CloudSyncEnabled)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _cloudClient.StartAsync();
+                        _logger?.LogEvent("CloudSync", "Cloud WebSocket client started successfully.");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogEvent("CloudSync", $"Failed to start Cloud WebSocket client: {ex.Message}", LogEventLevel.Warning);
+                    }
+                });
+
+                EnsureCloudEventHandlers();
+            }
+
             velocityTimer = new System.Windows.Forms.Timer();
             velocityTimer.Interval = 50;
             velocityTimer.Tick += VelocityTimer_Tick;
             velocityTimer.Start();
+
+            // Initialize instance member update timer
+            instanceMemberUpdateTimer = new System.Windows.Forms.Timer();
+            instanceMemberUpdateTimer.Interval = 2000; // Update every 2 seconds
+            instanceMemberUpdateTimer.Tick += InstanceMemberUpdateTimer_Tick;
+            instanceMemberUpdateTimer.Start();
+
             LogUi("Main form construction complete. Background listeners and timers started.");
         }
 
@@ -641,6 +683,11 @@ namespace ToNRoundCounter.UI
                 settingsForm.SettingsPanel.LoadRoundBgmEntries(_settings.RoundBgmEntries);
                 settingsForm.SettingsPanel.SetRoundBgmItemConflictBehavior(_settings.RoundBgmItemConflictBehavior);
                 settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text = _settings.DiscordWebhookUrl;
+                settingsForm.SettingsPanel.CloudSyncEnabledCheckBox.Checked = _settings.CloudSyncEnabled;
+                settingsForm.SettingsPanel.CloudPlayerNameTextBox.Text = _settings.CloudPlayerName ?? string.Empty;
+                settingsForm.SettingsPanel.CloudWebSocketUrlTextBox.Text = string.IsNullOrWhiteSpace(_settings.CloudWebSocketUrl)
+                    ? "ws://toncloud.sprink.cloud"
+                    : _settings.CloudWebSocketUrl;
 
                 var openedContext = new ModuleSettingsViewLifecycleContext(settingsForm, settingsForm.SettingsPanel, _settings, ModuleSettingsViewStage.Opened, null, _moduleHost.CurrentServiceProvider);
                 _moduleHost.NotifySettingsViewOpened(openedContext);
@@ -652,6 +699,10 @@ namespace ToNRoundCounter.UI
 
                 if (dialogResult == DialogResult.OK)
                 {
+                    bool previousCloudEnabled = _settings.CloudSyncEnabled;
+                    string previousCloudUrl = _settings.CloudWebSocketUrl ?? string.Empty;
+                    bool cloudNeedsRestart = false;
+
                     var applyingContext = new ModuleSettingsViewLifecycleContext(settingsForm, settingsForm.SettingsPanel, _settings, ModuleSettingsViewStage.Applying, dialogResult, _moduleHost.CurrentServiceProvider);
                     _moduleHost.NotifySettingsViewApplying(applyingContext);
 
@@ -771,6 +822,31 @@ namespace ToNRoundCounter.UI
                         return;
                     }
 
+                    bool newCloudEnabled = settingsForm.SettingsPanel.CloudSyncEnabledCheckBox.Checked;
+                    string newCloudUrl = settingsForm.SettingsPanel.CloudWebSocketUrlTextBox.Text?.Trim() ?? string.Empty;
+                    string newCloudPlayerName = settingsForm.SettingsPanel.CloudPlayerNameTextBox.Text?.Trim() ?? string.Empty;
+
+                    if (newCloudEnabled && string.IsNullOrWhiteSpace(newCloudUrl))
+                    {
+                        MessageBox.Show(
+                            LanguageManager.Translate("クラウド連携を有効にするには WebSocket の URL を入力してください。"),
+                            LanguageManager.Translate("設定エラー"),
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
+                        return;
+                    }
+
+                    _settings.CloudSyncEnabled = newCloudEnabled;
+                    if (!string.IsNullOrWhiteSpace(newCloudUrl))
+                    {
+                        _settings.CloudWebSocketUrl = newCloudUrl;
+                    }
+
+                    _settings.CloudPlayerName = newCloudPlayerName;
+
+                    cloudNeedsRestart = previousCloudEnabled != _settings.CloudSyncEnabled
+                        || !string.Equals(previousCloudUrl, _settings.CloudWebSocketUrl ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+
                     EvaluateAutoRecording("SettingsChanged");
                     RecomputeOverlayTerrorBase();
                     RefreshTerrorInfoOverlay();
@@ -793,6 +869,10 @@ namespace ToNRoundCounter.UI
                     _moduleHost.NotifyAuxiliaryWindowCatalogBuilding();
                     BuildAuxiliaryWindowsMenu();
                     await _settings.SaveAsync();
+                    if (cloudNeedsRestart)
+                    {
+                        await RestartCloudClientAsync(_settings.CloudSyncEnabled);
+                    }
                 }
 
                 var closedContext = new ModuleSettingsViewLifecycleContext(settingsForm, settingsForm.SettingsPanel, _settings, ModuleSettingsViewStage.Closed, dialogResult, _moduleHost.CurrentServiceProvider);
@@ -832,6 +912,55 @@ namespace ToNRoundCounter.UI
 
             _logger?.LogEvent("AutoRecording", "Administrator restart declined by user.", LogEventLevel.Warning);
             return false;
+        }
+
+        private void EnsureCloudEventHandlers()
+        {
+            if (_cloudClient == null || cloudEventsSubscribed)
+            {
+                return;
+            }
+
+            _cloudClient.MessageReceived += OnCloudMessageReceived;
+            cloudEventsSubscribed = true;
+        }
+
+        private async Task RestartCloudClientAsync(bool enable)
+        {
+            if (_cloudClient == null)
+            {
+                return;
+            }
+
+            try
+            {
+                await _cloudClient.StopAsync().ConfigureAwait(true);
+                _logger?.LogEvent("CloudSync", "Cloud WebSocket client stopped.");
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogEvent("CloudSync", $"Failed to stop Cloud client: {ex.Message}", LogEventLevel.Warning);
+            }
+
+            if (!enable)
+            {
+                return;
+            }
+
+            try
+            {
+                var endpoint = string.IsNullOrWhiteSpace(_settings.CloudWebSocketUrl)
+                    ? "ws://toncloud.sprink.cloud"
+                    : _settings.CloudWebSocketUrl!;
+                _cloudClient.UpdateEndpoint(endpoint);
+                await _cloudClient.StartAsync().ConfigureAwait(true);
+                EnsureCloudEventHandlers();
+                _logger?.LogEvent("CloudSync", $"Cloud WebSocket client restarted at {endpoint}.");
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogEvent("CloudSync", $"Failed to start Cloud client: {ex.Message}", LogEventLevel.Warning);
+            }
         }
 
         private void RestartAsAdministratorForRecording()
@@ -1099,6 +1228,20 @@ namespace ToNRoundCounter.UI
                 LogUi($"Failed to stop OSC listener: {ex.Message}", LogEventLevel.Warning);
             }
 
+            // Cloud WebSocketクライアントの停止
+            if (_settings.CloudSyncEnabled && _cloudClient != null)
+            {
+                try
+                {
+                    await _cloudClient.StopAsync();
+                    LogUi("Cloud WebSocket client stopped successfully.", LogEventLevel.Debug);
+                }
+                catch (Exception ex)
+                {
+                    LogUi($"Failed to stop Cloud WebSocket client: {ex.Message}", LogEventLevel.Warning);
+                }
+            }
+
             _cancellation.Cancel();
             if (oscRepeaterProcess != null && !oscRepeaterProcess.HasExited)
             {
@@ -1280,6 +1423,23 @@ namespace ToNRoundCounter.UI
                         UpdateRoundTypeLabel();
                         InfoPanel.RoundTypeValue.ForeColor = ConvertColorFromInt(displayColorInt);
                     });
+
+                    // Cloud同期: ラウンド開始
+                    if (_settings.CloudSyncEnabled)
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await _presenter.OnRoundStartAsync(currentRound, currentInstanceId);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger?.LogEvent("CloudSync", $"Failed to sync round start: {ex.Message}", LogEventLevel.Warning);
+                            }
+                        });
+                    }
+
                     //もしtesterNamesに含まれているかつオルタネイトなら、オルタネイトラウンド開始の音を鳴らす
                     if (testerNames.Contains(stateService.PlayerDisplayName) && roundType == "オルタネイト")
                     {
@@ -1445,6 +1605,32 @@ namespace ToNRoundCounter.UI
                     var activeRoundForAuto = stateService.CurrentRound;
                     if (activeRoundForAuto != null)
                     {
+                        // Announce threat to Cloud
+                        if (_settings.CloudSyncEnabled && _cloudClient != null && _cloudClient.IsConnected && !string.IsNullOrEmpty(currentInstanceId))
+                        {
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    await _cloudClient.AnnounceThreatAsync(
+                                        currentInstanceId,
+                                        activeRoundForAuto.TerrorKey ?? displayName,
+                                        roundType
+                                    );
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger?.LogEvent("CloudThreat", $"Failed to announce threat: {ex.Message}", LogEventLevel.Debug);
+                                }
+                            });
+                        }
+
+                        // Check for desire players
+                        _ = Task.Run(async () =>
+                        {
+                            await CheckDesirePlayersForRoundAsync(roundType, activeRoundForAuto.TerrorKey);
+                        });
+
                         if (roundType == "ブラッドバス" && namesForLogic != null && namesForLogic.Any(n => n.Contains("LVL 3")))
                         {
                             roundType = "EX";
@@ -1462,7 +1648,8 @@ namespace ToNRoundCounter.UI
                         }
                         else if (terrorAction == 1)
                         {
-                            ScheduleAutoSuicide(TimeSpan.FromSeconds(3), true, allRoundsForcedSchedule);
+                            // Non-delayed auto suicide - check for desire players
+                            ScheduleAutoSuicideWithDesireCheck(TimeSpan.FromSeconds(3), true, allRoundsForcedSchedule);
                         }
                         else if (terrorAction == 2)
                         {
@@ -1508,6 +1695,9 @@ namespace ToNRoundCounter.UI
                                 UpdateOverlay(OverlaySection.Damage, form => form.SetValue(GetDamageOverlayText()));
                             }
                         });
+                        
+                        // Send damage update to Cloud
+                        _ = Task.Run(async () => await UpdateCloudPlayerState());
                     }
                 }
                 else if (eventType == "DEATH")
@@ -1858,6 +2048,22 @@ namespace ToNRoundCounter.UI
                 var roundForHistory = stateService.PreviousRound ?? round;
                 lastRoundTypeForHistory = roundForHistory?.RoundType ?? string.Empty;
 
+                // Cloud同期: ラウンド終了
+                if (_settings.CloudSyncEnabled && roundForHistory != null)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _presenter.OnRoundEndAsync(roundForHistory, status);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger?.LogEvent("CloudSync", $"Failed to sync round end: {ex.Message}", LogEventLevel.Warning);
+                        }
+                    });
+                }
+
                 _dispatcher.Invoke(() =>
                 {
                     UpdateNextRoundPrediction(historyStatusOverride, roundCycleForHistory);
@@ -1918,6 +2124,20 @@ namespace ToNRoundCounter.UI
             {
                 lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2}  Members: {connected}";
             }
+
+            // Send state update to Cloud (throttled)
+            _ = Task.Run(async () => await UpdateCloudPlayerState());
+
+            // Send monitoring status to Cloud (throttled)
+            _ = Task.Run(async () =>
+            {
+                var now = DateTime.Now;
+                if ((now - lastMonitoringStatusUpdate).TotalSeconds >= MonitoringStatusUpdateIntervalSeconds)
+                {
+                    lastMonitoringStatusUpdate = now;
+                    await ReportMonitoringStatusAsync();
+                }
+            });
 
             // 無操作判定：VelocityMagnitudeの絶対値が1未満の場合、最低1秒連続してidleと判定する
             double idleSecondsForDisplay = 0d;
@@ -3269,6 +3489,59 @@ namespace ToNRoundCounter.UI
             }
 
             return d[source.Length, target.Length];
+        }
+
+        /// <summary>
+        /// Handle Cloud WebSocket stream messages
+        /// </summary>
+        private void OnCloudMessageReceived(object? sender, CloudMessage message)
+        {
+            if (message.Type != "stream" || string.IsNullOrEmpty(message.Event))
+            {
+                return;
+            }
+
+            try
+            {
+                switch (message.Event)
+                {
+                    case "player.state.updated":
+                        // プレイヤー状態が更新された
+                        _logger?.LogEvent("CloudStream", $"Player state updated: {message.Data}", LogEventLevel.Debug);
+                        break;
+
+                    case "instance.member.joined":
+                        // メンバーが参加した
+                        _dispatcher.Invoke(() =>
+                        {
+                            _logger?.LogEvent("CloudStream", "Instance member joined");
+                            // 次回のupdateで自動的に反映される
+                        });
+                        break;
+
+                    case "instance.member.left":
+                        // メンバーが退出した
+                        _dispatcher.Invoke(() =>
+                        {
+                            _logger?.LogEvent("CloudStream", "Instance member left");
+                            // 次回のupdateで自動的に反映される
+                        });
+                        break;
+
+                    case "threat.announced":
+                        // 脅威がアナウンスされた
+                        _logger?.LogEvent("CloudStream", $"Threat announced: {message.Data}", LogEventLevel.Information);
+                        break;
+
+                    default:
+                        _logger?.LogEvent("CloudStream", $"Unknown stream event: {message.Event}", LogEventLevel.Debug);
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogEvent("CloudStream", $"Failed to handle stream message: {ex.Message}", LogEventLevel.Warning);
+            }
         }
     }
 }

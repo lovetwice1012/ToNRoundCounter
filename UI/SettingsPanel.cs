@@ -90,6 +90,9 @@ namespace ToNRoundCounter.UI
 
         public Label apiKeyLabel { get; private set; } = null!;
         public TextBox apiKeyTextBox { get; private set; } = null!;
+        public CheckBox CloudSyncEnabledCheckBox { get; private set; } = null!;
+        public TextBox CloudPlayerNameTextBox { get; private set; } = null!;
+        public TextBox CloudWebSocketUrlTextBox { get; private set; } = null!;
 
         public ComboBox ThemeComboBox { get; private set; } = null!;
         public FlowLayoutPanel ModuleExtensionsPanel { get; private set; } = null!;
@@ -1914,6 +1917,42 @@ namespace ToNRoundCounter.UI
             };
             grpApiKey.Controls.Add(openCloudButton);
             apiInnerY += openCloudButton.Height + 10; // ボタンの下にスペースを確保
+
+            CloudSyncEnabledCheckBox = new CheckBox();
+            CloudSyncEnabledCheckBox.Text = LanguageManager.Translate("クラウド同期を有効化");
+            CloudSyncEnabledCheckBox.AutoSize = true;
+            CloudSyncEnabledCheckBox.Location = new Point(innerMargin2, apiInnerY);
+            CloudSyncEnabledCheckBox.Checked = _settings.CloudSyncEnabled;
+            grpApiKey.Controls.Add(CloudSyncEnabledCheckBox);
+            apiInnerY += CloudSyncEnabledCheckBox.Height + 10;
+
+            Label cloudPlayerNameLabel = new Label();
+            cloudPlayerNameLabel.Text = LanguageManager.Translate("クラウドプレイヤー名:");
+            cloudPlayerNameLabel.AutoSize = true;
+            cloudPlayerNameLabel.Location = new Point(innerMargin2, apiInnerY);
+            grpApiKey.Controls.Add(cloudPlayerNameLabel);
+
+            CloudPlayerNameTextBox = new TextBox();
+            CloudPlayerNameTextBox.Width = 250;
+            CloudPlayerNameTextBox.Location = new Point(cloudPlayerNameLabel.Right + 10, apiInnerY - 3);
+            CloudPlayerNameTextBox.Text = _settings.CloudPlayerName ?? string.Empty;
+            grpApiKey.Controls.Add(CloudPlayerNameTextBox);
+            apiInnerY += CloudPlayerNameTextBox.Height + 10;
+
+            Label cloudUrlLabel = new Label();
+            cloudUrlLabel.Text = LanguageManager.Translate("クラウド WebSocket URL:");
+            cloudUrlLabel.AutoSize = true;
+            cloudUrlLabel.Location = new Point(innerMargin2, apiInnerY);
+            grpApiKey.Controls.Add(cloudUrlLabel);
+
+            CloudWebSocketUrlTextBox = new TextBox();
+            CloudWebSocketUrlTextBox.Width = 400;
+            CloudWebSocketUrlTextBox.Location = new Point(cloudUrlLabel.Right + 10, apiInnerY - 3);
+            CloudWebSocketUrlTextBox.Text = string.IsNullOrWhiteSpace(_settings.CloudWebSocketUrl)
+                ? "ws://toncloud.sprink.cloud"
+                : _settings.CloudWebSocketUrl;
+            grpApiKey.Controls.Add(CloudWebSocketUrlTextBox);
+            apiInnerY += CloudWebSocketUrlTextBox.Height + 10;
 
             // APIキー入力欄
             apiKeyLabel = new Label();
