@@ -236,12 +236,12 @@ namespace ToNRoundCounter.Infrastructure
 
             void TryAdd(string? candidate)
             {
-                if (string.IsNullOrEmpty(candidate) || !seen.Add(candidate))
+                if (string.IsNullOrEmpty(candidate) || !seen.Add(candidate!))
                 {
                     return;
                 }
 
-                candidates.AddLast(candidate);
+                candidates.AddLast(candidate!);
             }
 
             if (string.IsNullOrEmpty(cultureName))

@@ -125,15 +125,6 @@ export class RoundRepository {
         return rows.map(row => this.mapRowToRound(row));
     }
 
-    async getLatestRoundId(instanceId: string): Promise<string | null> {
-        const row = await this.db.get<any>(
-            `SELECT round_id FROM rounds WHERE instance_id = ? ORDER BY start_time DESC LIMIT 1`,
-            [instanceId]
-        );
-
-        return row?.round_id || null;
-    }
-
     private mapRowToRound(row: any): Round {
         return {
             round_id: row.round_id,

@@ -7,6 +7,7 @@ using System.Net.Http;
 using Newtonsoft.Json;
 using Serilog.Events;
 using ToNRoundCounter.Domain;
+using ToNRoundCounter.Infrastructure;
 
 namespace ToNRoundCounter.Application
 {
@@ -20,14 +21,18 @@ namespace ToNRoundCounter.Application
         private readonly IAppSettings _settings;
         private readonly IEventLogger _logger;
         private readonly IHttpClient _httpClient;
+        private readonly CloudWebSocketClient? _cloudClient;
         private IMainView? _view;
+        private string? _currentRoundId;
+        private DateTime _currentRoundStartTime;
 
-        public MainPresenter(StateService stateService, IAppSettings settings, IEventLogger logger, IHttpClient httpClient)
+        public MainPresenter(StateService stateService, IAppSettings settings, IEventLogger logger, IHttpClient httpClient, CloudWebSocketClient? cloudClient = null)
         {
             _stateService = stateService;
             _settings = settings;
             _logger = logger;
             _httpClient = httpClient;
+            _cloudClient = cloudClient;
             _stateService.RoundLogAdded += OnRoundLogAdded;
         }
 
@@ -84,6 +89,72 @@ namespace ToNRoundCounter.Application
                 round.RoundType, round.TerrorKey, displayMapName, items, round.Damage, status);
             _stateService.AddRoundLog(round, logEntry);
             _logger.LogEvent("MainPresenter", () => $"Round log appended: {round.RoundType} ({status}).");
+        }
+
+        public async Task OnRoundStartAsync(Round round, string? instanceId = null)
+        {
+            if (_cloudClient != null && _settings.CloudSyncEnabled && _cloudClient.IsConnected)
+            {
+                try
+                {
+                    var playerName = string.IsNullOrWhiteSpace(_settings.CloudPlayerName) 
+                        ? Environment.UserName 
+                        : _settings.CloudPlayerName;
+                    
+                    _currentRoundStartTime = DateTime.Now;
+                    _currentRoundId = await _cloudClient.GameRoundStartAsync(
+                        instanceId,
+                        playerName,
+                        round.RoundType ?? "Unknown",
+                        round.MapName,
+                        System.Threading.CancellationToken.None
+                    ).ConfigureAwait(false);
+                    
+                    _logger.LogEvent("CloudSync", $"Round started on cloud: {_currentRoundId} (Instance: {instanceId ?? "None"})");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogEvent("CloudSync", () => $"Failed to start round on cloud: {ex.Message}", LogEventLevel.Warning);
+                }
+            }
+        }
+
+        public async Task OnRoundEndAsync(Round round, string status)
+        {
+            if (_cloudClient != null && _settings.CloudSyncEnabled && _cloudClient.IsConnected && !string.IsNullOrEmpty(_currentRoundId))
+            {
+                try
+                {
+                    var survived = status != "死亡" && !round.IsDeath;
+                    var duration = (int)(DateTime.Now - _currentRoundStartTime).TotalSeconds;
+                    
+                    var result = await _cloudClient.GameRoundEndAsync(
+                        _currentRoundId!,
+                        survived,
+                        duration,
+                        round.Damage,
+                        round.ItemNames?.ToArray(),
+                        round.TerrorKey,
+                        System.Threading.CancellationToken.None
+                    ).ConfigureAwait(false);
+                    
+                    // Log the returned stats from cloud
+                    if (result.ContainsKey("stats"))
+                    {
+                        _logger.LogEvent("CloudSync", $"Round ended on cloud: {_currentRoundId} | Stats updated on server");
+                    }
+                    else
+                    {
+                        _logger.LogEvent("CloudSync", $"Round ended on cloud: {_currentRoundId}");
+                    }
+                    
+                    _currentRoundId = null;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogEvent("CloudSync", () => $"Failed to end round on cloud: {ex.Message}", LogEventLevel.Warning);
+                }
+            }
         }
 
         public async Task UploadRoundLogAsync(Round round, string status)

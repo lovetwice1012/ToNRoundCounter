@@ -78,7 +78,6 @@ namespace ToNRoundCounter.UI
         private readonly ModuleHost _moduleHost;
         private readonly AutoRecordingService autoRecordingService;
         private readonly CloudWebSocketClient? _cloudClient;
-        private bool cloudEventsSubscribed;
 
         private Action<WebSocketConnected>? _wsConnectedHandler;
         private Action<WebSocketDisconnected>? _wsDisconnectedHandler;
@@ -334,6 +333,24 @@ namespace ToNRoundCounter.UI
                     {
                         await _cloudClient.StartAsync();
                         _logger?.LogEvent("CloudSync", "Cloud WebSocket client started successfully.");
+                        
+                        // Auto-login after connection
+                        if (!string.IsNullOrWhiteSpace(_settings.CloudPlayerName))
+                        {
+                            try
+                            {
+                                var loginResult = await _cloudClient.LoginAsync(
+                                    _settings.CloudPlayerName,
+                                    "1.0.0",
+                                    System.Threading.CancellationToken.None
+                                );
+                                _logger?.LogEvent("CloudSync", $"Logged in as: {_settings.CloudPlayerName}");
+                            }
+                            catch (Exception loginEx)
+                            {
+                                _logger?.LogEvent("CloudSync", $"Auto-login failed: {loginEx.Message}", LogEventLevel.Warning);
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -341,7 +358,11 @@ namespace ToNRoundCounter.UI
                     }
                 });
 
-                EnsureCloudEventHandlers();
+                // Subscribe to Cloud stream events
+                if (_cloudClient != null)
+                {
+                    _cloudClient.MessageReceived += OnCloudMessageReceived;
+                }
             }
 
             velocityTimer = new System.Windows.Forms.Timer();
@@ -683,11 +704,6 @@ namespace ToNRoundCounter.UI
                 settingsForm.SettingsPanel.LoadRoundBgmEntries(_settings.RoundBgmEntries);
                 settingsForm.SettingsPanel.SetRoundBgmItemConflictBehavior(_settings.RoundBgmItemConflictBehavior);
                 settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text = _settings.DiscordWebhookUrl;
-                settingsForm.SettingsPanel.CloudSyncEnabledCheckBox.Checked = _settings.CloudSyncEnabled;
-                settingsForm.SettingsPanel.CloudPlayerNameTextBox.Text = _settings.CloudPlayerName ?? string.Empty;
-                settingsForm.SettingsPanel.CloudWebSocketUrlTextBox.Text = string.IsNullOrWhiteSpace(_settings.CloudWebSocketUrl)
-                    ? "ws://toncloud.sprink.cloud"
-                    : _settings.CloudWebSocketUrl;
 
                 var openedContext = new ModuleSettingsViewLifecycleContext(settingsForm, settingsForm.SettingsPanel, _settings, ModuleSettingsViewStage.Opened, null, _moduleHost.CurrentServiceProvider);
                 _moduleHost.NotifySettingsViewOpened(openedContext);
@@ -699,10 +715,6 @@ namespace ToNRoundCounter.UI
 
                 if (dialogResult == DialogResult.OK)
                 {
-                    bool previousCloudEnabled = _settings.CloudSyncEnabled;
-                    string previousCloudUrl = _settings.CloudWebSocketUrl ?? string.Empty;
-                    bool cloudNeedsRestart = false;
-
                     var applyingContext = new ModuleSettingsViewLifecycleContext(settingsForm, settingsForm.SettingsPanel, _settings, ModuleSettingsViewStage.Applying, dialogResult, _moduleHost.CurrentServiceProvider);
                     _moduleHost.NotifySettingsViewApplying(applyingContext);
 
@@ -822,30 +834,18 @@ namespace ToNRoundCounter.UI
                         return;
                     }
 
-                    bool newCloudEnabled = settingsForm.SettingsPanel.CloudSyncEnabledCheckBox.Checked;
-                    string newCloudUrl = settingsForm.SettingsPanel.CloudWebSocketUrlTextBox.Text?.Trim() ?? string.Empty;
-                    string newCloudPlayerName = settingsForm.SettingsPanel.CloudPlayerNameTextBox.Text?.Trim() ?? string.Empty;
+                    // Cloud settings
+                    bool previousCloudEnabled = _settings.CloudSyncEnabled;
+                    string previousCloudUrl = _settings.CloudWebSocketUrl ?? string.Empty;
+                    string previousCloudPlayerName = _settings.CloudPlayerName ?? string.Empty;
 
-                    if (newCloudEnabled && string.IsNullOrWhiteSpace(newCloudUrl))
-                    {
-                        MessageBox.Show(
-                            LanguageManager.Translate("クラウド連携を有効にするには WebSocket の URL を入力してください。"),
-                            LanguageManager.Translate("設定エラー"),
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Warning);
-                        return;
-                    }
+                    _settings.CloudSyncEnabled = settingsForm.SettingsPanel.CloudSyncEnabledCheckBox.Checked;
+                    _settings.CloudPlayerName = settingsForm.SettingsPanel.CloudPlayerNameTextBox.Text?.Trim() ?? string.Empty;
+                    _settings.CloudWebSocketUrl = settingsForm.SettingsPanel.CloudWebSocketUrlTextBox.Text?.Trim() ?? string.Empty;
 
-                    _settings.CloudSyncEnabled = newCloudEnabled;
-                    if (!string.IsNullOrWhiteSpace(newCloudUrl))
-                    {
-                        _settings.CloudWebSocketUrl = newCloudUrl;
-                    }
-
-                    _settings.CloudPlayerName = newCloudPlayerName;
-
-                    cloudNeedsRestart = previousCloudEnabled != _settings.CloudSyncEnabled
-                        || !string.Equals(previousCloudUrl, _settings.CloudWebSocketUrl ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+                    bool cloudNeedsRestart = previousCloudEnabled != _settings.CloudSyncEnabled
+                        || !string.Equals(previousCloudUrl, _settings.CloudWebSocketUrl, StringComparison.OrdinalIgnoreCase)
+                        || !string.Equals(previousCloudPlayerName, _settings.CloudPlayerName, StringComparison.OrdinalIgnoreCase);
 
                     EvaluateAutoRecording("SettingsChanged");
                     RecomputeOverlayTerrorBase();
@@ -869,9 +869,51 @@ namespace ToNRoundCounter.UI
                     _moduleHost.NotifyAuxiliaryWindowCatalogBuilding();
                     BuildAuxiliaryWindowsMenu();
                     await _settings.SaveAsync();
-                    if (cloudNeedsRestart)
+
+                    // Restart Cloud client if needed
+                    if (cloudNeedsRestart && _cloudClient != null)
                     {
-                        await RestartCloudClientAsync(_settings.CloudSyncEnabled);
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await _cloudClient.StopAsync();
+                                _logger?.LogEvent("CloudSync", "Cloud client stopped for restart.");
+
+                                if (_settings.CloudSyncEnabled)
+                                {
+                                    if (!string.IsNullOrWhiteSpace(_settings.CloudWebSocketUrl))
+                                    {
+                                        _cloudClient.UpdateEndpoint(_settings.CloudWebSocketUrl);
+                                    }
+
+                                    await _cloudClient.StartAsync();
+                                    _logger?.LogEvent("CloudSync", "Cloud client restarted successfully.");
+
+                                    // Auto-login after restart
+                                    if (!string.IsNullOrWhiteSpace(_settings.CloudPlayerName))
+                                    {
+                                        try
+                                        {
+                                            await _cloudClient.LoginAsync(
+                                                _settings.CloudPlayerName,
+                                                "1.0.0",
+                                                System.Threading.CancellationToken.None
+                                            );
+                                            _logger?.LogEvent("CloudSync", $"Logged in as: {_settings.CloudPlayerName}");
+                                        }
+                                        catch (Exception loginEx)
+                                        {
+                                            _logger?.LogEvent("CloudSync", $"Failed to login after restart: {loginEx.Message}", LogEventLevel.Warning);
+                                        }
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger?.LogEvent("CloudSync", $"Failed to restart Cloud client: {ex.Message}", LogEventLevel.Warning);
+                            }
+                        });
                     }
                 }
 
@@ -912,55 +954,6 @@ namespace ToNRoundCounter.UI
 
             _logger?.LogEvent("AutoRecording", "Administrator restart declined by user.", LogEventLevel.Warning);
             return false;
-        }
-
-        private void EnsureCloudEventHandlers()
-        {
-            if (_cloudClient == null || cloudEventsSubscribed)
-            {
-                return;
-            }
-
-            _cloudClient.MessageReceived += OnCloudMessageReceived;
-            cloudEventsSubscribed = true;
-        }
-
-        private async Task RestartCloudClientAsync(bool enable)
-        {
-            if (_cloudClient == null)
-            {
-                return;
-            }
-
-            try
-            {
-                await _cloudClient.StopAsync().ConfigureAwait(true);
-                _logger?.LogEvent("CloudSync", "Cloud WebSocket client stopped.");
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogEvent("CloudSync", $"Failed to stop Cloud client: {ex.Message}", LogEventLevel.Warning);
-            }
-
-            if (!enable)
-            {
-                return;
-            }
-
-            try
-            {
-                var endpoint = string.IsNullOrWhiteSpace(_settings.CloudWebSocketUrl)
-                    ? "ws://toncloud.sprink.cloud"
-                    : _settings.CloudWebSocketUrl!;
-                _cloudClient.UpdateEndpoint(endpoint);
-                await _cloudClient.StartAsync().ConfigureAwait(true);
-                EnsureCloudEventHandlers();
-                _logger?.LogEvent("CloudSync", $"Cloud WebSocket client restarted at {endpoint}.");
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogEvent("CloudSync", $"Failed to start Cloud client: {ex.Message}", LogEventLevel.Warning);
-            }
         }
 
         private void RestartAsAdministratorForRecording()
@@ -1045,6 +1038,56 @@ namespace ToNRoundCounter.UI
             }
 
             windowsMenuItem.Visible = true;
+
+            // Add Cloud features menu items
+            if (_cloudClient != null && _settings.CloudSyncEnabled)
+            {
+                var votingMenuItem = new ToolStripMenuItem("投票システム (Voting)")
+                {
+                    Tag = "CloudVotingPanel"
+                };
+                votingMenuItem.Click += (s, e) =>
+                {
+                    var votingForm = new VotingPanelForm(_cloudClient, currentInstanceId, _settings.CloudPlayerName ?? Environment.UserName);
+                    votingForm.ShowDialog(this);
+                };
+                windowsMenuItem.DropDownItems.Add(votingMenuItem);
+
+                var profileMenuItem = new ToolStripMenuItem("プロフィール管理 (Profile)")
+                {
+                    Tag = "CloudProfileManager"
+                };
+                profileMenuItem.Click += (s, e) =>
+                {
+                    var profileForm = new ProfileManagerForm(_cloudClient, _settings.CloudPlayerName ?? Environment.UserName);
+                    profileForm.ShowDialog(this);
+                };
+                windowsMenuItem.DropDownItems.Add(profileMenuItem);
+
+                var settingsSyncMenuItem = new ToolStripMenuItem("設定同期 (Settings Sync)")
+                {
+                    Tag = "CloudSettingsSync"
+                };
+                settingsSyncMenuItem.Click += (s, e) =>
+                {
+                    var syncForm = new SettingsSyncForm(_cloudClient, _settings.CloudPlayerName ?? Environment.UserName, _settings);
+                    syncForm.ShowDialog(this);
+                };
+                windowsMenuItem.DropDownItems.Add(settingsSyncMenuItem);
+
+                var backupMenuItem = new ToolStripMenuItem("バックアップ管理 (Backup)")
+                {
+                    Tag = "CloudBackupManager"
+                };
+                backupMenuItem.Click += (s, e) =>
+                {
+                    var backupForm = new BackupManagerForm(_cloudClient, _settings.CloudPlayerName ?? Environment.UserName);
+                    backupForm.ShowDialog(this);
+                };
+                windowsMenuItem.DropDownItems.Add(backupMenuItem);
+
+                windowsMenuItem.DropDownItems.Add(new ToolStripSeparator());
+            }
 
             foreach (var descriptor in _moduleHost.AuxiliaryWindows.OrderBy(d => d.DisplayName, StringComparer.CurrentCulture))
             {
@@ -1233,6 +1276,8 @@ namespace ToNRoundCounter.UI
             {
                 try
                 {
+                    // NOTE: InstanceLeaveAsync removed due to VRChat platform constraints
+                    // Simply disconnect from cloud sync server
                     await _cloudClient.StopAsync();
                     LogUi("Cloud WebSocket client stopped successfully.", LogEventLevel.Debug);
                 }
@@ -1855,10 +1900,12 @@ namespace ToNRoundCounter.UI
                     else
                     {
                         bool hadInstance;
+                        string previousInstanceId;
                         DateTimeOffset now = DateTimeOffset.Now;
                         lock (instanceTimerSync)
                         {
                             hadInstance = !string.IsNullOrEmpty(currentInstanceId);
+                            previousInstanceId = currentInstanceId;
                             currentInstanceId = string.Empty;
                             currentInstanceEnteredAt = now;
                         }
@@ -1866,6 +1913,9 @@ namespace ToNRoundCounter.UI
                         if (hadInstance)
                         {
                             UpdateInstanceTimerOverlay();
+                            
+                            // NOTE: Cloud instance leave removed due to VRChat platform constraints
+                            // Instance tracking is now handled server-side based on active connections
                         }
                     }
                     followAutoSelfKill = false;

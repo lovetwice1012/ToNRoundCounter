@@ -117,14 +117,14 @@ namespace ToNRoundCounter.Infrastructure
                 return null;
             }
 
-            var candidate = cultureCode.Trim();
+            var candidate = cultureCode!.Trim();
 
             if (candidate.Length == 0)
             {
                 return null;
             }
 
-            if (_cultureAliases.TryGetValue(candidate, out var alias))
+            if (_cultureAliases.TryGetValue(candidate!, out var alias))
             {
                 return alias;
             }

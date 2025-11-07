@@ -54,6 +54,9 @@ namespace ToNRoundCounter.Application
         string Language { get; set; }
         string LogFilePath { get; set; }
         string WebSocketIp { get; set; }
+        string CloudWebSocketUrl { get; set; }
+        bool CloudSyncEnabled { get; set; }
+        string CloudPlayerName { get; set; }
         bool AutoLaunchEnabled { get; set; }
         List<AutoLaunchEntry> AutoLaunchEntries { get; set; }
         string AutoLaunchExecutablePath { get; set; }

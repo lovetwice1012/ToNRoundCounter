@@ -18,7 +18,7 @@ import { VotingService } from '../services/VotingService';
 import { ProfileService } from '../services/ProfileService';
 import { SettingsService } from '../services/SettingsService';
 import { MonitoringService } from '../services/MonitoringService';
-import { RemoteControlService } from '../services/RemoteControlService';
+// import { RemoteControlService } from '../services/RemoteControlService'; // Removed - security risk
 import { AnalyticsService } from '../services/AnalyticsService';
 import { BackupService } from '../services/BackupService';
 import { ThreatService } from '../services/ThreatService';
@@ -44,7 +44,7 @@ export class WebSocketHandler {
     private profileService: ProfileService;
     private settingsService: SettingsService;
     private monitoringService: MonitoringService;
-    private remoteControlService: RemoteControlService;
+    // private remoteControlService: RemoteControlService; // Removed - security risk
     private analyticsService: AnalyticsService;
     private backupService: BackupService;
     private threatService: ThreatService;
@@ -61,7 +61,7 @@ export class WebSocketHandler {
         this.profileService = new ProfileService();
         this.settingsService = new SettingsService(this);
         this.monitoringService = new MonitoringService(this);
-        this.remoteControlService = new RemoteControlService(this);
+        // this.remoteControlService = new RemoteControlService(this); // Removed - security risk
         this.analyticsService = new AnalyticsService();
         this.backupService = new BackupService();
         this.threatService = new ThreatService(this);
@@ -161,12 +161,13 @@ export class WebSocketHandler {
                 case 'instance.create':
                     result = await this.handleInstanceCreate(ws, params);
                     break;
+                // instance.join and instance.leave - REMOVED (VRChat constraint violation)
+                // VRChat does not allow external applications to control world joining
+                // Players must manually join worlds through VRChat client
                 case 'instance.join':
-                    result = await this.handleInstanceJoin(ws, params, clientId);
-                    break;
                 case 'instance.leave':
-                    result = await this.handleInstanceLeave(ws, params, clientId);
-                    break;
+                    this.sendError(ws, ErrorCodes.INVALID_PARAMS, 'Remote instance join/leave is not supported due to VRChat platform constraints');
+                    return;
                 case 'instance.list':
                     result = await this.handleInstanceList(params);
                     break;
@@ -233,16 +234,13 @@ export class WebSocketHandler {
                     result = await this.handleMonitoringErrors(ws, params);
                     break;
 
-                // Remote control methods
+                // Remote control methods - REMOVED FOR SECURITY
+                // These endpoints allowed remote command execution which is a critical security vulnerability
                 case 'remote.command.create':
-                    result = await this.handleRemoteCommandCreate(ws, params);
-                    break;
                 case 'remote.command.execute':
-                    result = await this.handleRemoteCommandExecute(ws, params);
-                    break;
                 case 'remote.command.status':
-                    result = await this.handleRemoteCommandStatus(ws, params);
-                    break;
+                    this.sendError(ws, ErrorCodes.INVALID_PARAMS, 'Remote control functionality has been disabled for security reasons');
+                    return;
 
                 // Analytics methods
                 case 'analytics.player':
@@ -342,51 +340,9 @@ export class WebSocketHandler {
         };
     }
 
-    private async handleInstanceJoin(ws: ExtendedWebSocket, params: any, clientId: string): Promise<any> {
-        this.requireAuth(ws);
-
-        const { instance_id } = params;
-
-        if (!instance_id) {
-            throw new Error('instance_id is required');
-        }
-
-        const result = await this.instanceService.joinInstance(
-            instance_id,
-            ws.playerId!,
-            ws.playerId! // Using playerId as player name for now
-        );
-
-        // Track client in instance
-        ws.instanceId = instance_id;
-        if (!this.instanceClients.has(instance_id)) {
-            this.instanceClients.set(instance_id, new Set());
-        }
-        this.instanceClients.get(instance_id)!.add(clientId);
-
-        return result;
-    }
-
-    private async handleInstanceLeave(ws: ExtendedWebSocket, params: any, clientId: string): Promise<any> {
-        this.requireAuth(ws);
-
-        const { instance_id } = params;
-
-        if (!instance_id) {
-            throw new Error('instance_id is required');
-        }
-
-        await this.instanceService.leaveInstance(instance_id, ws.playerId!);
-
-        // Remove from instance clients
-        const instanceClients = this.instanceClients.get(instance_id);
-        if (instanceClients) {
-            instanceClients.delete(clientId);
-        }
-        ws.instanceId = undefined;
-
-        return { success: true };
-    }
+    // Instance handlers - handleInstanceJoin and handleInstanceLeave REMOVED
+    // VRChat platform does not allow external control of world joining/leaving
+    // These operations must be performed manually by users through VRChat client
 
     private async handleInstanceList(params: any): Promise<any> {
         const { filter = 'available', limit = 20, offset = 0 } = params;
@@ -680,48 +636,9 @@ export class WebSocketHandler {
     }
 
     // Remote control handlers
-    private async handleRemoteCommandCreate(ws: ExtendedWebSocket, params: any): Promise<any> {
-        this.requireAuth(ws);
-        const { instance_id, command_type, action, parameters, priority } = params;
-        
-        if (!action) {
-            throw new Error('action is required');
-        }
-
-        return await this.remoteControlService.createCommand(
-            ws.userId!,
-            instance_id,
-            command_type || 'ROUND_CONTROL',
-            action,
-            parameters || {},
-            ws.playerId || 'system',
-            priority || 0
-        );
-    }
-
-    private async handleRemoteCommandExecute(ws: ExtendedWebSocket, params: any): Promise<any> {
-        this.requireAuth(ws);
-        const { command_id } = params;
-        
-        if (!command_id) {
-            throw new Error('command_id is required');
-        }
-
-        return await this.remoteControlService.executeCommand(command_id);
-    }
-
-    private async handleRemoteCommandStatus(ws: ExtendedWebSocket, params: any): Promise<any> {
-        this.requireAuth(ws);
-        const { command_id, instance_id } = params;
-
-        if (command_id) {
-            return await this.remoteControlService.getCommand(command_id);
-        } else if (instance_id) {
-            return await this.remoteControlService.getCommand(instance_id);
-        }
-
-        throw new Error('command_id or instance_id is required');
-    }
+    // Remote control handlers - REMOVED FOR SECURITY
+    // These methods allowed remote command execution which poses a critical security risk
+    // All functionality has been permanently disabled
 
     // Analytics handlers
     private async handleAnalyticsPlayer(ws: ExtendedWebSocket, params: any): Promise<any> {

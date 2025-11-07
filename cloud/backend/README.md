@@ -107,12 +107,6 @@ npm start
 ws://localhost:3000/ws
 ```
 
-#### 接続と認証
-1. クライアントは接続直後に `auth.connect` を送信し、サーバーバージョンとセッション ID を取得します。
-2. 必要に応じて `auth.login` を呼び出し、クラウドユーザー ID を紐付けます。
-3. 以降の RPC 呼び出しでは `type: "request"` / `type: "response"` のメッセージフォーマットを使用します。
-4. サーバーからの通知は `type: "stream"`、`event` にイベント名が格納されます。
-
 #### 認証
 - `auth.login` - ログイン
 - `auth.logout` - ログアウト
@@ -163,14 +157,6 @@ ws://localhost:3000/ws
 - `backup.create` - バックアップ作成
 - `backup.restore` - バックアップリストア
 - `backup.list` - バックアップ一覧
-
-#### 主なストリームイベント
-- `instance.member.joined` / `instance.member.left`
-- `player.state.updated`
-- `settings.updated`
-- `monitoring.status.updated` / `monitoring.error.logged`
-- `remote.command.completed` / `remote.command.failed`
-- `threat.announced` / `threat.response.recorded`
 
 ### REST API
 ```

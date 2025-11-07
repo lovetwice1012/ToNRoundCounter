@@ -13,6 +13,7 @@
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
     <TargetFrameworkProfile />
+    <RuntimeIdentifiers>win</RuntimeIdentifiers>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <PublishUrl>publish\</PublishUrl>
@@ -157,6 +158,9 @@
     <Compile Include="UI\MainForm.Designer.cs">
       <DependentUpon>MainForm.cs</DependentUpon>
     </Compile>
+    <Compile Include="UI\MainForm.InstanceMembers.cs">
+      <DependentUpon>MainForm.cs</DependentUpon>
+    </Compile>
     <Compile Include="UI\OverlaySectionForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -176,6 +180,12 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="UI\OverlayVelocityForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\OverlayInstanceMembersForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\AutoSuicideConfirmationOverlay.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="UI\DirectX\DirectXDeviceManager.cs" />
@@ -201,6 +211,18 @@
     </Compile>
     <Compile Include="UI\SettingsPanel.cs">
       <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="UI\Forms\VotingPanelForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\Forms\ProfileManagerForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\Forms\SettingsSyncForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\Forms\BackupManagerForm.cs">
+      <SubType>Form</SubType>
     </Compile>
     <Compile Include="Domain\RoundAggregate.cs" />
     <Compile Include="Domain\Round.cs" />
@@ -243,6 +265,7 @@
     <Compile Include="Application\IHttpClient.cs" />
     <Compile Include="Infrastructure\EventBus.cs" />
     <Compile Include="Infrastructure\WebSocketClient.cs" />
+    <Compile Include="Infrastructure\CloudWebSocketClient.cs" />
     <Compile Include="Infrastructure\OSCListener.cs" />
     <Compile Include="Infrastructure\AppSettings.cs" />
     <Compile Include="Infrastructure\EventLogger.cs" />

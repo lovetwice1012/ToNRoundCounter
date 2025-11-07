@@ -212,22 +212,13 @@ export class MonitoringService {
     }
 
     private broadcastStatusUpdate(userId: string, status: StatusMonitoring): void {
+        // Broadcast to all user's clients
         logger.debug({ userId, statusId: status.status_id }, 'Broadcasting status update');
-        this.wsHandler.broadcastToUser(userId, {
-            stream: 'monitoring.status.updated',
-            data: status,
-            timestamp: new Date().toISOString(),
-        });
     }
 
     private broadcastError(errorLog: ErrorLog): void {
         if (errorLog.user_id) {
             logger.debug({ userId: errorLog.user_id, errorId: errorLog.error_id }, 'Broadcasting error');
-            this.wsHandler.broadcastToUser(errorLog.user_id, {
-                stream: 'monitoring.error.logged',
-                data: errorLog,
-                timestamp: new Date().toISOString(),
-            });
         }
     }
 

@@ -76,6 +76,9 @@ namespace ToNRoundCounter.Infrastructure
         public string Language { get; set; } = LanguageManager.DefaultCulture;
         public string LogFilePath { get; set; } = "logs/log-.txt";
         public string WebSocketIp { get; set; } = "127.0.0.1";
+        public string CloudWebSocketUrl { get; set; } = string.Empty;
+        public bool CloudSyncEnabled { get; set; }
+        public string CloudPlayerName { get; set; } = string.Empty;
         public bool AutoLaunchEnabled { get; set; }
         public List<AutoLaunchEntry> AutoLaunchEntries { get; set; } = new List<AutoLaunchEntry>();
         // Legacy properties retained for migration of single-entry settings
@@ -151,34 +154,37 @@ namespace ToNRoundCounter.Infrastructure
 
                 if (!string.IsNullOrWhiteSpace(json))
                 {
-                    string jsonContent = json;
+                    string? jsonContent = json;
 
-                    try
+                    if (jsonContent != null)
                     {
-                        var token = JObject.Parse(jsonContent);
-                        if (token.TryGetValue("ThemeKey", out var themeKeyToken))
+                        try
                         {
-                            ThemeKey = NormalizeThemeKey(themeKeyToken?.Value<string>());
+                            var token = JObject.Parse(jsonContent);
+                            if (token.TryGetValue("ThemeKey", out var themeKeyToken))
+                            {
+                                ThemeKey = NormalizeThemeKey(themeKeyToken?.Value<string>());
+                            }
+                            else if (token.TryGetValue("Theme", out var legacyThemeToken))
+                            {
+                                ThemeKey = NormalizeLegacyTheme(legacyThemeToken);
+                            }
                         }
-                        else if (token.TryGetValue("Theme", out var legacyThemeToken))
+                        catch (JsonException)
                         {
-                            ThemeKey = NormalizeLegacyTheme(legacyThemeToken);
+                            // Ignore malformed theme information and fall back to defaults.
                         }
-                    }
-                    catch (JsonException)
-                    {
-                        // Ignore malformed theme information and fall back to defaults.
-                    }
 
-                    JsonConvert.PopulateObject(jsonContent, this);
+                        JsonConvert.PopulateObject(jsonContent, this);
 
-                    if (loadedFromRepository && !File.Exists(settingsFile))
-                    {
-                        TryRegenerateSettingsFile(jsonContent);
-                    }
-                    else if (!loadedFromRepository)
-                    {
-                        PersistSettingsSnapshot(jsonContent);
+                        if (loadedFromRepository && !File.Exists(settingsFile))
+                        {
+                            TryRegenerateSettingsFile(jsonContent);
+                        }
+                        else if (!loadedFromRepository)
+                        {
+                            PersistSettingsSnapshot(jsonContent);
+                        }
                     }
                 }
 
@@ -242,14 +248,14 @@ namespace ToNRoundCounter.Infrastructure
 
         private void PersistSettingsSnapshot(string? json)
         {
-            if (_settingsRepository == null || string.IsNullOrEmpty(json))
+            if (_settingsRepository == null || string.IsNullOrWhiteSpace(json))
             {
                 return;
             }
 
             try
             {
-                _settingsRepository.SaveSnapshot(json, DateTime.UtcNow);
+                _settingsRepository.SaveSnapshot(json!, DateTime.UtcNow);
             }
             catch (Exception ex)
             {
@@ -493,7 +499,7 @@ namespace ToNRoundCounter.Infrastructure
         {
             var trimmed = string.IsNullOrWhiteSpace(extension)
                 ? AutoRecordingService.SupportedExtensions[0]
-                : extension.Trim().TrimStart('.');
+                : extension!.Trim().TrimStart('.');
 
             foreach (var candidate in AutoRecordingService.SupportedExtensions)
             {
@@ -761,6 +767,9 @@ namespace ToNRoundCounter.Infrastructure
         public string Language { get; set; } = LanguageManager.DefaultCulture;
         public string LogFilePath { get; set; } = string.Empty;
         public string WebSocketIp { get; set; } = string.Empty;
+        public string CloudWebSocketUrl { get; set; } = string.Empty;
+        public bool CloudSyncEnabled { get; set; }
+        public string CloudPlayerName { get; set; } = string.Empty;
         public bool AutoLaunchEnabled { get; set; }
         public List<AutoLaunchEntry> AutoLaunchEntries { get; set; } = new List<AutoLaunchEntry>();
         public bool ItemMusicEnabled { get; set; }

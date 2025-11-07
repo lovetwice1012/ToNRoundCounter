@@ -35,7 +35,8 @@ namespace ToNRoundCounter.UI
             TerrorInfo,
             Shortcuts,
             Clock,
-            InstanceTimer
+            InstanceTimer,
+            InstanceMembers
         }
 
         private void InitializeOverlay()
@@ -68,7 +69,8 @@ namespace ToNRoundCounter.UI
                 (OverlaySection.TerrorInfo, "テラー詳細", BuildTerrorInfoOverlayText()),
                 (OverlaySection.Shortcuts, "ショートカット", string.Empty),
                 (OverlaySection.Clock, "時計", GetClockOverlayText()),
-                (OverlaySection.InstanceTimer, "滞在時間", GetInstanceTimerDisplayText())
+                (OverlaySection.InstanceTimer, "滞在時間", GetInstanceTimerDisplayText()),
+                (OverlaySection.InstanceMembers, "メンバー", string.Empty)
             };
 
             int x = Math.Max(workingArea.Left, workingArea.Right - 260 - offsetX);
@@ -95,6 +97,10 @@ namespace ToNRoundCounter.UI
                         StartPosition = FormStartPosition.Manual,
                     },
                     OverlaySection.Shortcuts => new OverlayShortcutForm(title)
+                    {
+                        StartPosition = FormStartPosition.Manual,
+                    },
+                    OverlaySection.InstanceMembers => new OverlayInstanceMembersForm(title)
                     {
                         StartPosition = FormStartPosition.Manual,
                     },

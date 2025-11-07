@@ -26,8 +26,9 @@ export const Dashboard: React.FC = () => {
         if (connected && client) {
             const interval = setInterval(async () => {
                 try {
-                    const response = await client.listInstances();
-                    useAppStore.getState().setInstances(response.instances);
+                    // Refresh instances
+                    const instances = await client.listInstances();
+                    useAppStore.getState().setInstances(instances);
                 } catch (error) {
                     console.error('Failed to refresh data:', error);
                 }

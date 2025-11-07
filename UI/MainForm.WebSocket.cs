@@ -21,6 +21,17 @@ namespace ToNRoundCounter.UI
 
         private async Task ConnectToInstance(string instanceValue)
         {
+            // NOTE: Remote instance join/leave removed due to VRChat platform constraints
+            // VRChat does not allow external applications to control world joining
+            // Players must manually join worlds through VRChat client
+            // 
+            // Cloud sync is still active for:
+            // - Game lifecycle logging (round start/end)
+            // - Player state synchronization
+            // - Statistics collection
+            // - Voting system coordination
+
+            // Legacy TonSprink backend connection
             string url = $"ws://xy.f5.si:8880/ToNRoundCounter/{instanceValue}";
             instanceWsConnection = new ClientWebSocket();
             try
@@ -56,7 +67,10 @@ namespace ToNRoundCounter.UI
             catch (Exception ex)
             {
                 LogUi($"Instance WebSocket connection failed: {ex.Message}", LogEventLevel.Error);
-                _logger.LogEvent("InstanceError", ex.ToString(), Serilog.Events.LogEventLevel.Error);
+                if (_logger != null)
+                {
+                    _logger.LogEvent("InstanceError", ex.ToString(), Serilog.Events.LogEventLevel.Error);
+                }
             }
             finally
             {

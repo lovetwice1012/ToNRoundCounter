@@ -132,6 +132,16 @@ namespace ToNRoundCounter
             services.AddSingleton(moduleHost);
             services.AddSingleton<IOSCListener>(sp => new OSCListener(sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ICancellationProvider>(), sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<IWebSocketClient>(sp => new WebSocketClient(wsUrl, sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ICancellationProvider>(), sp.GetRequiredService<IEventLogger>()));
+            
+            // Cloud WebSocket Client for ToNRoundCounter Cloud integration
+            var cloudWsUrl = string.IsNullOrWhiteSpace(bootstrap.CloudWebSocketUrl) ? "ws://localhost:8080" : bootstrap.CloudWebSocketUrl;
+            eventLogger.LogEvent("Bootstrap", $"Cloud WebSocket endpoint: {cloudWsUrl}");
+            services.AddSingleton(sp => new CloudWebSocketClient(
+                cloudWsUrl,
+                sp.GetRequiredService<IEventBus>(),
+                sp.GetRequiredService<ICancellationProvider>(),
+                sp.GetRequiredService<IEventLogger>()));
+            
             services.AddSingleton(sp => new AutoSuicideService(sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<StateService>();
             services.AddSingleton<IAppSettings>(sp => new AppSettings(sp.GetRequiredService<IEventLogger>(), sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ISettingsRepository>()));
@@ -147,7 +157,8 @@ namespace ToNRoundCounter
                 sp.GetRequiredService<StateService>(),
                 sp.GetRequiredService<IAppSettings>(),
                 sp.GetRequiredService<IEventLogger>(),
-                sp.GetRequiredService<IHttpClient>()));
+                sp.GetRequiredService<IHttpClient>(),
+                sp.GetRequiredService<CloudWebSocketClient>()));
             Task.Run(() => ModuleLoader.LoadModules(services, moduleHost, eventLogger, eventBus, safeMode: safeModeActive)).GetAwaiter().GetResult();
             eventLogger.LogEvent("Bootstrap", $"Module discovery complete. Discovered modules: {moduleHost.Modules.Count}");
             services.AddSingleton<MainForm>(sp => new MainForm(
@@ -165,7 +176,8 @@ namespace ToNRoundCounter
                 sp.GetServices<IAfkWarningHandler>(),
                 sp.GetServices<IOscRepeaterPolicy>(),
                 sp.GetRequiredService<AutoRecordingService>(),
-                sp.GetRequiredService<ModuleHost>()));
+                sp.GetRequiredService<ModuleHost>(),
+                sp.GetRequiredService<CloudWebSocketClient>()));
 
             eventLogger.LogEvent("Bootstrap", "Building service provider (pre-build notifications).");
             moduleHost.NotifyServiceProviderBuilding(new ModuleServiceProviderBuildContext(services, eventLogger, eventBus));

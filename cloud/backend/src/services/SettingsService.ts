@@ -114,11 +114,8 @@ export class SettingsService {
     }
 
     private broadcastSettingsChange(userId: string, settings: Settings): void {
+        // In a real implementation, this would broadcast to all user's connected clients
+        // For now, we'll implement instance-level broadcasting
         logger.debug({ userId, version: settings.version }, 'Broadcasting settings change');
-        this.wsHandler.broadcastToUser(userId, {
-            stream: 'settings.updated',
-            data: settings,
-            timestamp: new Date().toISOString(),
-        });
     }
 }

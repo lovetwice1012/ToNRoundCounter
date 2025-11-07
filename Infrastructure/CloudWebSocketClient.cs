@@ -39,23 +39,49 @@ namespace ToNRoundCounter.Infrastructure
     /// </summary>
     public class CloudMessage
     {
-        public string Version { get; set; } = "1.0";
+        [System.Text.Json.Serialization.JsonPropertyName("version")]
+        public string? Version { get; set; } = "1.0";
+        
+        [System.Text.Json.Serialization.JsonPropertyName("id")]
         public string Id { get; set; } = Guid.NewGuid().ToString();
+        
+        [System.Text.Json.Serialization.JsonPropertyName("type")]
         public string Type { get; set; } = "request"; // "request", "response", "stream", "error"
+        
+        [System.Text.Json.Serialization.JsonPropertyName("rpc")]
         public string? Method { get; set; }
+        
+        [System.Text.Json.Serialization.JsonPropertyName("stream")]
         public string? Event { get; set; }
+        
+        [System.Text.Json.Serialization.JsonPropertyName("params")]
         public object? Params { get; set; }
+        
+        [System.Text.Json.Serialization.JsonPropertyName("result")]
         public object? Result { get; set; }
+        
+        [System.Text.Json.Serialization.JsonPropertyName("status")]
         public string? Status { get; set; } // "success", "error"
+        
+        [System.Text.Json.Serialization.JsonPropertyName("data")]
         public object? Data { get; set; }
+        
+        [System.Text.Json.Serialization.JsonPropertyName("error")]
         public ErrorInfo? Error { get; set; }
-        public string Timestamp { get; set; } = DateTime.UtcNow.ToString("O");
+        
+        [System.Text.Json.Serialization.JsonPropertyName("timestamp")]
+        public string? Timestamp { get; set; } = DateTime.UtcNow.ToString("O");
     }
 
     public class ErrorInfo
     {
+        [System.Text.Json.Serialization.JsonPropertyName("code")]
         public string Code { get; set; } = string.Empty;
+        
+        [System.Text.Json.Serialization.JsonPropertyName("message")]
         public string Message { get; set; } = string.Empty;
+        
+        [System.Text.Json.Serialization.JsonPropertyName("details")]
         public Dictionary<string, object>? Details { get; set; }
     }
 
@@ -93,6 +119,15 @@ namespace ToNRoundCounter.Infrastructure
         public string? UserId => _userId;
         public bool IsConnected => _socket?.State == WebSocketState.Open;
 
+        /// <summary>
+        /// Update the WebSocket endpoint URL
+        /// </summary>
+        public void UpdateEndpoint(string url)
+        {
+            _uri = new Uri(url);
+            _logger.LogEvent("CloudWebSocket", $"Endpoint updated to: {url}");
+        }
+
         public CloudWebSocketClient(
             string url,
             IEventBus bus,
@@ -108,17 +143,6 @@ namespace ToNRoundCounter.Infrastructure
                 SingleReader = true,
                 SingleWriter = true
             });
-        }
-
-        public void UpdateEndpoint(string url)
-        {
-            if (string.IsNullOrWhiteSpace(url))
-            {
-                throw new ArgumentException("WebSocket endpoint cannot be empty.", nameof(url));
-            }
-
-            _uri = new Uri(url);
-            _logger.LogEvent("CloudWebSocket", () => $"Endpoint updated: {_uri}");
         }
 
         public async Task StartAsync()
@@ -228,6 +252,120 @@ namespace ToNRoundCounter.Infrastructure
         }
 
         /// <summary>
+        /// Login with player ID to establish user session
+        /// </summary>
+        public async Task<Dictionary<string, object>> LoginAsync(
+            string playerId,
+            string clientVersion = "1.0.0",
+            CancellationToken cancellationToken = default)
+        {
+            var request = new CloudMessage
+            {
+                Id = Guid.NewGuid().ToString(),
+                Type = "request",
+                Method = "auth.login",
+                Params = new
+                {
+                    player_id = playerId,
+                    client_version = clientVersion
+                }
+            };
+
+            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (response.Status == "error")
+            {
+                throw new InvalidOperationException($"Login failed: {response.Error?.Message}");
+            }
+
+            var result = new Dictionary<string, object>();
+            if (response.Result != null)
+            {
+                var resultJson = JsonSerializer.Serialize(response.Result);
+                using (var doc = JsonDocument.Parse(resultJson))
+                {
+                    foreach (var prop in doc.RootElement.EnumerateObject())
+                    {
+                        result[prop.Name] = prop.Value;
+                    }
+
+                    // Update internal user ID
+                    if (doc.RootElement.TryGetProperty("player_id", out var playerIdElem))
+                    {
+                        _userId = playerIdElem.GetString();
+                    }
+                    else if (doc.RootElement.TryGetProperty("user_id", out var userIdElem))
+                    {
+                        _userId = userIdElem.GetString();
+                    }
+                }
+            }
+
+            _logger.LogEvent("CloudWebSocket", $"Logged in as user: {_userId ?? playerId}");
+            return result;
+        }
+
+        /// <summary>
+        /// Logout from the current session
+        /// </summary>
+        public async Task LogoutAsync(CancellationToken cancellationToken = default)
+        {
+            var request = new CloudMessage
+            {
+                Id = Guid.NewGuid().ToString(),
+                Type = "request",
+                Method = "auth.logout",
+                Params = new { }
+            };
+
+            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (response.Status == "error")
+            {
+                throw new InvalidOperationException($"Logout failed: {response.Error?.Message}");
+            }
+
+            _logger.LogEvent("CloudWebSocket", "Logged out successfully");
+        }
+
+        /// <summary>
+        /// Refresh the current session
+        /// </summary>
+        public async Task<Dictionary<string, object>> RefreshSessionAsync(CancellationToken cancellationToken = default)
+        {
+            var request = new CloudMessage
+            {
+                Id = Guid.NewGuid().ToString(),
+                Type = "request",
+                Method = "auth.refresh",
+                Params = new { }
+            };
+
+            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (response.Status == "error")
+            {
+                throw new InvalidOperationException($"Session refresh failed: {response.Error?.Message}");
+            }
+
+            var result = new Dictionary<string, object>();
+            if (response.Result != null)
+            {
+                var resultJson = JsonSerializer.Serialize(response.Result);
+                using (var doc = JsonDocument.Parse(resultJson))
+                {
+                    foreach (var prop in doc.RootElement.EnumerateObject())
+                    {
+                        result[prop.Name] = prop.Value;
+                    }
+                }
+            }
+
+            _logger.LogEvent("CloudWebSocket", "Session refreshed successfully");
+            return result;
+        }
+
+        /// <summary>
         /// Send an RPC request and wait for response
         /// </summary>
         public async Task<CloudMessage> SendRequestAsync(CloudMessage request, CancellationToken cancellationToken = default)
@@ -242,7 +380,12 @@ namespace ToNRoundCounter.Infrastructure
 
             try
             {
-                var json = JsonSerializer.Serialize(request);
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = null, // Use explicit JsonPropertyName attributes
+                    IgnoreNullValues = true
+                };
+                var json = JsonSerializer.Serialize(request, options);
                 var bytes = Encoding.UTF8.GetBytes(json);
 
                 await _socket.SendAsync(
@@ -280,7 +423,13 @@ namespace ToNRoundCounter.Infrastructure
                 Id = Guid.NewGuid().ToString(),
                 Type = "request",
                 Method = "game.roundStart",
-                Params = new { instanceId, playerName, roundType, mapName }
+                Params = new 
+                { 
+                    instanceId = instanceId,  // Backend expects camelCase for instanceId
+                    playerName = playerName,
+                    roundType = roundType,
+                    mapName = mapName 
+                }
             };
 
             var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
@@ -321,12 +470,12 @@ namespace ToNRoundCounter.Infrastructure
                 Method = "game.roundEnd",
                 Params = new
                 {
-                    roundId,
-                    survived,
-                    duration,
-                    damageDealt,
-                    itemsObtained,
-                    terrorName
+                    roundId = roundId,
+                    survived = survived,
+                    duration = duration,
+                    damageDealt = damageDealt,
+                    itemsObtained = itemsObtained,
+                    terrorName = terrorName
                 }
             };
 
@@ -350,57 +499,24 @@ namespace ToNRoundCounter.Infrastructure
             return result;
         }
 
+        #region Instance Management APIs
+
         /// <summary>
-        /// Helper: Join a shared instance
+        /// [DEPRECATED] Join instance - DISABLED (VRChat constraint violation)
         /// </summary>
-        public async Task<string> InstanceJoinAsync(string instanceId, string playerName, CancellationToken cancellationToken = default)
+        [Obsolete("Remote instance joining has been disabled due to VRChat platform constraints")]
+        public Task<string> InstanceJoinAsync(string instanceId, string playerName, CancellationToken cancellationToken = default)
         {
-            var request = new CloudMessage
-            {
-                Id = Guid.NewGuid().ToString(),
-                Type = "request",
-                Method = "instance.join",
-                Params = new { instanceId, playerName, playerId = _sessionId }
-            };
-
-            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
-
-            if (response.Status == "error")
-            {
-                throw new InvalidOperationException($"Failed to join instance: {response.Error?.Message}");
-            }
-
-            var resultJson = JsonSerializer.Serialize(response.Result);
-            using (var doc = JsonDocument.Parse(resultJson))
-            {
-                if (doc.RootElement.TryGetProperty("subscriptionId", out var subIdElem))
-                {
-                    return subIdElem.GetString() ?? throw new InvalidOperationException("No subscriptionId in response");
-                }
-            }
-
-            throw new InvalidOperationException("Invalid response format");
+            throw new NotSupportedException("Remote instance joining is not supported. VRChat platform does not allow external applications to control world joining. Players must manually join worlds through the VRChat client.");
         }
 
         /// <summary>
-        /// Leave an instance
+        /// [DEPRECATED] Leave instance - DISABLED (VRChat constraint violation)
         /// </summary>
-        public async Task InstanceLeaveAsync(string instanceId, CancellationToken cancellationToken = default)
+        [Obsolete("Remote instance leaving has been disabled due to VRChat platform constraints")]
+        public Task InstanceLeaveAsync(string instanceId, CancellationToken cancellationToken = default)
         {
-            var request = new CloudMessage
-            {
-                Id = Guid.NewGuid().ToString(),
-                Type = "request",
-                Method = "instance.leave",
-                Params = new { instanceId, playerId = _sessionId }
-            };
-
-            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
-
-            if (response.Status == "error")
-            {
-                throw new InvalidOperationException($"Failed to leave instance: {response.Error?.Message}");
-            }
+            throw new NotSupportedException("Remote instance leaving is not supported. VRChat platform does not allow external applications to control world joining/leaving. Players must manually leave worlds through the VRChat client.");
         }
 
         /// <summary>
@@ -604,9 +720,9 @@ namespace ToNRoundCounter.Infrastructure
                 Method = "instance.alert",
                 Params = new
                 {
-                    instanceId,
-                    alertType,
-                    message
+                    instanceId = instanceId,
+                    alertType = alertType,
+                    message = message
                 }
             };
 
@@ -643,7 +759,7 @@ namespace ToNRoundCounter.Infrastructure
                 Id = Guid.NewGuid().ToString(),
                 Type = "request",
                 Method = "player.states.get",
-                Params = new { instanceId }
+                Params = new { instanceId = instanceId }
             };
 
             var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
@@ -720,12 +836,15 @@ namespace ToNRoundCounter.Infrastructure
                 Params = new
                 {
                     instance_id = instanceId,
-                    player_id = playerId,
-                    velocity,
-                    afk_duration = afkDuration,
-                    items = items ?? new List<string>(),
-                    damage,
-                    is_alive = isAlive
+                    player_state = new
+                    {
+                        player_id = playerId,
+                        velocity,
+                        afk_duration = afkDuration,
+                        items = items ?? new List<string>(),
+                        damage,
+                        is_alive = isAlive
+                    }
                 }
             };
 
@@ -1859,12 +1978,21 @@ namespace ToNRoundCounter.Infrastructure
 
         #endregion
 
-        #region Remote Control APIs
+        #region Remote Control APIs - REMOVED FOR SECURITY
+
+        // SECURITY WARNING: Remote control functionality has been permanently disabled
+        // These methods allowed remote command execution which posed critical security risks:
+        // - Unauthorized access to application controls
+        // - Potential for malicious command injection
+        // - No way to properly authenticate/authorize remote commands
+        // 
+        // All remote.command.* endpoints have been removed from the server as well
 
         /// <summary>
-        /// Create remote command
+        /// [DEPRECATED] Create remote command - DISABLED FOR SECURITY
         /// </summary>
-        public async Task<Dictionary<string, object>> CreateRemoteCommandAsync(
+        [Obsolete("Remote control functionality has been disabled for security reasons")]
+        public Task<Dictionary<string, object>> CreateRemoteCommandAsync(
             string instanceId,
             string commandType,
             string action,
@@ -1872,118 +2000,29 @@ namespace ToNRoundCounter.Infrastructure
             int priority = 0,
             CancellationToken cancellationToken = default)
         {
-            var request = new CloudMessage
-            {
-                Id = Guid.NewGuid().ToString(),
-                Type = "request",
-                Method = "remote.command.create",
-                Params = new
-                {
-                    instance_id = instanceId,
-                    command_type = commandType,
-                    action,
-                    parameters = parameters ?? new Dictionary<string, object>(),
-                    priority
-                }
-            };
-
-            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
-
-            if (response.Status == "error")
-            {
-                throw new InvalidOperationException($"Failed to create remote command: {response.Error?.Message}");
-            }
-
-            var result = new Dictionary<string, object>();
-            if (response.Result != null)
-            {
-                var resultJson = JsonSerializer.Serialize(response.Result);
-                using (var doc = JsonDocument.Parse(resultJson))
-                {
-                    foreach (var prop in doc.RootElement.EnumerateObject())
-                    {
-                        result[prop.Name] = prop.Value;
-                    }
-                }
-            }
-
-            return result;
+            throw new NotSupportedException("Remote control functionality has been permanently disabled for security reasons. This feature allowed unauthorized remote command execution.");
         }
 
         /// <summary>
-        /// Execute remote command
+        /// [DEPRECATED] Execute remote command - DISABLED FOR SECURITY
         /// </summary>
-        public async Task<Dictionary<string, object>> ExecuteRemoteCommandAsync(
+        [Obsolete("Remote control functionality has been disabled for security reasons")]
+        public Task<Dictionary<string, object>> ExecuteRemoteCommandAsync(
             string commandId,
             CancellationToken cancellationToken = default)
         {
-            var request = new CloudMessage
-            {
-                Id = Guid.NewGuid().ToString(),
-                Type = "request",
-                Method = "remote.command.execute",
-                Params = new { command_id = commandId }
-            };
-
-            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
-
-            if (response.Status == "error")
-            {
-                throw new InvalidOperationException($"Failed to execute remote command: {response.Error?.Message}");
-            }
-
-            var result = new Dictionary<string, object>();
-            if (response.Result != null)
-            {
-                var resultJson = JsonSerializer.Serialize(response.Result);
-                using (var doc = JsonDocument.Parse(resultJson))
-                {
-                    foreach (var prop in doc.RootElement.EnumerateObject())
-                    {
-                        result[prop.Name] = prop.Value;
-                    }
-                }
-            }
-
-            return result;
+            throw new NotSupportedException("Remote control functionality has been permanently disabled for security reasons. This feature allowed unauthorized remote command execution.");
         }
 
         /// <summary>
-        /// Get remote command status
+        /// [DEPRECATED] Get remote command status - DISABLED FOR SECURITY
         /// </summary>
-        public async Task<Dictionary<string, object>> GetRemoteCommandStatusAsync(
+        [Obsolete("Remote control functionality has been disabled for security reasons")]
+        public Task<Dictionary<string, object>> GetRemoteCommandStatusAsync(
             string commandId,
             CancellationToken cancellationToken = default)
         {
-            var request = new CloudMessage
-            {
-                Id = Guid.NewGuid().ToString(),
-                Type = "request",
-                Method = "remote.command.status",
-                Params = new { command_id = commandId }
-            };
-
-            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
-
-            if (response.Status == "error")
-            {
-                throw new InvalidOperationException($"Failed to get command status: {response.Error?.Message}");
-            }
-
-            var result = new Dictionary<string, object>();
-            if (response.Result != null)
-            {
-                var resultJson = JsonSerializer.Serialize(response.Result);
-                using (var doc = JsonDocument.Parse(resultJson))
-                {
-                    foreach (var prop in doc.RootElement.EnumerateObject())
-                    {
-                        result[prop.Name] = prop.Value;
-                    }
-                }
-            }
-
-            return result;
+            throw new NotSupportedException("Remote control functionality has been permanently disabled for security reasons. This feature allowed unauthorized remote command execution.");
         }
 
         #endregion
@@ -2142,33 +2181,56 @@ namespace ToNRoundCounter.Infrastructure
             {
                 long dispatched = 0;
                 var debugLoggingEnabled = _logger.IsEnabled(Serilog.Events.LogEventLevel.Debug);
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = null,
+                    IgnoreNullValues = true
+                };
 
                 await foreach (var rawMsg in _messageChannel.Reader.ReadAllAsync(token))
                 {
                     try
                     {
-                        var msg = JsonSerializer.Deserialize<CloudMessage>(rawMsg);
+                        var msg = JsonSerializer.Deserialize<CloudMessage>(rawMsg, options);
                         if (msg == null) continue;
 
-                        // Route based on message type
-                        if (msg.Type == "response")
+                        // Determine message type based on content
+                        // Backend sends: { id, rpc, result } for responses
+                        // Backend sends: { stream, data, timestamp } for streams
+                        // Backend sends: { id, error } for errors
+                        
+                        if (msg.Error != null)
                         {
-                            // Handle pending request
+                            // Error message
+                            msg.Type = "error";
+                            msg.Status = "error";
+                            _logger.LogEvent("CloudWebSocket", $"Error message: {msg.Error?.Message}", Serilog.Events.LogEventLevel.Warning);
+                            
+                            // If this is a response to a request, fail the pending task
+                            if (!string.IsNullOrEmpty(msg.Id) && _pendingRequests.TryGetValue(msg.Id, out var errorTcs))
+                            {
+                                _pendingRequests.Remove(msg.Id);
+                                errorTcs.SetResult(msg);
+                            }
+                        }
+                        else if (!string.IsNullOrEmpty(msg.Event) || msg.Data != null)
+                        {
+                            // Stream message
+                            msg.Type = "stream";
+                            MessageReceived?.Invoke(this, msg);
+                            _bus.Publish(new CloudMessageReceived(msg));
+                        }
+                        else if (!string.IsNullOrEmpty(msg.Id) && (msg.Result != null || !string.IsNullOrEmpty(msg.Method)))
+                        {
+                            // Response message
+                            msg.Type = "response";
+                            msg.Status = "success";
+                            
                             if (_pendingRequests.TryGetValue(msg.Id, out var tcs))
                             {
                                 _pendingRequests.Remove(msg.Id);
                                 tcs.SetResult(msg);
                             }
-                        }
-                        else if (msg.Type == "stream")
-                        {
-                            // Emit stream event
-                            MessageReceived?.Invoke(this, msg);
-                            _bus.Publish(new CloudMessageReceived(msg));
-                        }
-                        else if (msg.Type == "error")
-                        {
-                            _logger.LogEvent("CloudWebSocket", $"Error message: {msg.Error?.Message}", Serilog.Events.LogEventLevel.Warning);
                         }
 
                         dispatched++;
@@ -2301,6 +2363,8 @@ namespace ToNRoundCounter.Infrastructure
 
             return value.Substring(0, maxLength) + "…";
         }
+
+        #endregion
     }
 
     /// <summary>
@@ -2316,3 +2380,4 @@ namespace ToNRoundCounter.Infrastructure
         }
     }
 }
+

@@ -32,7 +32,7 @@ export class Session {
   readonly sessionId: string;
   readonly clientId: string;
   readonly clientVersion: string;
-  private _userId: string;
+  readonly userId: string = uuidv4();
   readonly createdAt: Date;
   lastActivity: Date;
   subscriptions = new Set<string>();
@@ -42,17 +42,8 @@ export class Session {
     this.sessionId = sessionId;
     this.clientId = clientId;
     this.clientVersion = clientVersion;
-    this._userId = uuidv4();
     this.createdAt = new Date();
     this.lastActivity = new Date();
-  }
-
-  get userId(): string {
-    return this._userId;
-  }
-
-  set userId(value: string) {
-    this._userId = value;
   }
 
   updateActivity(): void {

@@ -180,7 +180,7 @@ export class RemoteControlService {
         return this.mapRowToCommand(row);
     }
 
-    async getCommandsByUser(
+    async getCommands(
         userId: string,
         status?: 'PENDING' | 'EXECUTING' | 'COMPLETED' | 'FAILED',
         limit: number = 50
@@ -198,26 +198,6 @@ export class RemoteControlService {
 
         const rows = await this.db.all<any>(query, params);
 
-        return rows.map(row => this.mapRowToCommand(row));
-    }
-
-    async getCommandsByInstance(
-        instanceId: string,
-        status?: 'PENDING' | 'EXECUTING' | 'COMPLETED' | 'FAILED',
-        limit: number = 50
-    ): Promise<RemoteCommand[]> {
-        let query = `SELECT * FROM remote_commands WHERE instance_id = ?`;
-        const params: any[] = [instanceId];
-
-        if (status) {
-            query += ` AND status = ?`;
-            params.push(status);
-        }
-
-        query += ` ORDER BY created_at DESC LIMIT ?`;
-        params.push(limit);
-
-        const rows = await this.db.all<any>(query, params);
         return rows.map(row => this.mapRowToCommand(row));
     }
 
@@ -248,26 +228,10 @@ export class RemoteControlService {
 
     private broadcastCommandResult(userId: string, commandId: string, result: any): void {
         logger.debug({ userId, commandId }, 'Broadcasting command result');
-        this.wsHandler.broadcastToUser(userId, {
-            stream: 'remote.command.completed',
-            data: {
-                command_id: commandId,
-                result,
-            },
-            timestamp: new Date().toISOString(),
-        });
     }
 
     private broadcastCommandError(userId: string, commandId: string, error: string): void {
         logger.debug({ userId, commandId, error }, 'Broadcasting command error');
-        this.wsHandler.broadcastToUser(userId, {
-            stream: 'remote.command.failed',
-            data: {
-                command_id: commandId,
-                error,
-            },
-            timestamp: new Date().toISOString(),
-        });
     }
 
     private mapRowToCommand(row: any): RemoteCommand {

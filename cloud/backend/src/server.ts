@@ -1,6 +1,5 @@
 import WebSocket from 'ws';
 import express, { Express, Request, Response } from 'express';
-import { Server as HttpServer } from 'http';
 import { v4 as uuidv4 } from 'uuid';
 import { RPCRequest, RPCResponse, RPCRouter, SessionManager, Session, InstanceManager, DatabaseManager } from './core';
 import { logInfo, logError, logDebug } from './logger';
@@ -24,7 +23,7 @@ import { VotingService } from './services/VotingService';
 import { ProfileService } from './services/ProfileService';
 import { SettingsService } from './services/SettingsService';
 import { MonitoringService } from './services/MonitoringService';
-import { RemoteControlService } from './services/RemoteControlService';
+// RemoteControlService removed - security risk
 import { AnalyticsService } from './services/AnalyticsService';
 import { BackupService } from './services/BackupService';
 import { WishedTerrorService } from './services/WishedTerrorService';
@@ -42,10 +41,6 @@ export class ToNRoundCounterCloudServer {
   private dbManager: DatabaseManager;
   private messageIdToSession = new Map<string, string>(); // Correlation for pending requests
   private wsHandler: any;
-  private httpServer?: HttpServer;
-  private sessionSockets = new Map<string, WebSocket>();
-  private sessionUsers = new Map<string, string>();
-  private instanceSessions = new Map<string, Set<string>>();
 
   // Services
   private authService: AuthService;
@@ -56,7 +51,7 @@ export class ToNRoundCounterCloudServer {
   private profileService: ProfileService;
   private settingsService: SettingsService;
   private monitoringService: MonitoringService;
-  private remoteControlService: RemoteControlService;
+  // private remoteControlService: RemoteControlService; // Removed - security risk
   private analyticsService: AnalyticsService;
   private backupService: BackupService;
   private wishedTerrorService: WishedTerrorService;
@@ -79,7 +74,7 @@ export class ToNRoundCounterCloudServer {
     this.profileService = new ProfileService();
     this.settingsService = new SettingsService(this.wsHandler);
     this.monitoringService = new MonitoringService(this.wsHandler);
-    this.remoteControlService = new RemoteControlService(this.wsHandler);
+    // this.remoteControlService = new RemoteControlService(this.wsHandler); // Removed - security risk
     this.analyticsService = new AnalyticsService();
     this.backupService = new BackupService();
     this.wishedTerrorService = new WishedTerrorService(this.wsHandler);
@@ -95,103 +90,15 @@ export class ToNRoundCounterCloudServer {
   private createWebSocketHandler() {
     return {
       broadcastToInstance: (instanceId: string, message: any) => {
-        this.broadcastToInstance(instanceId, message);
-      },
-      broadcastToUser: (userId: string, message: any) => {
-        this.broadcastToUser(userId, message);
+        if (!this.wss) return;
+        // Broadcast to all clients subscribed to this instance
+        this.wss.clients.forEach((client) => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify(createStreamMessage(message.stream, message.data)));
+          }
+        });
       },
     };
-  }
-
-  private broadcastToInstance(instanceId: string, message: any): void {
-    const sessions = this.instanceSessions.get(instanceId);
-    if (!sessions || sessions.size === 0) {
-      return;
-    }
-
-    const payload = this.serializeStreamMessage(message);
-    sessions.forEach((sessionId) => {
-      const socket = this.sessionSockets.get(sessionId);
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(payload);
-      }
-    });
-  }
-
-  private broadcastToUser(userId: string | undefined, message: any): void {
-    if (!userId) {
-      return;
-    }
-
-    const payload = this.serializeStreamMessage(message);
-    for (const [sessionId, mappedUserId] of this.sessionUsers.entries()) {
-      if (mappedUserId === userId) {
-        const socket = this.sessionSockets.get(sessionId);
-        if (socket && socket.readyState === WebSocket.OPEN) {
-          socket.send(payload);
-        }
-      }
-    }
-  }
-
-  private serializeStreamMessage(message: any): string {
-    if (message?.type === 'stream') {
-      return JSON.stringify(message);
-    }
-
-    if (message?.stream) {
-      const streamMessage = createStreamMessage(message.stream, message.data, message.id);
-      if (message.timestamp) {
-        streamMessage.timestamp = message.timestamp;
-      }
-      return JSON.stringify(streamMessage);
-    }
-
-    return JSON.stringify(message);
-  }
-
-  private registerSessionSocket(sessionId: string, userId: string, ws: WebSocket): void {
-    this.sessionSockets.set(sessionId, ws);
-    this.sessionUsers.set(sessionId, userId);
-  }
-
-  private unregisterSession(sessionId: string): void {
-    this.sessionSockets.delete(sessionId);
-    this.sessionUsers.delete(sessionId);
-
-    for (const [instanceId, sessions] of this.instanceSessions.entries()) {
-      sessions.delete(sessionId);
-      if (sessions.size === 0) {
-        this.instanceSessions.delete(instanceId);
-      }
-    }
-  }
-
-  private addSessionToInstance(sessionId: string, instanceId: string): void {
-    if (!this.instanceSessions.has(instanceId)) {
-      this.instanceSessions.set(instanceId, new Set());
-    }
-    this.instanceSessions.get(instanceId)!.add(sessionId);
-  }
-
-  private removeSessionFromInstance(sessionId: string, instanceId: string): void {
-    const sessionSet = this.instanceSessions.get(instanceId);
-    if (!sessionSet) {
-      return;
-    }
-
-    sessionSet.delete(sessionId);
-    if (sessionSet.size === 0) {
-      this.instanceSessions.delete(instanceId);
-    }
-  }
-
-  private updateSessionUser(sessionId: string, userId: string): void {
-    const session = this.sessionManager.getSession(sessionId);
-    if (session) {
-      session.userId = userId;
-    }
-    this.sessionUsers.set(sessionId, userId);
   }
 
   /**
@@ -414,9 +321,6 @@ export class ToNRoundCounterCloudServer {
       const playerId = params.playerId || req.session.userId;
       const playerName = params.playerName || playerId;
 
-      req.session.userId = playerId;
-      this.updateSessionUser(req.session.sessionId, playerId);
-
       // Check if instance exists, if not create it
       let instance = await this.instanceService.getInstance(instanceId);
       if (!instance) {
@@ -451,7 +355,6 @@ export class ToNRoundCounterCloudServer {
       }
 
       req.session.subscribe('instance', `instance_${instanceId}`);
-      this.addSessionToInstance(req.session.sessionId, instanceId);
 
       logInfo(`Player joined instance: ${instanceId}`, {
         playerName: playerName,
@@ -490,7 +393,6 @@ export class ToNRoundCounterCloudServer {
       const removed = this.instanceManager.removeMember(instanceId, req.session.sessionId);
       if (removed) {
         req.session.unsubscribe(`instance_${instanceId}`);
-        this.removeSessionFromInstance(req.session.sessionId, instanceId);
         logInfo(`Player left instance: ${instanceId}`, {
           playerName: removed.playerName,
         });
@@ -577,8 +479,6 @@ export class ToNRoundCounterCloudServer {
         params.player_id || params.playerId || params.email, 
         params.client_version || params.clientVersion || '1.0.0'
       );
-      req.session.userId = session.user_id;
-      this.updateSessionUser(req.session.sessionId, session.user_id);
       return {
         session_id: session.session_id,
         session_token: session.session_token,
@@ -719,13 +619,13 @@ export class ToNRoundCounterCloudServer {
     // ========== Threat handlers ==========
     this.rpcRouter.register('threat.announce', async (req) => {
       const params = req.message.params as any;
-      return await this.threatService.announceThreat({
+      await this.threatService.announceThreat({
         terror_name: params.terror_name,
         round_key: params.round_key,
         instance_id: params.instance_id,
-        round_id: params.round_id,
         desire_players: params.desire_players || [],
       });
+      return { success: true };
     });
 
     this.rpcRouter.register('threat.response', async (req) => {
@@ -892,47 +792,10 @@ export class ToNRoundCounterCloudServer {
       return { errors: result };
     });
 
-    // ========== Remote control handlers ==========
-    this.rpcRouter.register('remote.command.create', async (req) => {
-      const params = req.message.params as any;
-      const result = await this.remoteControlService.createCommand(
-        req.session.userId,
-        params.instance_id,
-        params.command_type,
-        params.action,
-        params.parameters,
-        req.session.clientId,
-        params.priority || 0
-      );
-      return result;
-    });
-
-    this.rpcRouter.register('remote.command.execute', async (req) => {
-      const params = req.message.params as any;
-      const result = await this.remoteControlService.executeCommand(params.command_id);
-      return result;
-    });
-
-    this.rpcRouter.register('remote.command.status', async (req) => {
-      const params = req.message.params as any;
-      if (params.command_id) {
-        return await this.remoteControlService.getCommand(params.command_id);
-      }
-
-      if (params.instance_id) {
-        return await this.remoteControlService.getCommandsByInstance(
-          params.instance_id,
-          params.status,
-          params.limit || 50
-        );
-      }
-
-      return await this.remoteControlService.getCommandsByUser(
-        req.session.userId,
-        params.status,
-        params.limit || 50
-      );
-    });
+    // ========== Remote control handlers - REMOVED FOR SECURITY ==========
+    // Remote command execution poses a critical security risk
+    // Attackers could execute arbitrary commands on client machines
+    // All remote.command.* endpoints have been permanently disabled
 
     // ========== Analytics handlers ==========
     this.rpcRouter.register('analytics.player', async (req) => {
@@ -1091,15 +954,12 @@ export class ToNRoundCounterCloudServer {
    * Start the server
    */
   async start(): Promise<void> {
-    await this.backupService.initialize();
-
-    await new Promise<void>((resolve) => {
-      const httpServer = this.app.listen(this.port, () => {
+    return new Promise((resolve) => {
+      const server = this.app.listen(this.port, () => {
         logInfo(`HTTP server listening on port ${this.port}`);
       });
 
-      this.httpServer = httpServer as HttpServer;
-      this.wss = new WebSocket.Server({ server: this.httpServer });
+      this.wss = new WebSocket.Server({ server });
 
       this.wss.on('connection', (ws: WebSocket) => {
         logInfo('WebSocket client connected');
@@ -1119,7 +979,6 @@ export class ToNRoundCounterCloudServer {
 
                 const sessionId = result.sessionId;
                 session = this.sessionManager.getSession(sessionId)!;
-                this.registerSessionSocket(session.sessionId, session.userId, ws);
 
                 const response = createResponse(msg.id, result);
                 ws.send(JSON.stringify(response));
@@ -1138,7 +997,6 @@ export class ToNRoundCounterCloudServer {
 
         ws.on('close', () => {
           if (session) {
-            this.unregisterSession(session.sessionId);
             this.sessionManager.removeSession(session.sessionId);
             logInfo(`Session closed: ${session.sessionId}`);
           }
@@ -1157,30 +1015,9 @@ export class ToNRoundCounterCloudServer {
    * Stop the server
    */
   async stop(): Promise<void> {
-    await new Promise<void>((resolve) => {
-      if (!this.wss) {
-        resolve();
-        return;
-      }
-
+    return new Promise((resolve) => {
       this.wss.close(() => {
         logInfo('WebSocket server closed');
-        resolve();
-      });
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      if (!this.httpServer) {
-        resolve();
-        return;
-      }
-
-      this.httpServer.close((err) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        logInfo('HTTP server closed');
         resolve();
       });
     });

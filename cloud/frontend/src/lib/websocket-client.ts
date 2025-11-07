@@ -2,22 +2,17 @@
  * ToNRoundCounter Cloud WebSocket Client
  * Handles WebSocket communication with the backend
  */
-import type { SessionInfo } from '@tonroundcounter/types';
 
 export interface WebSocketMessage {
     id?: string;
-    version?: string;
-    type: 'request' | 'response' | 'stream' | 'error';
-    method?: string;
-    status?: 'success' | 'error';
+    rpc?: string;
     params?: any;
     result?: any;
     error?: {
         code: string;
         message: string;
-        details?: Record<string, unknown>;
     };
-    event?: string;
+    type?: string;
     stream?: string;
     data?: any;
     timestamp?: string;
@@ -29,11 +24,12 @@ export interface Session {
     expires_at: string;
 }
 
-export interface InstanceSummary {
+export interface Instance {
     instance_id: string;
-    member_count: number;
+    host_user_id: string;
     max_players: number;
-    status?: string;
+    current_player_count: number;
+    status: string;
     created_at: string;
 }
 
@@ -65,16 +61,6 @@ export class ToNRoundCloudClient {
     private streamCallbacks = new Map<string, Set<StreamCallback>>();
     private connectionStateCallbacks = new Set<ConnectionStateCallback>();
     private heartbeatInterval: NodeJS.Timeout | null = null;
-    private clientId = 'tonr-dashboard';
-    private clientVersion = '1.0.0';
-    private capabilities = [
-        'instance.list',
-        'instance.join',
-        'player.state.update',
-        'monitoring.report',
-        'analytics.player',
-    ];
-    private sessionInfo: SessionInfo | null = null;
 
     constructor(url: string) {
         this.url = url;
@@ -84,27 +70,16 @@ export class ToNRoundCloudClient {
      * Connect to WebSocket server
      */
     async connect(): Promise<void> {
-        if (this.isConnected()) {
-            return;
-        }
-
         return new Promise((resolve, reject) => {
             try {
                 this.ws = new WebSocket(this.url);
 
-                this.ws.onopen = async () => {
+                this.ws.onopen = () => {
                     console.log('[ToNRoundCloud] Connected');
                     this.reconnectAttempts = 0;
-                    try {
-                        await this.performHandshake();
-                        this.notifyConnectionState('connected');
-                        this.startHeartbeat();
-                        resolve();
-                    } catch (error) {
-                        console.error('[ToNRoundCloud] Handshake failed:', error);
-                        this.ws?.close();
-                        reject(error);
-                    }
+                    this.notifyConnectionState('connected');
+                    this.startHeartbeat();
+                    resolve();
                 };
 
                 this.ws.onmessage = (event) => {
@@ -119,7 +94,6 @@ export class ToNRoundCloudClient {
                     console.log('[ToNRoundCloud] Disconnected');
                     this.notifyConnectionState('disconnected');
                     this.stopHeartbeat();
-                    this.sessionInfo = null;
                     this.attemptReconnect();
                 };
             } catch (error) {
@@ -180,7 +154,7 @@ export class ToNRoundCloudClient {
     }
 
     // Instance Management
-    async createInstance(maxPlayers: number = 6, settings: any = {}): Promise<InstanceSummary> {
+    async createInstance(maxPlayers: number = 6, settings: any = {}): Promise<Instance> {
         return await this.call('instance.create', { max_players: maxPlayers, settings });
     }
 
@@ -192,12 +166,8 @@ export class ToNRoundCloudClient {
         return await this.call('instance.leave', { instance_id: instanceId });
     }
 
-    async listInstances(
-        filter: 'available' | 'active' | 'all' = 'available',
-        limit: number = 20,
-        offset: number = 0
-    ): Promise<{ instances: InstanceSummary[]; total: number; limit: number; offset: number }> {
-        return await this.call('instance.list', { filter, limit, offset });
+    async listInstances(): Promise<Instance[]> {
+        return await this.call('instance.list', {});
     }
 
     async updateInstance(instanceId: string, updates: { max_players?: number; settings?: any }): Promise<void> {
@@ -211,7 +181,7 @@ export class ToNRoundCloudClient {
         return await this.call('instance.delete', { instance_id: instanceId });
     }
 
-    async getInstance(instanceId: string): Promise<any> {
+    async getInstance(instanceId: string): Promise<Instance> {
         return await this.call('instance.get', { instance_id: instanceId });
     }
 
@@ -432,15 +402,6 @@ export class ToNRoundCloudClient {
     }
 
     // Stream Subscriptions
-    private async performHandshake(): Promise<void> {
-        const result = await this.call('auth.connect', {
-            clientId: this.clientId,
-            clientVersion: this.clientVersion,
-            capabilities: this.capabilities,
-        });
-        this.sessionInfo = result as SessionInfo;
-    }
-
     onPlayerStateUpdate(callback: StreamCallback): () => void {
         return this.subscribe('player.state.updated', callback);
     }
@@ -482,25 +443,18 @@ export class ToNRoundCloudClient {
     }
 
     // Private Methods
-    private async call(method: string, params: Record<string, unknown> = {}): Promise<any> {
+    private async call(rpc: string, params: any): Promise<any> {
         if (!this.isConnected()) {
             throw new Error('Not connected to server');
         }
 
-        const id = `req-${++this.messageId}`;
-        const message: WebSocketMessage = {
-            id,
-            version: '1.0',
-            type: 'request',
-            method,
-            params,
-            timestamp: new Date().toISOString(),
-        };
+        const id = `${++this.messageId}`;
+        const message: WebSocketMessage = { id, rpc, params };
 
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 this.pendingRequests.delete(id);
-                reject(new Error(`Request timeout: ${method}`));
+                reject(new Error(`Request timeout: ${rpc}`));
             }, 30000);
 
             this.pendingRequests.set(id, { resolve, reject, timeout });
@@ -526,41 +480,25 @@ export class ToNRoundCloudClient {
         try {
             const message: WebSocketMessage = JSON.parse(data);
 
-            if (message.type === 'response' && message.id && this.pendingRequests.has(message.id)) {
+            // Handle RPC response
+            if (message.id && this.pendingRequests.has(message.id)) {
                 const pending = this.pendingRequests.get(message.id)!;
                 clearTimeout(pending.timeout);
                 this.pendingRequests.delete(message.id);
 
-                if (message.status === 'error' || message.error) {
-                    const errorPayload = message.error;
-                    pending.reject(new Error(errorPayload ? `${errorPayload.code}: ${errorPayload.message}` : 'Unknown error'));
+                if (message.error) {
+                    pending.reject(new Error(`${message.error.code}: ${message.error.message}`));
                 } else {
                     pending.resolve(message.result);
                 }
-                return;
             }
 
-            if (message.type === 'error' && message.id && this.pendingRequests.has(message.id)) {
-                const pending = this.pendingRequests.get(message.id)!;
-                clearTimeout(pending.timeout);
-                this.pendingRequests.delete(message.id);
-                const errorPayload = message.error;
-                pending.reject(new Error(errorPayload ? `${errorPayload.code}: ${errorPayload.message}` : 'Unknown error'));
-                return;
-            }
-
-            if (message.type !== 'stream') {
-                return;
-            }
-
-            const eventName = message.event || message.stream;
-            if (!eventName) {
-                return;
-            }
-
-            const callbacks = this.streamCallbacks.get(eventName);
-            if (callbacks) {
-                callbacks.forEach(callback => callback(message.data));
+            // Handle stream event
+            if (message.stream) {
+                const callbacks = this.streamCallbacks.get(message.stream);
+                if (callbacks) {
+                    callbacks.forEach(callback => callback(message.data));
+                }
             }
         } catch (error) {
             console.error('[ToNRoundCloud] Failed to parse message:', error);
