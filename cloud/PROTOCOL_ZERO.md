@@ -24,20 +24,81 @@
 ### Opcodes
 
 ```
-Request Opcodes:
+Auth Opcodes:
 0x01 = Login
-0x03 = RoundStart
-0x04 = RoundEnd
-0x05 = UpdatePlayerState
+0x02 = Logout
+0x03 = RefreshSession
+
+Round Opcodes:
+0x10 = RoundStart
+0x11 = RoundEnd
+
+Instance Opcodes:
+0x20 = InstanceCreate
+0x21 = InstanceList
+0x22 = InstanceGet
+0x23 = InstanceUpdate
+0x24 = InstanceDelete
+0x25 = InstanceAlert
+
+Player State Opcodes:
+0x30 = UpdatePlayerState (fire-and-forget)
+0x31 = GetPlayerState
+0x32 = GetAllPlayerStates
+
+Threat Opcodes:
+0x40 = AnnounceThreat
+0x41 = RecordThreatResponse
+0x42 = FindDesirePlayers
+
+Voting Opcodes:
+0x50 = StartVoting
+0x51 = SubmitVote
+0x52 = GetVotingCampaign
+
+Profile Opcodes:
+0x60 = GetProfile
+0x61 = UpdateProfile
+
+Settings Opcodes:
+0x70 = GetSettings
+0x71 = UpdateSettings
+0x72 = SyncSettings
+
+Monitoring Opcodes:
+0x80 = ReportMonitoringStatus
+0x81 = GetMonitoringHistory
+0x82 = GetMonitoringErrors
+0x83 = LogError
+
+Analytics Opcodes:
+0x90 = GetPlayerAnalytics
+0x91 = GetTerrorAnalytics
+0x92 = GetInstanceAnalytics
+0x93 = GetVotingAnalytics
+0x94 = ExportAnalytics
+
+Backup Opcodes:
+0xA0 = CreateBackup
+0xA1 = RestoreBackup
+0xA2 = ListBackups
+
+Wished Terrors Opcodes:
+0xB0 = UpdateWishedTerrors
+0xB1 = GetWishedTerrors
 
 Response Opcodes:
-0x80 = Success (data follows)
+0xC0 = Success (data follows)
 0xFF = Error (error code + message)
 
 Stream Opcodes:
-0x10 = PlayerStateUpdate (broadcast)
-0x11 = RoundStarted (broadcast)
-0x12 = RoundEnded (broadcast)
+0xD0 = PlayerStateUpdate (broadcast)
+0xD1 = RoundStarted (broadcast)
+0xD2 = RoundEnded (broadcast)
+0xD3 = VotingStarted (broadcast)
+0xD4 = VotingUpdated (broadcast)
+0xD5 = VotingResolved (broadcast)
+0xD6 = SettingsUpdated (broadcast)
 
 Control:
 0xFE = Ping
