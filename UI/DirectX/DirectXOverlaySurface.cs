@@ -1,10 +1,12 @@
 using System;
 using System.Drawing;
+using System.Numerics;
 using System.Windows.Forms;
-using SharpDX;
-using SharpDX.Direct2D1;
-using SharpDX.Mathematics.Interop;
+using Vortice.Direct2D1;
+using Vortice.DXGI;
+using Vortice.Mathematics;
 using DrawingColor = System.Drawing.Color;
+
 namespace ToNRoundCounter.UI.DirectX
 {
     internal interface IDirectXOverlaySurface
@@ -16,10 +18,10 @@ namespace ToNRoundCounter.UI.DirectX
 
     internal abstract class DirectXOverlaySurface : Control, IDirectXOverlaySurface
     {
-        private WindowRenderTarget? renderTarget;
-        private SolidColorBrush? backgroundBrush;
-        private SolidColorBrush? gripBrush;
-        private RawColor4 backgroundColor = new RawColor4(0f, 0f, 0f, 0.6f);
+        private ID2D1HwndRenderTarget? renderTarget;
+        private ID2D1SolidColorBrush? backgroundBrush;
+        private ID2D1SolidColorBrush? gripBrush;
+        private Color4 backgroundColor = new Color4(0f, 0f, 0f, 0.6f);
         private Size preferredSize = new Size(220, 120);
         private bool deviceResourcesLost;
 
@@ -35,13 +37,13 @@ namespace ToNRoundCounter.UI.DirectX
 
         public bool HandlesChrome => true;
 
-        protected Factory1 Direct2DFactory => DirectXDeviceManager.Instance.Direct2DFactory;
+        protected ID2D1Factory1 Direct2DFactory => DirectXDeviceManager.Instance.Direct2DFactory;
 
-        protected SharpDX.DirectWrite.Factory DirectWriteFactory => DirectXDeviceManager.Instance.DirectWriteFactory;
+        protected Vortice.DirectWrite.IDWriteFactory DirectWriteFactory => DirectXDeviceManager.Instance.DirectWriteFactory;
 
-        protected WindowRenderTarget? RenderTarget => renderTarget;
+        protected ID2D1HwndRenderTarget? RenderTarget => renderTarget;
 
-        protected RawRectangleF ContentRectangle
+        protected RawRect ContentRectangle
         {
             get
             {
@@ -49,7 +51,7 @@ namespace ToNRoundCounter.UI.DirectX
                 float top = ContentPadding.Top;
                 float right = Math.Max(left, Width - ContentPadding.Right);
                 float bottom = Math.Max(top, Height - ContentPadding.Bottom);
-                return new RawRectangleF(left, top, right, bottom);
+                return new RawRect(left, top, right, bottom);
             }
         }
 
@@ -91,13 +93,13 @@ namespace ToNRoundCounter.UI.DirectX
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
-            if (renderTarget != null && !renderTarget.IsDisposed)
+            if (renderTarget != null)
             {
                 try
                 {
-                    renderTarget.Resize(new Size2(Math.Max(Width, 1), Math.Max(Height, 1)));
+                    renderTarget.Resize(new SizeI(Math.Max(Width, 1), Math.Max(Height, 1)));
                 }
-                catch (SharpDXException)
+                catch
                 {
                     deviceResourcesLost = true;
                 }
@@ -113,7 +115,7 @@ namespace ToNRoundCounter.UI.DirectX
 
         public void SetBackgroundColor(DrawingColor color)
         {
-            backgroundColor = ToRawColor(color);
+            backgroundColor = ToColor4(color);
             Invalidate();
         }
 
@@ -126,24 +128,23 @@ namespace ToNRoundCounter.UI.DirectX
             }
         }
 
-        protected abstract void RenderOverlay(WindowRenderTarget target);
+        protected abstract void RenderOverlay(ID2D1HwndRenderTarget target);
 
-        protected virtual void RenderAfterOverlay(WindowRenderTarget target)
+        protected virtual void RenderAfterOverlay(ID2D1HwndRenderTarget target)
         {
             // Derived classes can override if they need post overlay rendering.
         }
 
-        protected SolidColorBrush GetBrush(ref SolidColorBrush? brush, RawColor4 color)
+        protected ID2D1SolidColorBrush GetBrush(ref ID2D1SolidColorBrush? brush, Color4 color)
         {
             if (renderTarget == null)
             {
                 throw new InvalidOperationException("Render target is not initialized.");
             }
 
-            if (brush == null || brush.IsDisposed)
+            if (brush == null)
             {
-                brush?.Dispose();
-                brush = new SolidColorBrush(renderTarget, color);
+                brush = renderTarget.CreateSolidColorBrush(color);
             }
             else
             {
@@ -169,9 +170,9 @@ namespace ToNRoundCounter.UI.DirectX
             {
                 renderTarget.BeginDraw();
                 renderTarget.AntialiasMode = AntialiasMode.PerPrimitive;
-                renderTarget.Clear(new RawColor4(0f, 0f, 0f, 0f));
+                renderTarget.Clear(new Color4(0f, 0f, 0f, 0f));
 
-                var bounds = new RawRectangleF(0f, 0f, Math.Max(0, Width), Math.Max(0, Height));
+                var bounds = new RawRect(0f, 0f, Math.Max(0, Width), Math.Max(0, Height));
                 var rounded = new RoundedRectangle
                 {
                     Rect = bounds,
@@ -179,7 +180,7 @@ namespace ToNRoundCounter.UI.DirectX
                     RadiusY = CornerRadius,
                 };
 
-                SolidColorBrush background = GetBrush(ref backgroundBrush, backgroundColor);
+                ID2D1SolidColorBrush background = GetBrush(ref backgroundBrush, backgroundColor);
                 renderTarget.FillRoundedRectangle(rounded, background);
 
                 RenderOverlay(renderTarget);
@@ -191,10 +192,10 @@ namespace ToNRoundCounter.UI.DirectX
                 renderTarget.EndDraw();
                 deviceResourcesLost = false;
             }
-            catch (SharpDXException ex)
+            catch (Vortice.SharpGenException ex)
             {
-                if (ex.ResultCode == SharpDX.Direct2D1.ResultCode.RecreateTarget ||
-                    ex.ResultCode == SharpDX.DXGI.ResultCode.DeviceRemoved)
+                if (ex.HResult == Vortice.Direct2D1.ResultCode.RecreateTarget.Code ||
+                    ex.HResult == Vortice.DXGI.ResultCode.DeviceRemoved.Code)
                 {
                     deviceResourcesLost = true;
                 }
@@ -214,7 +215,7 @@ namespace ToNRoundCounter.UI.DirectX
 
         private bool EnsureRenderTarget()
         {
-            if (renderTarget != null && !renderTarget.IsDisposed && !deviceResourcesLost)
+            if (renderTarget != null && !deviceResourcesLost)
             {
                 return true;
             }
@@ -226,28 +227,27 @@ namespace ToNRoundCounter.UI.DirectX
                 return false;
             }
 
-            var renderProps = new RenderTargetProperties(new PixelFormat(SharpDX.DXGI.Format.B8G8R8A8_UNorm, AlphaMode.Premultiplied))
+            var renderProps = new RenderTargetProperties
             {
+                PixelFormat = new PixelFormat(Format.B8G8R8A8_UNorm, Vortice.Direct2D1.AlphaMode.Premultiplied),
                 Usage = RenderTargetUsage.None,
             };
 
             var hwndProps = new HwndRenderTargetProperties
             {
                 Hwnd = Handle,
-                PixelSize = new Size2(Math.Max(Width, 1), Math.Max(Height, 1)),
+                PixelSize = new SizeI(Math.Max(Width, 1), Math.Max(Height, 1)),
                 PresentOptions = PresentOptions.Immediately,
             };
 
-            renderTarget = new WindowRenderTarget(Direct2DFactory, renderProps, hwndProps)
-            {
-                TextAntialiasMode = TextAntialiasMode.Grayscale,
-            };
+            renderTarget = Direct2DFactory.CreateHwndRenderTarget(renderProps, hwndProps);
+            renderTarget.TextAntialiasMode = TextAntialiasMode.Grayscale;
 
             deviceResourcesLost = false;
             return true;
         }
 
-        private void DrawResizeGrip(WindowRenderTarget target)
+        private void DrawResizeGrip(ID2D1HwndRenderTarget target)
         {
             if (Width < 4 || Height < 4)
             {
@@ -261,7 +261,7 @@ namespace ToNRoundCounter.UI.DirectX
                 return;
             }
 
-            SolidColorBrush brush = GetBrush(ref gripBrush, new RawColor4(1f, 1f, 1f, 0.6f));
+            ID2D1SolidColorBrush brush = GetBrush(ref gripBrush, new Color4(1f, 1f, 1f, 0.6f));
 
             for (int i = 0; i < lines; i++)
             {
@@ -276,8 +276,8 @@ namespace ToNRoundCounter.UI.DirectX
                     continue;
                 }
 
-                var start = new RawVector2(startX, startY);
-                var end = new RawVector2(endX, endY);
+                var start = new Vector2(startX, startY);
+                var end = new Vector2(endX, endY);
                 target.DrawLine(start, end, brush, 1f);
             }
         }
@@ -294,10 +294,10 @@ namespace ToNRoundCounter.UI.DirectX
             renderTarget = null;
         }
 
-        protected static RawColor4 ToRawColor(DrawingColor color)
+        protected static Color4 ToColor4(DrawingColor color)
         {
             const float inverse = 1f / 255f;
-            return new RawColor4(color.R * inverse, color.G * inverse, color.B * inverse, color.A * inverse);
+            return new Color4(color.R * inverse, color.G * inverse, color.B * inverse, color.A * inverse);
         }
 
         protected const int ResizeGripSize = 16;
