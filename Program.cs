@@ -8,7 +8,9 @@ using Newtonsoft.Json;
 using Serilog;
 using System.Threading.Tasks;
 using ToNRoundCounter.Application;
+using ToNRoundCounter.Application.Services;
 using ToNRoundCounter.Infrastructure;
+using ToNRoundCounter.Infrastructure.Services;
 using ToNRoundCounter.Domain;
 using ToNRoundCounter.UI;
 using ToNRoundCounter.Infrastructure.Sqlite;
@@ -161,6 +163,13 @@ namespace ToNRoundCounter
                 sp.GetRequiredService<IEventLogger>(),
                 sp.GetRequiredService<StateService>(),
                 sp.GetRequiredService<IUiDispatcher>()));
+            services.AddSingleton<IAutoSuicideCoordinator>(sp => new AutoSuicideCoordinator(
+                sp.GetRequiredService<AutoSuicideService>(),
+                sp.GetRequiredService<IInputSender>(),
+                sp.GetRequiredService<IAppSettings>(),
+                sp.GetRequiredService<IEventLogger>(),
+                sp.GetRequiredService<IOverlayManager>(),
+                sp.GetRequiredService<ModuleHost>()));
             services.AddSingleton<MainPresenter>(sp => new MainPresenter(
                 sp.GetRequiredService<StateService>(),
                 sp.GetRequiredService<IAppSettings>(),
@@ -187,7 +196,8 @@ namespace ToNRoundCounter
                 sp.GetRequiredService<ModuleHost>(),
                 sp.GetRequiredService<CloudWebSocketClient>(),
                 sp.GetRequiredService<ISoundManager>(),
-                sp.GetRequiredService<IOverlayManager>()));
+                sp.GetRequiredService<IOverlayManager>(),
+                sp.GetRequiredService<IAutoSuicideCoordinator>()));
 
             eventLogger.LogEvent("Bootstrap", "Building service provider (pre-build notifications).");
             moduleHost.NotifyServiceProviderBuilding(new ModuleServiceProviderBuildContext(services, eventLogger, eventBus));

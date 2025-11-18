@@ -81,6 +81,7 @@ namespace ToNRoundCounter.UI
         private readonly CloudWebSocketClient? _cloudClient;
         private readonly ISoundManager _soundManager;
         private readonly IOverlayManager _overlayManager;
+        private readonly IAutoSuicideCoordinator _autoSuicideCoordinator;
 
         // Overlay-related state that MainForm manages
         private string lastRoundTypeForHistory = string.Empty;
@@ -221,11 +222,14 @@ namespace ToNRoundCounter.UI
         }
 
 
-        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, IEnumerable<IOscRepeaterPolicy> oscRepeaterPolicies, AutoRecordingService autoRecordingService, ModuleHost moduleHost, CloudWebSocketClient cloudClient, ISoundManager soundManager, IOverlayManager overlayManager)
+        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, IEnumerable<IOscRepeaterPolicy> oscRepeaterPolicies, AutoRecordingService autoRecordingService, ModuleHost moduleHost, CloudWebSocketClient cloudClient, ISoundManager soundManager, IOverlayManager overlayManager, IAutoSuicideCoordinator autoSuicideCoordinator)
         {
             _soundManager = soundManager;
             _soundManager.Initialize();
             _overlayManager = overlayManager;
+            _autoSuicideCoordinator = autoSuicideCoordinator;
+            _autoSuicideCoordinator.SetUpdateOverlayStateCallback(UpdateShortcutOverlayState);
+            _autoSuicideCoordinator.Initialize();
             this.Name = "MainForm";
             this.webSocketClient = webSocketClient;
             this.autoSuicideService = autoSuicideService;
@@ -267,7 +271,7 @@ namespace ToNRoundCounter.UI
             _moduleHost.NotifyAuxiliaryWindowCatalogBuilding();
             Theme.SetTheme(_settings.ThemeKey, new ThemeApplicationContext(this, _moduleHost.CurrentServiceProvider));
             _moduleHost.NotifyMainWindowThemeChanged(new ModuleMainWindowThemeContext(this, _settings.ThemeKey, Theme.CurrentDescriptor, _moduleHost.CurrentServiceProvider));
-            LoadAutoSuicideRules();
+            _autoSuicideCoordinator.LoadRules();
             InitializeComponents();
             if (lblStatus == null || lblOSCStatus == null || btnToggleTopMost == null || btnSettings == null ||
                 mainMenuStrip == null || windowsMenuItem == null || InfoPanel == null || terrorInfoPanel == null ||
@@ -825,7 +829,7 @@ namespace ToNRoundCounter.UI
                     _settings.ItemMusicMaxSpeed = 0;
                     _settings.DiscordWebhookUrl = settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text.Trim();
                     _settings.ThemeKey = settingsForm.SettingsPanel.SelectedThemeKey;
-                    LoadAutoSuicideRules();
+                    _autoSuicideCoordinator.LoadRules();
                     if (!_settings.AutoSuicideEnabled && !issetAllSelfKillMode)
                     {
                         CancelAutoSuicide();
@@ -3698,7 +3702,7 @@ namespace ToNRoundCounter.UI
             {
                 case ShortcutButton.AutoSuicideToggle:
                     _settings.AutoSuicideEnabled = !_settings.AutoSuicideEnabled;
-                    LoadAutoSuicideRules();
+                    _autoSuicideCoordinator.LoadRules();
                     if (!_settings.AutoSuicideEnabled && !issetAllSelfKillMode)
                     {
                         CancelAutoSuicide();
