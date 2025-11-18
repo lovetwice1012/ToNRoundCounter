@@ -28,8 +28,8 @@ namespace ToNRoundCounter.UI
         private bool afkSoundPlayed = false;
         private bool punishSoundPlayed = false;
         private double lastIdleSeconds = 0d;
-        private int oscMessageSkipCounter = 0; // OSCメッセージ処理間引き用カウンター
-        private const int OscMessageProcessInterval = 3; // 3件に1件だけ処理
+        private int oscMessageSkipCounter = 0;
+        private const int OscMessageProcessInterval = 3;
 
         private async Task InitializeOSCRepeater()
         {
@@ -124,7 +124,6 @@ namespace ToNRoundCounter.UI
             bool isHighFrequencyMessage = message.Address == "/avatar/parameters/VelocityX" ||
                                          message.Address == "/avatar/parameters/VelocityZ";
 
-            // 高頻度メッセージを間引き処理
             if (isHighFrequencyMessage)
             {
                 oscMessageSkipCounter++;

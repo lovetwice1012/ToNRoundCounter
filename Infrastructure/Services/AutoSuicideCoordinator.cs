@@ -14,6 +14,10 @@ namespace ToNRoundCounter.Infrastructure.Services
     /// </summary>
     public class AutoSuicideCoordinator : IAutoSuicideCoordinator
     {
+        private const int DefaultAutoSuicideDelaySeconds = 13;
+        private const int ManualDelaySeconds = 40;
+        private const int DesirePlayerCheckDelaySeconds = 10;
+
         private readonly AutoSuicideService _autoSuicideService;
         private readonly IInputSender _inputSender;
         private readonly IAppSettings _settings;
@@ -201,10 +205,10 @@ namespace ToNRoundCounter.Infrastructure.Services
             }
 
             TimeSpan elapsed = DateTime.UtcNow - _autoSuicideService.RoundStartTime;
-            TimeSpan remaining = TimeSpan.FromSeconds(40) - elapsed;
+            TimeSpan remaining = TimeSpan.FromSeconds(ManualDelaySeconds) - elapsed;
             if (remaining <= TimeSpan.Zero)
             {
-                remaining = TimeSpan.FromSeconds(40);
+                remaining = TimeSpan.FromSeconds(ManualDelaySeconds);
             }
 
             if (manualOverride)
@@ -256,7 +260,7 @@ namespace ToNRoundCounter.Infrastructure.Services
         {
             if (!_autoSuicideService.HasScheduled)
             {
-                Schedule(TimeSpan.FromSeconds(13), true, fromAllRoundsMode: true);
+                Schedule(TimeSpan.FromSeconds(DefaultAutoSuicideDelaySeconds), true, fromAllRoundsMode: true);
             }
         }
 
@@ -264,11 +268,8 @@ namespace ToNRoundCounter.Infrastructure.Services
         {
             if (desirePlayerCount > 0)
             {
-                // Add 10 seconds delay
-                var extendedDelay = delay.Add(TimeSpan.FromSeconds(10));
+                var extendedDelay = delay.Add(TimeSpan.FromSeconds(DesirePlayerCheckDelaySeconds));
                 Schedule(extendedDelay, resetStartTime, fromAllRoundsMode, false);
-
-                // Invoke confirmation callback (MainForm will show dialog)
                 onConfirm?.Invoke(true);
             }
             else
