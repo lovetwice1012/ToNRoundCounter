@@ -42,6 +42,8 @@
     <Compile Include="StateServiceTests.cs" />
     <Compile Include="AutoSuicideCancelTests.cs" />
     <Compile Include="RoundAggregateTests.cs" />
+    <Compile Include="AppSettingsTests.cs" />
+    <Compile Include="MainPresenterTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ToNRoundCounter.csproj">
