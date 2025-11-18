@@ -144,7 +144,7 @@ namespace ToNRoundCounter.UI
                     DateTime startTime = DateTime.Now;
                     bool sendAlert = true;
                     _logger.LogEvent("SendAlertOscMessagesAsync", "start send");
-                    PlayFromStart(notifyPlayer);
+                    _soundManager.PlayNotification();
                     while ((DateTime.Now - startTime).TotalSeconds < 2)
                     {
                         _logger.LogEvent("SendAlertOscMessagesAsync", "send " + sendAlert.ToString());

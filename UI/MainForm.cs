@@ -23,6 +23,7 @@ using Serilog.Events;
 using ToNRoundCounter.Domain;
 using ToNRoundCounter.Properties;
 using ToNRoundCounter.Infrastructure;
+using ToNRoundCounter.Application.Services;
 using ToNRoundCounter.Application;
 using MediaPlayer = System.Windows.Media.MediaPlayer;
 using WinFormsApp = System.Windows.Forms.Application;
@@ -78,6 +79,7 @@ namespace ToNRoundCounter.UI
         private readonly ModuleHost _moduleHost;
         private readonly AutoRecordingService autoRecordingService;
         private readonly CloudWebSocketClient? _cloudClient;
+        private readonly ISoundManager _soundManager;
 
         private Action<WebSocketConnected>? _wsConnectedHandler;
         private Action<WebSocketDisconnected>? _wsDisconnectedHandler;
@@ -121,21 +123,10 @@ namespace ToNRoundCounter.UI
 
         private readonly AutoSuicideService autoSuicideService;
 
-        private MediaPlayer? itemMusicPlayer;
-        private bool itemMusicLoopRequested;
         private bool itemMusicActive;
         private DateTime itemMusicMatchStart = DateTime.MinValue;
-        private string lastLoadedItemMusicPath = string.Empty;
-        private ItemMusicEntry? activeItemMusicEntry;
-        private MediaPlayer? roundBgmPlayer;
-        private bool roundBgmLoopRequested;
         private bool roundBgmActive;
         private DateTime roundBgmMatchStart = DateTime.MinValue;
-        private string lastLoadedRoundBgmPath = string.Empty;
-        private RoundBgmEntry? activeRoundBgmEntry;
-        private string? roundBgmSelectionRoundType;
-        private string? roundBgmSelectionTerrorType;
-        private readonly Random roundBgmRandom = new Random(Guid.NewGuid().GetHashCode());
         private string currentTerrorBaseText = string.Empty;
         private string currentOverlayTerrorBaseText = string.Empty;
         private string currentTerrorCountdownSuffix = string.Empty;
@@ -225,9 +216,10 @@ namespace ToNRoundCounter.UI
         }
 
 
-        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, IEnumerable<IOscRepeaterPolicy> oscRepeaterPolicies, AutoRecordingService autoRecordingService, ModuleHost moduleHost, CloudWebSocketClient cloudClient)
+        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, IEnumerable<IOscRepeaterPolicy> oscRepeaterPolicies, AutoRecordingService autoRecordingService, ModuleHost moduleHost, CloudWebSocketClient cloudClient, ISoundManager soundManager)
         {
-            InitializeSoundPlayers();
+            _soundManager = soundManager;
+            _soundManager.Initialize();
             this.Name = "MainForm";
             this.webSocketClient = webSocketClient;
             this.autoSuicideService = autoSuicideService;
@@ -263,7 +255,7 @@ namespace ToNRoundCounter.UI
             _settings.Load();
             _lastSaveCode = _settings.LastSaveCode ?? string.Empty;
             EvaluateAutoRecording("InitialLoad");
-            UpdateItemMusicPlayer(null);
+            _soundManager.UpdateItemMusicPlayer(null);
             LogUi("Initial settings and resources loaded.", LogEventLevel.Debug);
             _moduleHost.NotifyThemeCatalogBuilding(new ModuleThemeCatalogContext(Theme.RegisteredThemes, Theme.RegisterTheme, _moduleHost.CurrentServiceProvider));
             _moduleHost.NotifyAuxiliaryWindowCatalogBuilding();
@@ -831,10 +823,10 @@ namespace ToNRoundCounter.UI
                     {
                         CancelAutoSuicide();
                     }
-                    UpdateItemMusicPlayer(null);
-                    ResetItemMusicTracking();
-                    UpdateRoundBgmPlayer(null);
-                    ResetRoundBgmTracking();
+                    _soundManager.UpdateItemMusicPlayer(null);
+                    _soundManager.ResetItemMusicTracking();
+                    _soundManager.UpdateRoundBgmPlayer(null);
+                    _soundManager.ResetRoundBgmTracking();
 
                     _settings.ApiKey = settingsForm.SettingsPanel.apiKeyTextBox.Text.Trim();
                     if (string.IsNullOrEmpty(_settings.ApiKey))
@@ -2068,7 +2060,7 @@ namespace ToNRoundCounter.UI
             var round = stateService.CurrentRound;
             if (round != null)
             {
-                ResetRoundBgmTracking();
+                _soundManager.ResetRoundBgmTracking();
                 string roundType = round.RoundType ?? string.Empty;
 
                 if (string.IsNullOrWhiteSpace(round.MapName))
@@ -2263,7 +2255,7 @@ namespace ToNRoundCounter.UI
                         bool handled = await InvokeAfkWarningHandlersAsync(idleSeconds);
                         if (!handled)
                         {
-                            PlayFromStart(afkPlayer);
+                            _soundManager.PlayAfkWarning();
                             _ = Task.Run(() => SendAlertOscMessagesAsync(0.1f));
                         }
                         afkSoundPlayed = true;
@@ -2315,7 +2307,7 @@ namespace ToNRoundCounter.UI
                     if (!ReferenceEquals(activeItemMusicEntry, matchingEntry))
                     {
                         itemMusicMatchStart = DateTime.Now;
-                        UpdateItemMusicPlayer(matchingEntry);
+                        _soundManager.UpdateItemMusicPlayer(matchingEntry);
                     }
                     else
                     {
@@ -2330,18 +2322,18 @@ namespace ToNRoundCounter.UI
                     {
                         if (!itemMusicActive)
                         {
-                            StartItemMusic(matchingEntry);
+                            _soundManager.StartItemMusic(matchingEntry);
                         }
                     }
                 }
                 else
                 {
-                    ResetItemMusicTracking();
+                    _soundManager.ResetItemMusicTracking();
                 }
             }
             else
             {
-                ResetItemMusicTracking();
+                _soundManager.ResetItemMusicTracking();
             }
 
             // パニッシュ・8ページ検出条件の更新
@@ -2369,7 +2361,7 @@ namespace ToNRoundCounter.UI
                         if (!punishSoundPlayed)
                         {
                             // パニッシュ・8ページ検出時の音声再生
-                            PlayFromStart(punishPlayer);
+                            _soundManager.PlayPunishSound();
                             punishSoundPlayed = true;
                         }
                     }
@@ -3291,14 +3283,14 @@ namespace ToNRoundCounter.UI
         {
             if (!_settings.RoundBgmEnabled)
             {
-                ResetRoundBgmTracking();
+                _soundManager.ResetRoundBgmTracking();
                 return;
             }
 
             var currentRound = stateService.CurrentRound;
             if (currentRound == null)
             {
-                ResetRoundBgmTracking();
+                _soundManager.ResetRoundBgmTracking();
                 return;
             }
 
@@ -3308,7 +3300,7 @@ namespace ToNRoundCounter.UI
                 if (!ReferenceEquals(activeRoundBgmEntry, matchingEntry))
                 {
                     roundBgmMatchStart = DateTime.Now;
-                    UpdateRoundBgmPlayer(matchingEntry);
+                    _soundManager.UpdateRoundBgmPlayer(matchingEntry);
                 }
                 else
                 {
@@ -3323,13 +3315,13 @@ namespace ToNRoundCounter.UI
                 {
                     if (!roundBgmActive)
                     {
-                        StartRoundBgm(matchingEntry);
+                        _soundManager.StartRoundBgm(matchingEntry);
                     }
                 }
             }
             else
             {
-                ResetRoundBgmTracking();
+                _soundManager.ResetRoundBgmTracking();
             }
         }
 
