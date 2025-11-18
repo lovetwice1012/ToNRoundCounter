@@ -643,6 +643,19 @@ namespace ToNRoundCounter.UI
 
         private async void BtnSettings_Click(object sender, EventArgs e)
         {
+            try
+            {
+                await BtnSettings_ClickAsync();
+            }
+            catch (Exception ex)
+            {
+                LogUi($"Unhandled error in settings dialog: {ex.Message}", LogEventLevel.Error);
+                MessageBox.Show($"設定ダイアログでエラーが発生しました: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private async Task BtnSettings_ClickAsync()
+        {
             LogUi("Settings dialog requested by user.");
             using (SettingsForm settingsForm = new SettingsForm(_settings))
             {
@@ -823,12 +836,12 @@ namespace ToNRoundCounter.UI
                     UpdateRoundBgmPlayer(null);
                     ResetRoundBgmTracking();
 
-                    _settings.apikey = settingsForm.SettingsPanel.apiKeyTextBox.Text.Trim();
-                    if (string.IsNullOrEmpty(_settings.apikey))
+                    _settings.ApiKey = settingsForm.SettingsPanel.apiKeyTextBox.Text.Trim();
+                    if (string.IsNullOrEmpty(_settings.ApiKey))
                     {
-                        _settings.apikey = string.Empty;
+                        _settings.ApiKey = string.Empty;
                     }
-                    else if (_settings.apikey.Length < 32)
+                    else if (_settings.ApiKey.Length < 32)
                     {
                         MessageBox.Show(LanguageManager.Translate("APIキーは32文字以上である必要があります。"), LanguageManager.Translate("エラー"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                         return;
@@ -1109,6 +1122,19 @@ namespace ToNRoundCounter.UI
 
         private async void MainForm_Load(object sender, EventArgs e)
         {
+            try
+            {
+                await MainForm_LoadAsync();
+            }
+            catch (Exception ex)
+            {
+                LogUi($"Critical error during form load: {ex.Message}", LogEventLevel.Error);
+                MessageBox.Show($"フォームの初期化中にエラーが発生しました: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private async Task MainForm_LoadAsync()
+        {
             LogUi("Main form load sequence starting.");
             MainForm_Resize(null, null);
             UpdateDisplayVisibility();
@@ -1242,6 +1268,22 @@ namespace ToNRoundCounter.UI
 
         protected override async void OnFormClosing(FormClosingEventArgs e)
         {
+            try
+            {
+                await OnFormClosingAsync(e);
+            }
+            catch (Exception ex)
+            {
+                LogUi($"Critical error during form closing: {ex.Message}", LogEventLevel.Error);
+            }
+            finally
+            {
+                base.OnFormClosing(e);
+            }
+        }
+
+        private async Task OnFormClosingAsync(FormClosingEventArgs e)
+        {
             LogUi("Main form closing initiated.");
             SaveRoundLogsToFile();
             CaptureOverlayPositions();
@@ -1295,10 +1337,12 @@ namespace ToNRoundCounter.UI
                     oscRepeaterProcess.Kill();
                     oscRepeaterProcess.WaitForExit();
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    LogUi($"Failed to kill OSC repeater process: {ex.Message}", LogEventLevel.Warning);
+                }
             }
             LogUi("Main form closing sequence finished. Base closing invoked.", LogEventLevel.Debug);
-            base.OnFormClosing(e);
         }
 
         protected override void Dispose(bool disposing)
@@ -1954,12 +1998,12 @@ namespace ToNRoundCounter.UI
                     {
                         await PersistLastSaveCodeAsync(savecode).ConfigureAwait(false);
                     }
-                    if (savecode != String.Empty && _settings.apikey != String.Empty)
+                    if (savecode != String.Empty && _settings.ApiKey != String.Empty)
                     {
                         // https://toncloud.sprink.cloud/api/savecode/create/{apikey} にPOSTリクエストを送信(savecodeを送信)
                         using (var client = new HttpClient())
                         {
-                            client.BaseAddress = new Uri("https://toncloud.sprink.cloud/api/savecode/create/" + _settings.apikey);
+                            client.BaseAddress = new Uri("https://toncloud.sprink.cloud/api/savecode/create/" + _settings.ApiKey);
                             var content = new StringContent("{\"savecode\":\"" + savecode + "\"}", Encoding.UTF8, "application/json");
                             try
                             {
@@ -2169,6 +2213,18 @@ namespace ToNRoundCounter.UI
         }
 
         private async void VelocityTimer_Tick(object sender, EventArgs e)
+        {
+            try
+            {
+                await VelocityTimer_TickAsync();
+            }
+            catch (Exception ex)
+            {
+                LogUi($"Error in velocity timer tick: {ex.Message}", LogEventLevel.Error);
+            }
+        }
+
+        private async Task VelocityTimer_TickAsync()
         {
             if (Interlocked.Exchange(ref oscUiUpdatePending, 0) == 1)
             {

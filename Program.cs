@@ -288,6 +288,37 @@ namespace ToNRoundCounter
             return launches;
         }
 
+        /// <summary>
+        /// Validates that the executable path is safe to launch.
+        /// </summary>
+        private static bool IsExecutablePathSafe(string filePath, out string? errorMessage)
+        {
+            errorMessage = null;
+
+            // Check for valid executable extensions
+            var extension = Path.GetExtension(filePath).ToLowerInvariant();
+            var allowedExtensions = new[] { ".exe", ".bat", ".cmd", ".com", ".msi" };
+            if (!allowedExtensions.Contains(extension))
+            {
+                errorMessage = $"File extension '{extension}' is not allowed for auto-launch. Allowed extensions: {string.Join(", ", allowedExtensions)}";
+                return false;
+            }
+
+            // Warn if trying to launch from Windows system directories
+            var systemDir = Environment.GetFolderPath(Environment.SpecialFolder.System).ToLowerInvariant();
+            var windowsDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows).ToLowerInvariant();
+            var lowerPath = filePath.ToLowerInvariant();
+
+            if (lowerPath.StartsWith(systemDir) || lowerPath.StartsWith(windowsDir))
+            {
+                // Allow but log warning
+                errorMessage = null; // Not an error, but we'll log it
+                return true;
+            }
+
+            return true;
+        }
+
         private static void ExecuteAutoLaunchPlans(IEnumerable<AutoLaunchPlan> launches, ModuleHost moduleHost, IEventLogger eventLogger, IServiceProvider provider)
         {
             foreach (var launch in launches)
@@ -306,6 +337,24 @@ namespace ToNRoundCounter
                         moduleHost.NotifyAutoLaunchFailed(failureContext);
                         eventLogger.LogEvent("AutoLaunch", $"Executable not found ({launch.Origin}): {resolvedPath}", Serilog.Events.LogEventLevel.Error);
                         continue;
+                    }
+
+                    // Validate executable path for security
+                    if (!IsExecutablePathSafe(resolvedPath, out string? securityError))
+                    {
+                        var failureContext = new ModuleAutoLaunchFailureContext(launch, new InvalidOperationException(securityError), provider);
+                        moduleHost.NotifyAutoLaunchFailed(failureContext);
+                        eventLogger.LogEvent("AutoLaunch", $"Security validation failed ({launch.Origin}): {securityError}", Serilog.Events.LogEventLevel.Error);
+                        continue;
+                    }
+
+                    // Log warning if launching from system directory
+                    var systemDir = Environment.GetFolderPath(Environment.SpecialFolder.System).ToLowerInvariant();
+                    var windowsDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows).ToLowerInvariant();
+                    var lowerPath = resolvedPath.ToLowerInvariant();
+                    if (lowerPath.StartsWith(systemDir) || lowerPath.StartsWith(windowsDir))
+                    {
+                        eventLogger.LogEvent("AutoLaunch", $"WARNING: Launching executable from system directory ({launch.Origin}): {resolvedPath}", Serilog.Events.LogEventLevel.Warning);
                     }
 
                     var psi = new ProcessStartInfo

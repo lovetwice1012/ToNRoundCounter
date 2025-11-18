@@ -71,7 +71,13 @@ namespace ToNRoundCounter.Infrastructure
             "EX", "ミッドナイト", "ゴースト", "8ページ", "アンバウンド", "寒い夜", "ミスティックムーン", "ブラッドムーン", "トワイライト", "ソルスティス"
         };
         public bool AutoSuicideEnabled { get; set; }
-        public string apikey { get; set; } = string.Empty;
+
+        /// <summary>
+        /// API key for authentication. Stored with lowercase JSON property name for backward compatibility.
+        /// </summary>
+        [JsonProperty("apikey")]
+        public string ApiKey { get; set; } = string.Empty;
+
         public string ThemeKey { get; set; } = Theme.DefaultThemeKey;
         public string Language { get; set; } = LanguageManager.DefaultCulture;
         public string LogFilePath { get; set; } = "logs/log-.txt";

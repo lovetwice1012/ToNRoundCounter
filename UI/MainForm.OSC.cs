@@ -299,7 +299,7 @@ namespace ToNRoundCounter.UI
                 if (getLatestSaveCode)
                 {
                     LogUi("OSC request received for latest save code.");
-                    if (string.IsNullOrEmpty(_settings.apikey))
+                    if (string.IsNullOrEmpty(_settings.ApiKey))
                     {
                         CopyCachedSaveCode("API key is not configured");
                     }
@@ -309,7 +309,7 @@ namespace ToNRoundCounter.UI
                         {
                             using (var client = new HttpClient())
                             {
-                                client.BaseAddress = new Uri("https://toncloud.sprink.cloud/api/savecode/get/" + _settings.apikey + "/latest");
+                                client.BaseAddress = new Uri("https://toncloud.sprink.cloud/api/savecode/get/" + _settings.ApiKey + "/latest");
                                 try
                                 {
                                     var response = await client.GetAsync("");

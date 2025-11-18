@@ -1962,7 +1962,7 @@ namespace ToNRoundCounter.UI
             grpApiKey.Controls.Add(apiKeyLabel);
             apiKeyTextBox = new TextBox();
             apiKeyTextBox.Name = "ApiKeyTextBox";
-            apiKeyTextBox.Text = _settings.apikey; // _settings.apikey の初期値を使用
+            apiKeyTextBox.Text = _settings.ApiKey;
             apiKeyTextBox.Location = new Point(apiKeyLabel.Right + 10, apiInnerY);
             apiKeyTextBox.Width = 400; // テキストボックスの幅を設定
             grpApiKey.Controls.Add(apiKeyTextBox);
@@ -2031,6 +2031,23 @@ namespace ToNRoundCounter.UI
         }
 
         private async void RoundLogExportButton_Click(object? sender, EventArgs e)
+        {
+            try
+            {
+                await RoundLogExportButton_ClickAsync();
+            }
+            catch (Exception ex)
+            {
+                Log.Logger?.Error(ex, "Unhandled error in round log export.");
+                MessageBox.Show(
+                    $"エクスポート中に予期しないエラーが発生しました: {ex.Message}",
+                    "エラー",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
+        private async Task RoundLogExportButton_ClickAsync()
         {
             using SaveFileDialog saveDialog = new SaveFileDialog();
             saveDialog.Filter = "JSON Files|*.json|All Files|*.*";

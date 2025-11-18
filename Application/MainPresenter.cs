@@ -167,7 +167,7 @@ namespace ToNRoundCounter.Application
 
         private async Task TryUploadRoundLogToCloudAsync(Round round, string status)
         {
-            if (string.IsNullOrEmpty(_settings.apikey))
+            if (string.IsNullOrEmpty(_settings.ApiKey))
             {
                 _logger.LogEvent("RoundLogUpload", "APIキーが設定されていません。アップロードをスキップします。");
                 return;
@@ -190,7 +190,7 @@ namespace ToNRoundCounter.Application
             using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
             try
             {
-                var url = "https://toncloud.sprink.cloud/api/roundlogs/create/" + _settings.apikey;
+                var url = "https://toncloud.sprink.cloud/api/roundlogs/create/" + _settings.ApiKey;
                 using var response = await _httpClient.PostAsync(url, content, System.Threading.CancellationToken.None).ConfigureAwait(false);
                 if (response.IsSuccessStatusCode)
                 {
