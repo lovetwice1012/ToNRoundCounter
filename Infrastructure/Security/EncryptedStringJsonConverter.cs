@@ -19,9 +19,16 @@ namespace ToNRoundCounter.Infrastructure.Security
 
         public override void WriteJson(JsonWriter writer, string? value, JsonSerializer serializer)
         {
-            if (string.IsNullOrEmpty(value))
+            // Preserve null vs empty distinction
+            if (value == null)
             {
                 writer.WriteNull();
+                return;
+            }
+
+            if (string.IsNullOrEmpty(value))
+            {
+                writer.WriteValue(string.Empty);
                 return;
             }
 
@@ -30,25 +37,28 @@ namespace ToNRoundCounter.Infrastructure.Security
                 var encrypted = _encryption.Encrypt(value);
                 writer.WriteValue(encrypted);
             }
-            catch (Exception)
+            catch (InvalidOperationException)
             {
-                // If encryption fails, write empty or throw based on configuration
+                // Expected encryption failure (e.g., DPAPI not available)
                 if (_allowPlainTextFallback)
                 {
-                    writer.WriteValue(string.Empty);
+                    // Write plaintext when fallback is enabled
+                    writer.WriteValue(value);
                 }
                 else
                 {
                     throw;
                 }
             }
+            // Let other unexpected exceptions bubble up
         }
 
         public override string? ReadJson(JsonReader reader, Type objectType, string? existingValue, bool hasExistingValue, JsonSerializer serializer)
         {
+            // Preserve null vs empty distinction
             if (reader.TokenType == JsonToken.Null)
             {
-                return string.Empty;
+                return null;
             }
 
             var value = reader.Value?.ToString();
@@ -62,18 +72,20 @@ namespace ToNRoundCounter.Infrastructure.Security
             {
                 return _encryption.Decrypt(value);
             }
-            catch
+            catch (InvalidOperationException)
             {
-                // If decryption fails and fallback is allowed, assume it's plain text (for migration)
+                // Expected decryption failure (e.g., plain text, different machine/user)
                 if (_allowPlainTextFallback)
                 {
+                    // Assume plain text (for migration from unencrypted settings)
                     return value;
                 }
                 else
                 {
-                    return string.Empty;
+                    throw;
                 }
             }
+            // Let other unexpected exceptions bubble up
         }
     }
 }

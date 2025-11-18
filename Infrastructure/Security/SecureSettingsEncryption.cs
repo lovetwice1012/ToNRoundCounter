@@ -11,21 +11,22 @@ namespace ToNRoundCounter.Infrastructure.Security
     /// </summary>
     public class SecureSettingsEncryption : ISecureSettingsEncryption
     {
+        private const string EncryptedPrefix = "ENC_V1:";
         private readonly byte[] _entropy;
 
         public SecureSettingsEncryption()
         {
-            // Additional entropy for extra security
-            // This should be kept secret and not committed to source control
+            // Additional entropy for DPAPI encryption.
+            // This is not a secret key; DPAPI uses machine and user-specific keys for actual encryption.
             _entropy = Encoding.UTF8.GetBytes("ToNRoundCounter-Entropy-v1");
         }
 
         /// <summary>
         /// Encrypts a plain text string using DPAPI.
         /// </summary>
-        /// <param name="plainText">The text to encrypt.</param>
-        /// <returns>Base64 encoded encrypted string, or empty string if input is null/empty.</returns>
-        public string Encrypt(string plainText)
+        /// <param name="plainText">The text to encrypt. Null or empty values return empty string.</param>
+        /// <returns>Prefixed Base64 encoded encrypted string (ENC_V1:...), or empty string if input is null/empty.</returns>
+        public string Encrypt(string? plainText)
         {
             if (string.IsNullOrEmpty(plainText))
             {
@@ -40,7 +41,7 @@ namespace ToNRoundCounter.Infrastructure.Security
                     _entropy,
                     DataProtectionScope.CurrentUser
                 );
-                return Convert.ToBase64String(encryptedBytes);
+                return EncryptedPrefix + Convert.ToBase64String(encryptedBytes);
             }
             catch (CryptographicException ex)
             {
@@ -51,9 +52,9 @@ namespace ToNRoundCounter.Infrastructure.Security
         /// <summary>
         /// Decrypts an encrypted string using DPAPI.
         /// </summary>
-        /// <param name="encryptedText">Base64 encoded encrypted string.</param>
+        /// <param name="encryptedText">Prefixed Base64 encoded encrypted string (ENC_V1:...). Null or empty values return empty string.</param>
         /// <returns>Decrypted plain text, or empty string if input is null/empty.</returns>
-        public string Decrypt(string encryptedText)
+        public string Decrypt(string? encryptedText)
         {
             if (string.IsNullOrEmpty(encryptedText))
             {
@@ -62,7 +63,14 @@ namespace ToNRoundCounter.Infrastructure.Security
 
             try
             {
-                byte[] encryptedBytes = Convert.FromBase64String(encryptedText);
+                // Remove prefix if present
+                string base64Data = encryptedText;
+                if (encryptedText.StartsWith(EncryptedPrefix))
+                {
+                    base64Data = encryptedText.Substring(EncryptedPrefix.Length);
+                }
+
+                byte[] encryptedBytes = Convert.FromBase64String(base64Data);
                 byte[] decryptedBytes = ProtectedData.Unprotect(
                     encryptedBytes,
                     _entropy,
@@ -81,26 +89,12 @@ namespace ToNRoundCounter.Infrastructure.Security
         }
 
         /// <summary>
-        /// Checks if a string appears to be encrypted (Base64 format).
+        /// Checks if a string is encrypted by looking for the encryption prefix.
+        /// This is a reliable check (not a heuristic) based on the presence of the version prefix.
         /// </summary>
         public bool IsEncrypted(string? value)
         {
-            if (string.IsNullOrEmpty(value))
-            {
-                return false;
-            }
-
-            try
-            {
-                // Check if it's valid Base64
-                Convert.FromBase64String(value);
-                // Additional heuristic: encrypted strings are typically longer than plain text
-                return value.Length > 20;
-            }
-            catch
-            {
-                return false;
-            }
+            return !string.IsNullOrEmpty(value) && value.StartsWith(EncryptedPrefix);
         }
     }
 }

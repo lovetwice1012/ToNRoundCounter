@@ -56,6 +56,7 @@ namespace ToNRoundCounter.Infrastructure
         public bool OverlayShowAngle { get; set; } = true;
         public bool OverlayShowClock { get; set; } = true;
         public bool OverlayShowInstanceTimer { get; set; } = true;
+        public bool OverlayShowInstanceMembers { get; set; } = true;
         public bool OverlayShowUnboundTerrorDetails { get; set; } = true;
         public double OverlayOpacity { get; set; } = 0.95d;
         public int OverlayRoundHistoryLength { get; set; } = 3;
@@ -80,6 +81,16 @@ namespace ToNRoundCounter.Infrastructure
         /// </summary>
         [JsonProperty("apikey")]
         public string ApiKey { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Legacy property for backward compatibility. Use ApiKey instead.
+        /// </summary>
+        [JsonIgnore]
+        public string apikey
+        {
+            get => ApiKey;
+            set => ApiKey = value;
+        }
 
         public string ThemeKey { get; set; } = Theme.DefaultThemeKey;
         public string Language { get; set; } = LanguageManager.DefaultCulture;

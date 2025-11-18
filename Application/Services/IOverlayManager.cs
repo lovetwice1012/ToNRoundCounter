@@ -115,7 +115,7 @@ namespace ToNRoundCounter.Application.Services
     /// <summary>
     /// Event arguments for shortcut button clicks.
     /// </summary>
-    public class ShortcutButtonClickedEventArgs : EventArgs
+    public sealed class ShortcutButtonClickedEventArgs : EventArgs
     {
         public ShortcutButton Button { get; }
 

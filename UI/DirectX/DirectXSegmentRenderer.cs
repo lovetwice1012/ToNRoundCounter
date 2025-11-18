@@ -108,14 +108,14 @@ namespace ToNRoundCounter.UI.DirectX
             float verticalLength = (digitHeight - (3f * thickness)) / 2f;
             float middleY = offsetY + thickness + verticalLength;
 
-            var segmentA = new RawRect(offsetX + halfThickness, offsetY, offsetX + halfThickness + horizontalLength, offsetY + thickness);
-            var segmentB = new RawRect(offsetX + digitWidth - thickness, offsetY + thickness, offsetX + digitWidth, offsetY + thickness + verticalLength);
-            var segmentC = new RawRect(offsetX + digitWidth - thickness, middleY + thickness, offsetX + digitWidth, middleY + thickness + verticalLength);
-            var segmentD = new RawRect(offsetX + halfThickness, offsetY + digitHeight - thickness, offsetX + halfThickness + horizontalLength, offsetY + digitHeight);
-            var segmentE = new RawRect(offsetX, middleY + thickness, offsetX + thickness, middleY + thickness + verticalLength);
-            var segmentF = new RawRect(offsetX, offsetY + thickness, offsetX + thickness, offsetY + thickness + verticalLength);
-            var segmentG = new RawRect(offsetX + halfThickness, middleY, offsetX + halfThickness + horizontalLength, middleY + thickness);
-            var decimalRect = new RawRect(offsetX + digitWidth - thickness, offsetY + digitHeight - thickness, offsetX + digitWidth, offsetY + digitHeight);
+            var segmentA = new RawRectF(offsetX + halfThickness, offsetY, offsetX + halfThickness + horizontalLength, offsetY + thickness);
+            var segmentB = new RawRectF(offsetX + digitWidth - thickness, offsetY + thickness, offsetX + digitWidth, offsetY + thickness + verticalLength);
+            var segmentC = new RawRectF(offsetX + digitWidth - thickness, middleY + thickness, offsetX + digitWidth, middleY + thickness + verticalLength);
+            var segmentD = new RawRectF(offsetX + halfThickness, offsetY + digitHeight - thickness, offsetX + halfThickness + horizontalLength, offsetY + digitHeight);
+            var segmentE = new RawRectF(offsetX, middleY + thickness, offsetX + thickness, middleY + thickness + verticalLength);
+            var segmentF = new RawRectF(offsetX, offsetY + thickness, offsetX + thickness, offsetY + thickness + verticalLength);
+            var segmentG = new RawRectF(offsetX + halfThickness, middleY, offsetX + halfThickness + horizontalLength, middleY + thickness);
+            var decimalRect = new RawRectF(offsetX + digitWidth - thickness, offsetY + digitHeight - thickness, offsetX + digitWidth, offsetY + digitHeight);
 
             FillSegment(target, segmentA, segments.HasFlag(SegmentFlags.A), onBrush, offBrush);
             FillSegment(target, segmentB, segments.HasFlag(SegmentFlags.B), onBrush, offBrush);
@@ -135,7 +135,7 @@ namespace ToNRoundCounter.UI.DirectX
             }
         }
 
-        private static void FillSegment(ID2D1HwndRenderTarget target, RawRect rect, bool active, ID2D1SolidColorBrush onBrush, ID2D1SolidColorBrush offBrush)
+        private static void FillSegment(ID2D1HwndRenderTarget target, RawRectF rect, bool active, ID2D1SolidColorBrush onBrush, ID2D1SolidColorBrush offBrush)
         {
             target.FillRectangle(rect, offBrush);
             if (active)

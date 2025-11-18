@@ -100,7 +100,7 @@ namespace ToNRoundCounter.Tests
             service.SetRoundCycle(10);
             Assert.Equal(10, service.RoundCycle);
 
-            service.ResetRoundCycle();
+            service.SetRoundCycle(0);
             Assert.Equal(0, service.RoundCycle);
         }
 
@@ -166,21 +166,17 @@ namespace ToNRoundCounter.Tests
         {
             var service = new StateService();
             int eventCount = 0;
-            string? lastPropertyName = null;
 
-            service.StateChanged += (sender, propertyName) =>
+            service.StateChanged += () =>
             {
                 eventCount++;
-                lastPropertyName = propertyName;
             };
 
             service.UpdateStat("TestStat", 42);
             Assert.Equal(1, eventCount);
-            Assert.Equal(nameof(service.UpdateStat), lastPropertyName);
 
             service.IncrementRoundCycle();
             Assert.Equal(2, eventCount);
-            Assert.Equal(nameof(service.IncrementRoundCycle), lastPropertyName);
         }
 
         [Fact]

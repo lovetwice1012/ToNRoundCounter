@@ -169,8 +169,9 @@ namespace ToNRoundCounter.Application
             {
                 _roundDataRepository?.RecordRoundResult(roundType, terrorType, survived, DateTime.UtcNow);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger?.LogEvent("StateService", () => $"Failed to record round result in repository: {ex.Message}", LogEventLevel.Warning);
             }
 
             NotifyStateChanged(nameof(RecordRoundResult));
@@ -187,8 +188,9 @@ namespace ToNRoundCounter.Application
             {
                 _roundDataRepository?.UpsertStat(name, value, DateTime.UtcNow);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger?.LogEvent("StateService", () => $"Failed to upsert stat '{name}' in repository: {ex.Message}", LogEventLevel.Warning);
             }
             NotifyStateChanged(nameof(UpdateStat));
         }

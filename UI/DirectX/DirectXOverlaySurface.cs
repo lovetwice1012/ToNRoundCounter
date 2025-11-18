@@ -43,7 +43,7 @@ namespace ToNRoundCounter.UI.DirectX
 
         protected ID2D1HwndRenderTarget? RenderTarget => renderTarget;
 
-        protected RawRect ContentRectangle
+        protected RawRectF ContentRectangle
         {
             get
             {
@@ -51,7 +51,7 @@ namespace ToNRoundCounter.UI.DirectX
                 float top = ContentPadding.Top;
                 float right = Math.Max(left, Width - ContentPadding.Right);
                 float bottom = Math.Max(top, Height - ContentPadding.Bottom);
-                return new RawRect(left, top, right, bottom);
+                return new RawRectF(left, top, right, bottom);
             }
         }
 
@@ -172,7 +172,7 @@ namespace ToNRoundCounter.UI.DirectX
                 renderTarget.AntialiasMode = AntialiasMode.PerPrimitive;
                 renderTarget.Clear(new Color4(0f, 0f, 0f, 0f));
 
-                var bounds = new RawRect(0f, 0f, Math.Max(0, Width), Math.Max(0, Height));
+                var bounds = new RawRectF(0f, 0f, Math.Max(0, Width), Math.Max(0, Height));
                 var rounded = new RoundedRectangle
                 {
                     Rect = bounds,

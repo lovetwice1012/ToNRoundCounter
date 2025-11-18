@@ -15,6 +15,7 @@ namespace ToNRoundCounter.Infrastructure.Services
     {
         private readonly IAppSettings _settings;
         private readonly IEventLogger _logger;
+        private bool _disposed;
 
         // Fixed sound players
         private readonly MediaPlayer _notifyPlayer;
@@ -51,14 +52,14 @@ namespace ToNRoundCounter.Infrastructure.Services
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-            _notifyPlayer = CreatePlayer("./audio/notify.mp3");
-            _afkPlayer = CreatePlayer("./audio/afk70.mp3");
-            _punishPlayer = CreatePlayer("./audio/punish_8page.mp3");
-            _testerRoundStartAlternatePlayer = CreatePlayer("./audio/testerOnly/RoundStart/alternate.mp3");
-            _testerIDICIDEDKILLALLPlayer = CreatePlayer("./audio/testerOnly/RoundStart/IDICIDEDKILLALL.mp3");
-            _testerBATOU01Player = CreatePlayer("./audio/testerOnly/Batou/Batou-01.mp3");
-            _testerBATOU02Player = CreatePlayer("./audio/testerOnly/Batou/Batou-02.mp3");
-            _testerBATOU03Player = CreatePlayer("./audio/testerOnly/Batou/Batou-03.mp3");
+            _notifyPlayer = CreatePlayerWithErrorHandling("./audio/notify.mp3", "Notification");
+            _afkPlayer = CreatePlayerWithErrorHandling("./audio/afk70.mp3", "AFK Warning");
+            _punishPlayer = CreatePlayerWithErrorHandling("./audio/punish_8page.mp3", "Punish");
+            _testerRoundStartAlternatePlayer = CreatePlayerWithErrorHandling("./audio/testerOnly/RoundStart/alternate.mp3", "Tester Alternate");
+            _testerIDICIDEDKILLALLPlayer = CreatePlayerWithErrorHandling("./audio/testerOnly/RoundStart/IDICIDEDKILLALL.mp3", "Tester KILLALL");
+            _testerBATOU01Player = CreatePlayerWithErrorHandling("./audio/testerOnly/Batou/Batou-01.mp3", "Batou 01");
+            _testerBATOU02Player = CreatePlayerWithErrorHandling("./audio/testerOnly/Batou/Batou-02.mp3", "Batou 02");
+            _testerBATOU03Player = CreatePlayerWithErrorHandling("./audio/testerOnly/Batou/Batou-03.mp3", "Batou 03");
         }
 
         public void Initialize()
@@ -78,24 +79,28 @@ namespace ToNRoundCounter.Infrastructure.Services
 
         public void PlayNotification()
         {
+            ThrowIfDisposed();
             PlayFromStart(_notifyPlayer);
             _logger.LogEvent("SoundManager", "Notification sound played.", LogEventLevel.Debug);
         }
 
         public void PlayAfkWarning()
         {
+            ThrowIfDisposed();
             PlayFromStart(_afkPlayer);
             _logger.LogEvent("SoundManager", "AFK warning sound played.", LogEventLevel.Debug);
         }
 
         public void PlayPunishSound()
         {
+            ThrowIfDisposed();
             PlayFromStart(_punishPlayer);
             _logger.LogEvent("SoundManager", "Punish detection sound played.", LogEventLevel.Debug);
         }
 
         public void StartItemMusic(ItemMusicEntry? entry)
         {
+            ThrowIfDisposed();
             if (!_settings.ItemMusicEnabled || entry == null || !entry.Enabled)
             {
                 _logger.LogEvent("SoundManager", "Item music playback skipped due to settings or entry state.", LogEventLevel.Debug);
@@ -121,6 +126,7 @@ namespace ToNRoundCounter.Infrastructure.Services
 
         public void StopItemMusic()
         {
+            ThrowIfDisposed();
             _itemMusicLoopRequested = false;
             _itemMusicActive = false;
             _itemMusicPlayer?.Stop();
@@ -129,6 +135,7 @@ namespace ToNRoundCounter.Infrastructure.Services
 
         public void ResetItemMusicTracking()
         {
+            ThrowIfDisposed();
             _logger.LogEvent("SoundManager", "Resetting item music tracking state.", LogEventLevel.Debug);
             _itemMusicLoopRequested = false;
             if (_itemMusicActive)
@@ -139,6 +146,7 @@ namespace ToNRoundCounter.Infrastructure.Services
 
         public void StartRoundBgm(RoundBgmEntry? entry)
         {
+            ThrowIfDisposed();
             if (!_settings.RoundBgmEnabled || entry == null || !entry.Enabled)
             {
                 _logger.LogEvent("SoundManager", "Round BGM playback skipped due to settings or entry state.", LogEventLevel.Debug);
@@ -183,6 +191,7 @@ namespace ToNRoundCounter.Infrastructure.Services
 
         public void StopRoundBgm()
         {
+            ThrowIfDisposed();
             _roundBgmLoopRequested = false;
             _roundBgmActive = false;
             _roundBgmPlayer?.Stop();
@@ -295,6 +304,11 @@ namespace ToNRoundCounter.Infrastructure.Services
 
         public void Dispose()
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             DisposeItemMusicPlayer();
             DisposeRoundBgmPlayer();
 
@@ -306,6 +320,8 @@ namespace ToNRoundCounter.Infrastructure.Services
             _testerBATOU01Player?.Close();
             _testerBATOU02Player?.Close();
             _testerBATOU03Player?.Close();
+
+            _disposed = true;
         }
 
         private static MediaPlayer CreatePlayer(string path)
@@ -313,6 +329,25 @@ namespace ToNRoundCounter.Infrastructure.Services
             var player = new MediaPlayer();
             player.Open(new Uri(path, UriKind.Relative));
             return player;
+        }
+
+        private MediaPlayer CreatePlayerWithErrorHandling(string path, string soundName)
+        {
+            var player = new MediaPlayer();
+            player.Open(new Uri(path, UriKind.Relative));
+            player.MediaFailed += (sender, e) =>
+            {
+                _logger.LogEvent("SoundManager", $"Failed to play {soundName} sound from {path}: {e.ErrorException?.Message}", LogEventLevel.Error);
+            };
+            return player;
+        }
+
+        private void ThrowIfDisposed()
+        {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(SoundManager));
+            }
         }
 
         private static void PlayFromStart(MediaPlayer player)

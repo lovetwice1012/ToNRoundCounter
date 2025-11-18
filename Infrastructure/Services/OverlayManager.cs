@@ -663,6 +663,7 @@ namespace ToNRoundCounter.Infrastructure.Services
                 OverlaySection.Shortcuts => _settings.OverlayShowShortcuts,
                 OverlaySection.Clock => _settings.OverlayShowClock,
                 OverlaySection.InstanceTimer => _settings.OverlayShowInstanceTimer,
+                OverlaySection.InstanceMembers => _settings.OverlayShowInstanceMembers,
                 _ => false
             };
         }

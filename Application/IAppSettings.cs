@@ -36,6 +36,7 @@ namespace ToNRoundCounter.Application
         bool OverlayShowAngle { get; set; }
         bool OverlayShowClock { get; set; }
         bool OverlayShowInstanceTimer { get; set; }
+        bool OverlayShowInstanceMembers { get; set; }
         bool OverlayShowUnboundTerrorDetails { get; set; }
         double OverlayOpacity { get; set; }
         int OverlayRoundHistoryLength { get; set; }
@@ -50,6 +51,7 @@ namespace ToNRoundCounter.Application
         List<string> RoundTypeStats { get; set; }
         bool AutoSuicideEnabled { get; set; }
         string apikey { get; set; }
+        string ApiKey { get; set; }
         string ThemeKey { get; set; }
         string Language { get; set; }
         string LogFilePath { get; set; }

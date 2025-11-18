@@ -132,13 +132,16 @@ namespace ToNRoundCounter.Tests
             public bool OverlayShowShortcuts { get; set; }
             public bool OverlayShowClock { get; set; }
             public bool OverlayShowInstanceTimer { get; set; }
-            public int OverlayOpacity { get; set; } = 100;
+            public bool OverlayShowInstanceMembers { get; set; }
+            public double OverlayOpacity { get; set; } = 100.0;
             public List<string> AutoSuicideRoundTypes { get; set; } = new List<string>();
+            public Dictionary<string, AutoSuicidePreset> AutoSuicidePresets { get; set; } = new Dictionary<string, AutoSuicidePreset>();
             public List<string> AutoSuicideDetailCustom { get; set; } = new List<string>();
             public bool AutoSuicideFuzzyMatch { get; set; }
             public bool AutoSuicideUseDetail { get; set; }
             public List<string> RoundTypeStats { get; set; } = new List<string>();
             public bool AutoSuicideEnabled { get; set; }
+            public string apikey { get; set; } = string.Empty;
             public string ApiKey { get; set; } = string.Empty;
             public string ThemeKey { get; set; } = "default";
             public string Language { get; set; } = "ja-JP";

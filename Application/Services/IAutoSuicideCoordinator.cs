@@ -49,7 +49,7 @@ namespace ToNRoundCounter.Application.Services
         void Cancel(bool manualOverride = false);
 
         /// <summary>
-        /// Delays the scheduled auto-suicide by 40 seconds.
+        /// Delays the scheduled auto-suicide by the configured manual delay (default 40 seconds).
         /// </summary>
         /// <param name="manualOverride">Whether this is a manual delay.</param>
         /// <returns>The new remaining time, or null if not scheduled.</returns>
