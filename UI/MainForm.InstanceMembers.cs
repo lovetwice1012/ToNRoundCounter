@@ -115,19 +115,19 @@ namespace ToNRoundCounter.UI
             {
                 // Add 10 seconds delay and show confirmation dialog
                 var extendedDelay = delay.Add(TimeSpan.FromSeconds(10));
-                
+
                 // Schedule with extended delay first
-                ScheduleAutoSuicide(extendedDelay, resetStartTime, fromAllRoundsMode, false);
+                _autoSuicideCoordinator.Schedule(extendedDelay, resetStartTime, fromAllRoundsMode, false);
 
                 // Show confirmation dialog after brief delay
                 await Task.Delay(100);
-                
+
                 _dispatcher.Invoke(async () =>
                 {
                     using (var confirmDialog = new AutoSuicideConfirmationOverlay(currentDesirePlayers.Count))
                     {
                         var result = confirmDialog.ShowDialog();
-                        
+
                         if (result == System.Windows.Forms.DialogResult.OK && confirmDialog.UserConfirmed)
                         {
                             // User confirmed - proceed with auto suicide
@@ -136,7 +136,7 @@ namespace ToNRoundCounter.UI
                         else if (result == System.Windows.Forms.DialogResult.Cancel && confirmDialog.UserCancelled)
                         {
                             // User cancelled - cancel auto suicide
-                            CancelAutoSuicide(true);
+                            _autoSuicideCoordinator.Cancel(true);
                             _logger?.LogEvent("AutoSuicide", "User cancelled auto suicide due to desire players");
                         }
                     }
@@ -145,7 +145,7 @@ namespace ToNRoundCounter.UI
             else
             {
                 // No desire players - proceed normally
-                ScheduleAutoSuicide(delay, resetStartTime, fromAllRoundsMode, false);
+                _autoSuicideCoordinator.Schedule(delay, resetStartTime, fromAllRoundsMode, false);
             }
         }
 

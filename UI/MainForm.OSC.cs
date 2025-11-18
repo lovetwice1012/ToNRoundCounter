@@ -28,8 +28,8 @@ namespace ToNRoundCounter.UI
         private bool afkSoundPlayed = false;
         private bool punishSoundPlayed = false;
         private double lastIdleSeconds = 0d;
-        private int oscMessageSkipCounter = 0; // OSCメッセージ処理間引き用カウンター
-        private const int OscMessageProcessInterval = 3; // 3件に1件だけ処理
+        private int oscMessageSkipCounter = 0;
+        private const int OscMessageProcessInterval = 3;
 
         private async Task InitializeOSCRepeater()
         {
@@ -124,7 +124,6 @@ namespace ToNRoundCounter.UI
             bool isHighFrequencyMessage = message.Address == "/avatar/parameters/VelocityX" ||
                                          message.Address == "/avatar/parameters/VelocityZ";
 
-            // 高頻度メッセージを間引き処理
             if (isHighFrequencyMessage)
             {
                 oscMessageSkipCounter++;
@@ -299,7 +298,7 @@ namespace ToNRoundCounter.UI
                 if (getLatestSaveCode)
                 {
                     LogUi("OSC request received for latest save code.");
-                    if (string.IsNullOrEmpty(_settings.apikey))
+                    if (string.IsNullOrEmpty(_settings.ApiKey))
                     {
                         CopyCachedSaveCode("API key is not configured");
                     }
@@ -309,7 +308,7 @@ namespace ToNRoundCounter.UI
                         {
                             using (var client = new HttpClient())
                             {
-                                client.BaseAddress = new Uri("https://toncloud.sprink.cloud/api/savecode/get/" + _settings.apikey + "/latest");
+                                client.BaseAddress = new Uri("https://toncloud.sprink.cloud/api/savecode/get/" + _settings.ApiKey + "/latest");
                                 try
                                 {
                                     var response = await client.GetAsync("");

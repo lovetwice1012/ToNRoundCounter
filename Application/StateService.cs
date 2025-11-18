@@ -97,8 +97,9 @@ namespace ToNRoundCounter.Application
             {
                 _roundDataRepository?.AddRoundLog(snapshot.Clone(), logEntry, DateTime.UtcNow);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger?.LogEvent("StateService", () => $"Failed to add round log to repository: {ex.Message}", LogEventLevel.Warning);
             }
 
             roundLogHandlers?.Invoke(snapshot, logEntry);
@@ -118,8 +119,9 @@ namespace ToNRoundCounter.Application
             {
                 _roundDataRepository?.UpsertStat("RoundCycle", updatedValue, DateTime.UtcNow);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger?.LogEvent("StateService", () => $"Failed to upsert RoundCycle stat: {ex.Message}", LogEventLevel.Warning);
             }
             NotifyStateChanged(nameof(IncrementRoundCycle));
         }
@@ -135,8 +137,9 @@ namespace ToNRoundCounter.Application
             {
                 _roundDataRepository?.UpsertStat("RoundCycle", value, DateTime.UtcNow);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger?.LogEvent("StateService", () => $"Failed to upsert RoundCycle stat: {ex.Message}", LogEventLevel.Warning);
             }
             NotifyStateChanged(nameof(SetRoundCycle));
         }

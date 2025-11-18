@@ -83,5 +83,119 @@ namespace ToNRoundCounter.Tests
             Assert.Same(snapshotBeforeNewRound, service.PreviousRound);
             Assert.Equal("Alpha", service.PreviousRound!.RoundType);
         }
+
+        [Fact]
+        public void RoundCycle_IncrementAndSet()
+        {
+            var service = new StateService();
+            Assert.Equal(0, service.RoundCycle);
+
+            service.IncrementRoundCycle();
+            Assert.Equal(1, service.RoundCycle);
+
+            service.IncrementRoundCycle();
+            service.IncrementRoundCycle();
+            Assert.Equal(3, service.RoundCycle);
+
+            service.SetRoundCycle(10);
+            Assert.Equal(10, service.RoundCycle);
+
+            service.ResetRoundCycle();
+            Assert.Equal(0, service.RoundCycle);
+        }
+
+        [Fact]
+        public void RecordRoundResult_WithNullTerror_TracksCorrectly()
+        {
+            var service = new StateService();
+            service.RecordRoundResult("ClassicRound", null, true);
+            service.RecordRoundResult("ClassicRound", null, false);
+
+            var roundAgg = service.GetRoundAggregates()["ClassicRound"];
+            Assert.Equal(2, roundAgg.Total);
+            Assert.Equal(1, roundAgg.Survival);
+            Assert.Equal(1, roundAgg.Death);
+        }
+
+        [Fact]
+        public void MultipleRoundTypes_TrackedSeparately()
+        {
+            var service = new StateService();
+            service.RecordRoundResult("Run", "Ghost", true);
+            service.RecordRoundResult("Run", "Ghost", true);
+            service.RecordRoundResult("Alternate", "Jester", false);
+            service.RecordRoundResult("Sabotage", null, true);
+
+            var aggregates = service.GetRoundAggregates();
+            Assert.Equal(3, aggregates.Count);
+
+            Assert.Equal(2, aggregates["Run"].Total);
+            Assert.Equal(2, aggregates["Run"].Survival);
+
+            Assert.Equal(1, aggregates["Alternate"].Total);
+            Assert.Equal(1, aggregates["Alternate"].Death);
+
+            Assert.Equal(1, aggregates["Sabotage"].Total);
+            Assert.Equal(1, aggregates["Sabotage"].Survival);
+        }
+
+        [Fact]
+        public void AddRoundLog_StoresEntryCorrectly()
+        {
+            var service = new StateService();
+            var round = new Round
+            {
+                RoundType = "Test",
+                TerrorKey = "TestTerror"
+            };
+
+            bool logAdded = false;
+            service.RoundLogAdded += (r, log) =>
+            {
+                logAdded = true;
+                Assert.Equal("Test", r.RoundType);
+                Assert.Equal("Test log entry", log);
+            };
+
+            service.AddRoundLog(round, "Test log entry");
+            Assert.True(logAdded);
+        }
+
+        [Fact]
+        public void StateChanged_EventFiredOnChanges()
+        {
+            var service = new StateService();
+            int eventCount = 0;
+            string? lastPropertyName = null;
+
+            service.StateChanged += (sender, propertyName) =>
+            {
+                eventCount++;
+                lastPropertyName = propertyName;
+            };
+
+            service.UpdateStat("TestStat", 42);
+            Assert.Equal(1, eventCount);
+            Assert.Equal(nameof(service.UpdateStat), lastPropertyName);
+
+            service.IncrementRoundCycle();
+            Assert.Equal(2, eventCount);
+            Assert.Equal(nameof(service.IncrementRoundCycle), lastPropertyName);
+        }
+
+        [Fact]
+        public void Reset_ClearsAllData()
+        {
+            var service = new StateService();
+            service.RecordRoundResult("TestRound", "TestTerror", true);
+            service.UpdateStat("Stat1", 10);
+            service.IncrementRoundCycle();
+
+            service.Reset();
+
+            Assert.Empty(service.GetRoundAggregates());
+            Assert.Empty(service.GetStats());
+            Assert.Equal(0, service.RoundCycle);
+        }
     }
 }

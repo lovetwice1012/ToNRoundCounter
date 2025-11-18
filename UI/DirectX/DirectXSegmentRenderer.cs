@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
-using SharpDX.Direct2D1;
-using SharpDX.Mathematics.Interop;
+using System.Numerics;
+using Vortice.Direct2D1;
+using Vortice.Mathematics;
 
 namespace ToNRoundCounter.UI.DirectX
 {
@@ -69,7 +70,7 @@ namespace ToNRoundCounter.UI.DirectX
             return width;
         }
 
-        public static void Draw(WindowRenderTarget target, string text, RawVector2 origin, float digitWidth, float digitHeight, float digitSpacing, SolidColorBrush onBrush, SolidColorBrush offBrush)
+        public static void Draw(ID2D1HwndRenderTarget target, string text, Vector2 origin, float digitWidth, float digitHeight, float digitSpacing, ID2D1SolidColorBrush onBrush, ID2D1SolidColorBrush offBrush)
         {
             var glyphs = BuildGlyphs(text);
             if (glyphs.Count == 0)
@@ -99,7 +100,7 @@ namespace ToNRoundCounter.UI.DirectX
             }
         }
 
-        private static void DrawSegments(WindowRenderTarget target, float offsetX, float offsetY, float digitWidth, float digitHeight, SegmentFlags segments, SolidColorBrush onBrush, SolidColorBrush offBrush)
+        private static void DrawSegments(ID2D1HwndRenderTarget target, float offsetX, float offsetY, float digitWidth, float digitHeight, SegmentFlags segments, ID2D1SolidColorBrush onBrush, ID2D1SolidColorBrush offBrush)
         {
             float thickness = Math.Max(2f, Math.Min(digitWidth, digitHeight) / 6f);
             float halfThickness = thickness / 2f;
@@ -107,14 +108,14 @@ namespace ToNRoundCounter.UI.DirectX
             float verticalLength = (digitHeight - (3f * thickness)) / 2f;
             float middleY = offsetY + thickness + verticalLength;
 
-            var segmentA = new RawRectangleF(offsetX + halfThickness, offsetY, offsetX + halfThickness + horizontalLength, offsetY + thickness);
-            var segmentB = new RawRectangleF(offsetX + digitWidth - thickness, offsetY + thickness, offsetX + digitWidth, offsetY + thickness + verticalLength);
-            var segmentC = new RawRectangleF(offsetX + digitWidth - thickness, middleY + thickness, offsetX + digitWidth, middleY + thickness + verticalLength);
-            var segmentD = new RawRectangleF(offsetX + halfThickness, offsetY + digitHeight - thickness, offsetX + halfThickness + horizontalLength, offsetY + digitHeight);
-            var segmentE = new RawRectangleF(offsetX, middleY + thickness, offsetX + thickness, middleY + thickness + verticalLength);
-            var segmentF = new RawRectangleF(offsetX, offsetY + thickness, offsetX + thickness, offsetY + thickness + verticalLength);
-            var segmentG = new RawRectangleF(offsetX + halfThickness, middleY, offsetX + halfThickness + horizontalLength, middleY + thickness);
-            var decimalRect = new RawRectangleF(offsetX + digitWidth - thickness, offsetY + digitHeight - thickness, offsetX + digitWidth, offsetY + digitHeight);
+            var segmentA = new RawRect(offsetX + halfThickness, offsetY, offsetX + halfThickness + horizontalLength, offsetY + thickness);
+            var segmentB = new RawRect(offsetX + digitWidth - thickness, offsetY + thickness, offsetX + digitWidth, offsetY + thickness + verticalLength);
+            var segmentC = new RawRect(offsetX + digitWidth - thickness, middleY + thickness, offsetX + digitWidth, middleY + thickness + verticalLength);
+            var segmentD = new RawRect(offsetX + halfThickness, offsetY + digitHeight - thickness, offsetX + halfThickness + horizontalLength, offsetY + digitHeight);
+            var segmentE = new RawRect(offsetX, middleY + thickness, offsetX + thickness, middleY + thickness + verticalLength);
+            var segmentF = new RawRect(offsetX, offsetY + thickness, offsetX + thickness, offsetY + thickness + verticalLength);
+            var segmentG = new RawRect(offsetX + halfThickness, middleY, offsetX + halfThickness + horizontalLength, middleY + thickness);
+            var decimalRect = new RawRect(offsetX + digitWidth - thickness, offsetY + digitHeight - thickness, offsetX + digitWidth, offsetY + digitHeight);
 
             FillSegment(target, segmentA, segments.HasFlag(SegmentFlags.A), onBrush, offBrush);
             FillSegment(target, segmentB, segments.HasFlag(SegmentFlags.B), onBrush, offBrush);
@@ -126,11 +127,15 @@ namespace ToNRoundCounter.UI.DirectX
 
             if (segments.HasFlag(SegmentFlags.Decimal))
             {
-                target.FillEllipse(new Ellipse(new RawVector2(decimalRect.Right - ((decimalRect.Right - decimalRect.Left) / 2f), decimalRect.Bottom - ((decimalRect.Bottom - decimalRect.Top) / 2f)), (decimalRect.Right - decimalRect.Left) / 2f, (decimalRect.Bottom - decimalRect.Top) / 2f), onBrush);
+                var center = new Vector2(decimalRect.Right - ((decimalRect.Right - decimalRect.Left) / 2f), decimalRect.Bottom - ((decimalRect.Bottom - decimalRect.Top) / 2f));
+                float radiusX = (decimalRect.Right - decimalRect.Left) / 2f;
+                float radiusY = (decimalRect.Bottom - decimalRect.Top) / 2f;
+                var ellipse = new Ellipse(center, radiusX, radiusY);
+                target.FillEllipse(ellipse, onBrush);
             }
         }
 
-        private static void FillSegment(WindowRenderTarget target, RawRectangleF rect, bool active, SolidColorBrush onBrush, SolidColorBrush offBrush)
+        private static void FillSegment(ID2D1HwndRenderTarget target, RawRect rect, bool active, ID2D1SolidColorBrush onBrush, ID2D1SolidColorBrush offBrush)
         {
             target.FillRectangle(rect, offBrush);
             if (active)
@@ -139,7 +144,7 @@ namespace ToNRoundCounter.UI.DirectX
             }
         }
 
-        private static void DrawColon(WindowRenderTarget target, float offsetX, float offsetY, float digitWidth, float digitHeight, SolidColorBrush brush)
+        private static void DrawColon(ID2D1HwndRenderTarget target, float offsetX, float offsetY, float digitWidth, float digitHeight, ID2D1SolidColorBrush brush)
         {
             float colonWidth = GetColonWidth(digitWidth);
             float colonHeight = digitHeight;
@@ -148,8 +153,8 @@ namespace ToNRoundCounter.UI.DirectX
             float topY = offsetY + digitHeight / 3f;
             float bottomY = offsetY + (2f * digitHeight / 3f);
 
-            var topDot = new Ellipse(new RawVector2(centerX, topY), dotRadius, dotRadius);
-            var bottomDot = new Ellipse(new RawVector2(centerX, bottomY), dotRadius, dotRadius);
+            var topDot = new Ellipse(new Vector2(centerX, topY), dotRadius, dotRadius);
+            var bottomDot = new Ellipse(new Vector2(centerX, bottomY), dotRadius, dotRadius);
 
             target.FillEllipse(topDot, brush);
             target.FillEllipse(bottomDot, brush);
