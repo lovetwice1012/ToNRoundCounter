@@ -14,7 +14,7 @@ namespace ToNRoundCounter.UI
     /// </summary>
     public partial class VotingPanelForm : Form
     {
-        private readonly CloudWebSocketClient? _cloudClient;
+        private readonly Infrastructure.Cloud.CloudClientZero? _cloudClient;
         private readonly string? _currentInstanceId;
         private readonly string? _playerId;
         private System.Windows.Forms.Timer? _refreshTimer;
@@ -34,7 +34,7 @@ namespace ToNRoundCounter.UI
         private ProgressBar votingProgressBar = null!;
         private Label votesLabel = null!;
 
-        public VotingPanelForm(CloudWebSocketClient? cloudClient, string? instanceId, string? playerId)
+        public VotingPanelForm(Infrastructure.Cloud.CloudClientZero? cloudClient, string? instanceId, string? playerId)
         {
             _cloudClient = cloudClient;
             _currentInstanceId = instanceId;

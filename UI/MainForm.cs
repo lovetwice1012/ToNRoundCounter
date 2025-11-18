@@ -75,7 +75,7 @@ namespace ToNRoundCounter.UI
         private readonly IReadOnlyList<IOscRepeaterPolicy> _oscRepeaterPolicies;
         private readonly ModuleHost _moduleHost;
         private readonly AutoRecordingService autoRecordingService;
-        private readonly CloudWebSocketClient? _cloudClient;
+        private readonly Infrastructure.Cloud.CloudClientZero? _cloudClient;
         private readonly ISoundManager _soundManager;
         private readonly IOverlayManager _overlayManager;
         private readonly IAutoSuicideCoordinator _autoSuicideCoordinator;
@@ -211,7 +211,7 @@ namespace ToNRoundCounter.UI
         }
 
 
-        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, IEnumerable<IOscRepeaterPolicy> oscRepeaterPolicies, AutoRecordingService autoRecordingService, ModuleHost moduleHost, CloudWebSocketClient cloudClient, ISoundManager soundManager, IOverlayManager overlayManager, IAutoSuicideCoordinator autoSuicideCoordinator)
+        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, IEnumerable<IOscRepeaterPolicy> oscRepeaterPolicies, AutoRecordingService autoRecordingService, ModuleHost moduleHost, Infrastructure.Cloud.CloudClientZero cloudClient, ISoundManager soundManager, IOverlayManager overlayManager, IAutoSuicideCoordinator autoSuicideCoordinator)
         {
             _soundManager = soundManager;
             _soundManager.Initialize();

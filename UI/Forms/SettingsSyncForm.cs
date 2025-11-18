@@ -16,7 +16,7 @@ namespace ToNRoundCounter.UI
     /// </summary>
     public partial class SettingsSyncForm : Form
     {
-        private readonly CloudWebSocketClient? _cloudClient;
+        private readonly Infrastructure.Cloud.CloudClientZero? _cloudClient;
         private readonly string _userId;
         private readonly IAppSettings _localSettings;
         private Dictionary<string, object>? _remoteSettings;
@@ -45,7 +45,7 @@ namespace ToNRoundCounter.UI
         private ProgressBar progressBar = null!;
         private Button closeButton = null!;
 
-        public SettingsSyncForm(CloudWebSocketClient? cloudClient, string userId, IAppSettings localSettings)
+        public SettingsSyncForm(Infrastructure.Cloud.CloudClientZero? cloudClient, string userId, IAppSettings localSettings)
         {
             _cloudClient = cloudClient;
             _userId = userId ?? Environment.UserName;

@@ -15,7 +15,7 @@ namespace ToNRoundCounter.UI
     /// </summary>
     public partial class BackupManagerForm : Form
     {
-        private readonly CloudWebSocketClient? _cloudClient;
+        private readonly Infrastructure.Cloud.CloudClientZero? _cloudClient;
         private readonly string _userId;
         private List<Dictionary<string, object>>? _backups;
 
@@ -39,7 +39,7 @@ namespace ToNRoundCounter.UI
         private Label statusLabel = null!;
         private Button closeButton = null!;
 
-        public BackupManagerForm(CloudWebSocketClient? cloudClient, string userId)
+        public BackupManagerForm(Infrastructure.Cloud.CloudClientZero? cloudClient, string userId)
         {
             _cloudClient = cloudClient;
             _userId = userId ?? Environment.UserName;

@@ -15,7 +15,7 @@ namespace ToNRoundCounter.UI
     /// </summary>
     public partial class ProfileManagerForm : Form
     {
-        private readonly CloudWebSocketClient? _cloudClient;
+        private readonly Infrastructure.Cloud.CloudClientZero? _cloudClient;
         private readonly string _playerId;
         private Dictionary<string, object>? _currentProfile;
         private bool _isDirty = false;
@@ -42,7 +42,7 @@ namespace ToNRoundCounter.UI
         private Button closeButton = null!;
         private ProgressBar loadingProgressBar = null!;
 
-        public ProfileManagerForm(CloudWebSocketClient? cloudClient, string playerId)
+        public ProfileManagerForm(Infrastructure.Cloud.CloudClientZero? cloudClient, string playerId)
         {
             _cloudClient = cloudClient;
             _playerId = playerId ?? Environment.UserName;

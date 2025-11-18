@@ -21,12 +21,12 @@ namespace ToNRoundCounter.Application
         private readonly IAppSettings _settings;
         private readonly IEventLogger _logger;
         private readonly IHttpClient _httpClient;
-        private readonly CloudWebSocketClient? _cloudClient;
+        private readonly Infrastructure.Cloud.CloudClientZero? _cloudClient;
         private IMainView? _view;
         private string? _currentRoundId;
         private DateTime _currentRoundStartTime;
 
-        public MainPresenter(StateService stateService, IAppSettings settings, IEventLogger logger, IHttpClient httpClient, CloudWebSocketClient? cloudClient = null)
+        public MainPresenter(StateService stateService, IAppSettings settings, IEventLogger logger, IHttpClient httpClient, Infrastructure.Cloud.CloudClientZero? cloudClient = null)
         {
             _stateService = stateService;
             _settings = settings;
