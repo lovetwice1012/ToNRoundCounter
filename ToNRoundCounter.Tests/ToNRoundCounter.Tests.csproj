@@ -44,6 +44,7 @@
     <Compile Include="RoundAggregateTests.cs" />
     <Compile Include="AppSettingsTests.cs" />
     <Compile Include="MainPresenterTests.cs" />
+    <Compile Include="SecureSettingsEncryptionTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ToNRoundCounter.csproj">

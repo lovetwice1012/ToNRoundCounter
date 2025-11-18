@@ -18,12 +18,14 @@ namespace ToNRoundCounter.Infrastructure
         private readonly IEventLogger _logger;
         private readonly IEventBus _bus;
         private readonly ISettingsRepository? _settingsRepository;
+        private readonly ISecureSettingsEncryption _encryption;
 
-        public AppSettings(IEventLogger logger, IEventBus bus, ISettingsRepository? settingsRepository = null)
+        public AppSettings(IEventLogger logger, IEventBus bus, ISettingsRepository? settingsRepository = null, ISecureSettingsEncryption? encryption = null)
         {
             _logger = logger;
             _bus = bus;
             _settingsRepository = settingsRepository;
+            _encryption = encryption ?? new SecureSettingsEncryption();
             Load();
         }
 
@@ -73,7 +75,8 @@ namespace ToNRoundCounter.Infrastructure
         public bool AutoSuicideEnabled { get; set; }
 
         /// <summary>
-        /// API key for authentication. Stored with lowercase JSON property name for backward compatibility.
+        /// API key for authentication. Automatically encrypted when saved using DPAPI.
+        /// Supports backward compatibility with plain text for migration.
         /// </summary>
         [JsonProperty("apikey")]
         public string ApiKey { get; set; } = string.Empty;
@@ -182,6 +185,37 @@ namespace ToNRoundCounter.Infrastructure
                         }
 
                         JsonConvert.PopulateObject(jsonContent, this);
+
+                        // Decrypt sensitive settings if they are encrypted
+                        if (!string.IsNullOrEmpty(ApiKey))
+                        {
+                            try
+                            {
+                                // Try to decrypt - if it fails, assume it's plain text (for migration)
+                                ApiKey = _encryption.Decrypt(ApiKey);
+                                _logger.LogEvent("AppSettings", "API key decrypted successfully.", Serilog.Events.LogEventLevel.Debug);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogEvent("AppSettings", $"API key appears to be plain text (migration): {ex.Message}", Serilog.Events.LogEventLevel.Debug);
+                                // Keep the plain text value for migration - it will be encrypted on next save
+                            }
+                        }
+
+                        if (!string.IsNullOrEmpty(DiscordWebhookUrl))
+                        {
+                            try
+                            {
+                                // Try to decrypt - if it fails, assume it's plain text (for migration)
+                                DiscordWebhookUrl = _encryption.Decrypt(DiscordWebhookUrl);
+                                _logger.LogEvent("AppSettings", "Discord webhook URL decrypted successfully.", Serilog.Events.LogEventLevel.Debug);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogEvent("AppSettings", $"Discord webhook URL appears to be plain text (migration): {ex.Message}", Serilog.Events.LogEventLevel.Debug);
+                                // Keep the plain text value for migration - it will be encrypted on next save
+                            }
+                        }
 
                         if (loadedFromRepository && !File.Exists(settingsFile))
                         {
@@ -662,7 +696,7 @@ namespace ToNRoundCounter.Infrastructure
                 AutoSuicideDetailCustom = AutoSuicideDetailCustom,
                 AutoSuicideFuzzyMatch = AutoSuicideFuzzyMatch,
                 AutoSuicideUseDetail = AutoSuicideUseDetail,
-                apikey = apikey,
+                apikey = string.IsNullOrEmpty(ApiKey) ? string.Empty : _encryption.Encrypt(ApiKey),
                 ThemeKey = NormalizeThemeKey(ThemeKey),
                 Language = LanguageManager.NormalizeCulture(Language),
                 LogFilePath = LogFilePath,
@@ -689,7 +723,7 @@ namespace ToNRoundCounter.Infrastructure
                 AutoRecordingIncludeOverlay = AutoRecordingIncludeOverlay,
                 AutoRecordingRoundTypes = AutoRecordingRoundTypes,
                 AutoRecordingTerrors = AutoRecordingTerrors,
-                DiscordWebhookUrl = DiscordWebhookUrl,
+                DiscordWebhookUrl = string.IsNullOrEmpty(DiscordWebhookUrl) ? string.Empty : _encryption.Encrypt(DiscordWebhookUrl),
                 LastSaveCode = LastSaveCode,
                 AfkSoundCancelEnabled = AfkSoundCancelEnabled,
                 CoordinatedAutoSuicideBrainEnabled = CoordinatedAutoSuicideBrainEnabled,
