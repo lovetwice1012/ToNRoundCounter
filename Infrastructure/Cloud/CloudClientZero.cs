@@ -178,14 +178,12 @@ namespace ToNRoundCounter.Infrastructure.Cloud
         public async Task<Dictionary<string, object>> LoginAsync(
             string playerId,
             string version,
-            string sessionId,
             CancellationToken cancellationToken = default)
         {
             var result = await SendMessagePackRequestAsync(Opcode.Login, new
             {
                 player_id = playerId,
-                version = version,
-                session_id = sessionId
+                version = version
             }, cancellationToken);
 
             if (result.TryGetValue("session_id", out var sid))
@@ -210,17 +208,17 @@ namespace ToNRoundCounter.Infrastructure.Cloud
 
         public async Task<string> GameRoundStartAsync(
             string? instanceId,
-            string? terrorName,
-            string roundKey,
-            string? playerName = null,
+            string? playerName,
+            string roundType,
+            string? mapName = null,
             CancellationToken cancellationToken = default)
         {
             var result = await SendMessagePackRequestAsync(Opcode.RoundStart, new
             {
                 instance_id = instanceId ?? "default",
-                terror_name = terrorName,
-                round_key = roundKey,
-                player_name = playerName
+                player_name = playerName,
+                round_type = roundType,
+                map_name = mapName
             }, cancellationToken);
 
             return result["round_id"]?.ToString() ?? string.Empty;
@@ -230,9 +228,9 @@ namespace ToNRoundCounter.Infrastructure.Cloud
             string roundId,
             bool survived,
             int roundDuration,
-            double damageDealt = 0,
+            double damageDealt,
+            string[]? itemsObtained,
             string? terrorName = null,
-            List<string>? itemsObtained = null,
             CancellationToken cancellationToken = default)
         {
             return await SendMessagePackRequestAsync(Opcode.RoundEnd, new
@@ -241,8 +239,8 @@ namespace ToNRoundCounter.Infrastructure.Cloud
                 survived = survived,
                 duration = roundDuration,
                 damage_dealt = damageDealt,
-                terror_name = terrorName,
-                items_obtained = itemsObtained ?? new List<string>()
+                items_obtained = itemsObtained?.ToList() ?? new List<string>(),
+                terror_name = terrorName
             }, cancellationToken);
         }
 
@@ -340,7 +338,8 @@ namespace ToNRoundCounter.Infrastructure.Cloud
             string playerId,
             float velocity,
             float afkDuration,
-            float damage,
+            List<string> items,
+            double damage,
             bool isAlive,
             CancellationToken ct = default)
         {
@@ -351,6 +350,7 @@ namespace ToNRoundCounter.Infrastructure.Cloud
                 player_id = playerId,
                 velocity = velocity,
                 afk_duration = afkDuration,
+                items = items ?? new List<string>(),
                 damage = damage,
                 is_alive = isAlive
             }), ct);
@@ -408,17 +408,15 @@ namespace ToNRoundCounter.Infrastructure.Cloud
 
         public async Task AnnounceThreatAsync(
             string instanceId,
-            string terrorName,
-            string roundKey,
-            double currentTime = 0,
+            string terrorKey,
+            string roundType,
             CancellationToken cancellationToken = default)
         {
             await SendMessagePackRequestAsync(Opcode.AnnounceThreat, new
             {
                 instance_id = instanceId,
-                terror_name = terrorName,
-                round_key = roundKey,
-                current_time = currentTime
+                terror_key = terrorKey,
+                round_type = roundType
             }, cancellationToken);
         }
 
@@ -444,15 +442,15 @@ namespace ToNRoundCounter.Infrastructure.Cloud
 
         public async Task<List<Infrastructure.DesirePlayerInfo>> FindDesirePlayersAsync(
             string instanceId,
-            string terrorName,
-            string roundKey,
+            string terrorKey,
+            string roundType,
             CancellationToken cancellationToken = default)
         {
             var result = await SendMessagePackRequestAsync(Opcode.FindDesirePlayers, new
             {
                 instance_id = instanceId,
-                terror_name = terrorName,
-                round_key = roundKey
+                terror_key = terrorKey,
+                round_type = roundType
             }, cancellationToken);
 
             if (result.TryGetValue("players", out var players) && players is List<object> list)
@@ -474,16 +472,14 @@ namespace ToNRoundCounter.Infrastructure.Cloud
         public async Task<Dictionary<string, object>> StartVotingAsync(
             string instanceId,
             string terrorName,
-            string roundKey,
-            int timeout,
+            DateTime expiresAt,
             CancellationToken cancellationToken = default)
         {
             return await SendMessagePackRequestAsync(Opcode.StartVoting, new
             {
                 instance_id = instanceId,
                 terror_name = terrorName,
-                round_key = roundKey,
-                timeout = timeout
+                expires_at = expiresAt
             }, cancellationToken);
         }
 
@@ -527,9 +523,20 @@ namespace ToNRoundCounter.Infrastructure.Cloud
 
         public async Task<Dictionary<string, object>> UpdateProfileAsync(
             string playerId,
-            Dictionary<string, object> updates,
+            string? playerName = null,
+            int? skillLevel = null,
+            object? terrorStats = null,
+            int? totalRounds = null,
+            int? totalSurvived = null,
             CancellationToken cancellationToken = default)
         {
+            var updates = new Dictionary<string, object>();
+            if (playerName != null) updates["player_name"] = playerName;
+            if (skillLevel.HasValue) updates["skill_level"] = skillLevel.Value;
+            if (terrorStats != null) updates["terror_stats"] = terrorStats;
+            if (totalRounds.HasValue) updates["total_rounds"] = totalRounds.Value;
+            if (totalSurvived.HasValue) updates["total_survived"] = totalSurvived.Value;
+
             return await SendMessagePackRequestAsync(Opcode.UpdateProfile, new
             {
                 player_id = playerId,
@@ -582,16 +589,32 @@ namespace ToNRoundCounter.Infrastructure.Cloud
         // ====================================================================
 
         public async Task ReportMonitoringStatusAsync(
-            string instanceId,
-            string status,
-            Dictionary<string, object> metrics,
+            string? instanceId,
+            string applicationStatus,
+            string applicationVersion,
+            int uptime,
+            double memoryUsage,
+            double cpuUsage,
+            string oscStatus,
+            double? oscLatency,
+            string vrchatStatus,
+            string? vrchatWorldId,
+            string? vrchatInstanceId,
             CancellationToken cancellationToken = default)
         {
             await SendMessagePackRequestAsync(Opcode.ReportMonitoringStatus, new
             {
                 instance_id = instanceId,
-                status = status,
-                metrics = metrics
+                application_status = applicationStatus,
+                application_version = applicationVersion,
+                uptime = uptime,
+                memory_usage = memoryUsage,
+                cpu_usage = cpuUsage,
+                osc_status = oscStatus,
+                osc_latency = oscLatency,
+                vrchat_status = vrchatStatus,
+                vrchat_world_id = vrchatWorldId,
+                vrchat_instance_id = vrchatInstanceId
             }, cancellationToken);
         }
 
@@ -733,27 +756,31 @@ namespace ToNRoundCounter.Infrastructure.Cloud
 
         public async Task<Dictionary<string, object>> CreateBackupAsync(
             string backupType,
-            string userId,
-            object data,
+            bool compress,
+            bool encrypt,
+            string description,
             CancellationToken cancellationToken = default)
         {
             return await SendMessagePackRequestAsync(Opcode.CreateBackup, new
             {
                 backup_type = backupType,
-                user_id = userId,
-                data = data
+                compress = compress,
+                encrypt = encrypt,
+                description = description
             }, cancellationToken);
         }
 
         public async Task RestoreBackupAsync(
             string backupId,
-            string userId,
+            bool validateBeforeRestore,
+            bool createBackupBeforeRestore,
             CancellationToken cancellationToken = default)
         {
             await SendMessagePackRequestAsync(Opcode.RestoreBackup, new
             {
                 backup_id = backupId,
-                user_id = userId
+                validate_before_restore = validateBeforeRestore,
+                create_backup_before_restore = createBackupBeforeRestore
             }, cancellationToken);
         }
 
