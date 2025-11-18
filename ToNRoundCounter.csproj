@@ -139,10 +139,6 @@
       <DependentUpon>MainForm.cs</DependentUpon>
       <SubType>Form</SubType>
     </Compile>
-    <Compile Include="UI\MainForm.Overlay.cs">
-      <DependentUpon>MainForm.cs</DependentUpon>
-      <SubType>Form</SubType>
-    </Compile>
     <Compile Include="UI\MainForm.Stats.cs">
       <DependentUpon>MainForm.cs</DependentUpon>
       <SubType>Form</SubType>

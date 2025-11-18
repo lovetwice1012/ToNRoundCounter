@@ -80,6 +80,11 @@ namespace ToNRoundCounter.UI
         private readonly AutoRecordingService autoRecordingService;
         private readonly CloudWebSocketClient? _cloudClient;
         private readonly ISoundManager _soundManager;
+        private readonly IOverlayManager _overlayManager;
+
+        // Overlay-related state that MainForm manages
+        private string lastRoundTypeForHistory = string.Empty;
+        private bool overlayTemporarilyHidden;
 
         private Action<WebSocketConnected>? _wsConnectedHandler;
         private Action<WebSocketDisconnected>? _wsDisconnectedHandler;
@@ -216,10 +221,11 @@ namespace ToNRoundCounter.UI
         }
 
 
-        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, IEnumerable<IOscRepeaterPolicy> oscRepeaterPolicies, AutoRecordingService autoRecordingService, ModuleHost moduleHost, CloudWebSocketClient cloudClient, ISoundManager soundManager)
+        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, IEnumerable<IOscRepeaterPolicy> oscRepeaterPolicies, AutoRecordingService autoRecordingService, ModuleHost moduleHost, CloudWebSocketClient cloudClient, ISoundManager soundManager, IOverlayManager overlayManager)
         {
             _soundManager = soundManager;
             _soundManager.Initialize();
+            _overlayManager = overlayManager;
             this.Name = "MainForm";
             this.webSocketClient = webSocketClient;
             this.autoSuicideService = autoSuicideService;
@@ -269,7 +275,8 @@ namespace ToNRoundCounter.UI
             {
                 throw new InvalidOperationException("Main form controls failed to initialize.");
             }
-            InitializeOverlay();
+            _overlayManager.Initialize();
+            _overlayManager.ShortcutButtonClicked += OverlayManager_ShortcutButtonClicked;
             _moduleHost.NotifyMainWindowMenuBuilding(new ModuleMainWindowMenuContext(this, mainMenuStrip, _moduleHost.CurrentServiceProvider));
             BuildAuxiliaryWindowsMenu();
             _moduleHost.NotifyMainWindowUiComposed(new ModuleMainWindowUiContext(this, this.Controls, mainMenuStrip, _moduleHost.CurrentServiceProvider));
@@ -539,7 +546,7 @@ namespace ToNRoundCounter.UI
             }
             ApplyTheme();
             MainForm_Resize(this, EventArgs.Empty);
-            UpdateOverlay(OverlaySection.NextRound, form => form.SetValue(GetNextRoundOverlayValue()));
+            UpdateNextRoundOverlay();
         }
 
         private void ApplyTheme()
@@ -867,10 +874,10 @@ namespace ToNRoundCounter.UI
                     InfoPanel.TerrorValue.ForeColor = _settings.FixedTerrorColor;
                     UpdateAggregateStatsDisplay();
                     UpdateDisplayVisibility();
-                    ApplyOverlayBackgroundOpacityToForms();
+                    _overlayManager.ApplyBackgroundOpacity();
                     UpdateOverlayVisibility();
                     UpdateShortcutOverlayState();
-                    ApplyOverlayRoundHistorySettings();
+                    _overlayManager.ApplyRoundHistorySettings();
                     _moduleHost.NotifyAuxiliaryWindowCatalogBuilding();
                     BuildAuxiliaryWindowsMenu();
                     await _settings.SaveAsync();
@@ -1278,7 +1285,7 @@ namespace ToNRoundCounter.UI
         {
             LogUi("Main form closing initiated.");
             SaveRoundLogsToFile();
-            CaptureOverlayPositions();
+            _overlayManager.CapturePositions();
             try
             {
                 await _settings.SaveAsync();
@@ -1364,26 +1371,10 @@ namespace ToNRoundCounter.UI
                 }
 
                 _cancellation.Cancel();
-                overlayVisibilityTimer?.Stop();
-                overlayVisibilityTimer?.Dispose();
 
-                foreach (var form in overlayForms.Values)
-                {
-                    if (form == null)
-                    {
-                        continue;
-                    }
+                // Overlay forms and timers are now managed and disposed by OverlayManager
+                _overlayManager.Dispose();
 
-                    if (!form.IsDisposed)
-                    {
-                        form.Hide();
-                        form.Close();
-                    }
-
-                    form.Dispose();
-                }
-
-                overlayForms.Clear();
                 components?.Dispose();
 
                 try
@@ -1773,7 +1764,7 @@ namespace ToNRoundCounter.UI
                             if (InfoPanel?.DamageValue != null)
                             {
                                 InfoPanel.DamageValue.Text = currentRound.Damage.ToString();
-                                UpdateOverlay(OverlaySection.Damage, form => form.SetValue(GetDamageOverlayText()));
+                                _overlayManager.UpdateDamage(InfoPanel.DamageValue?.Text ?? "0");
                             }
                         });
                         
@@ -2166,9 +2157,9 @@ namespace ToNRoundCounter.UI
                 {
                     _ = _presenter.UploadRoundLogAsync(roundForHistory, status);
                 }
-                ResetRoundScopedShortcutButtons();
+                _overlayManager.ResetRoundScopedShortcutButtons();
             }
-            SetOverlayTemporarilyHidden(false);
+            _overlayManager.SetTemporarilyHidden(false);
         }
 
 
@@ -2357,7 +2348,7 @@ namespace ToNRoundCounter.UI
                     {
                         InfoPanel.RoundTypeValue.Text = "パニッシュ or 8ページの可能性あり";
                         InfoPanel.RoundTypeValue.ForeColor = Color.Red;
-                        UpdateOverlay(OverlaySection.RoundStatus, form => form.SetValue(InfoPanel.RoundTypeValue.Text ?? string.Empty));
+                        _overlayManager.UpdateRoundStatus(InfoPanel.RoundTypeValue.Text ?? string.Empty);
                         if (!punishSoundPlayed)
                         {
                             // パニッシュ・8ページ検出時の音声再生
@@ -2370,7 +2361,7 @@ namespace ToNRoundCounter.UI
                 {
                     velocityInRangeStart = DateTime.MinValue;
                     punishSoundPlayed = false;
-                    UpdateOverlay(OverlaySection.RoundStatus, form => form.SetValue(InfoPanel.RoundTypeValue.Text ?? string.Empty));
+                    _overlayManager.UpdateRoundStatus(InfoPanel.RoundTypeValue.Text ?? string.Empty);
                 }
             }
 
@@ -2391,13 +2382,9 @@ namespace ToNRoundCounter.UI
             {
                 InfoPanel.NextRoundType.Text = NextRoundPredictionUnavailableMessage;
                 InfoPanel.NextRoundType.ForeColor = Color.White;
-                UpdateOverlay(OverlaySection.NextRound, form => form.SetValue(GetNextRoundOverlayValue()));
-                if (overlayRoundHistory.Count > 0)
-                {
-                    overlayRoundHistory.Clear();
-                }
+                UpdateNextRoundOverlay();
+                _overlayManager.ClearRoundHistory();
                 lastRoundTypeForHistory = string.Empty;
-                RefreshRoundHistoryOverlay();
                 return;
             }
 
@@ -2420,7 +2407,7 @@ namespace ToNRoundCounter.UI
                 InfoPanel.NextRoundType.ForeColor = Color.Red;
             }
 
-            UpdateOverlay(OverlaySection.NextRound, form => form.SetValue(GetNextRoundOverlayValue()));
+            UpdateNextRoundOverlay();
             RecordRoundHistory(historyStatusOverride, roundCycleForHistory);
         }
 
@@ -2435,8 +2422,8 @@ namespace ToNRoundCounter.UI
             ResetTerrorCountdown();
             InfoPanel.DamageValue.Text = "";
             InfoPanel.ItemValue.Text = "";
-            UpdateOverlay(OverlaySection.Damage, form => form.SetValue(GetDamageOverlayText()));
-            UpdateOverlay(OverlaySection.RoundStatus, form => form.SetValue(InfoPanel.RoundTypeValue.Text ?? string.Empty));
+            _overlayManager.UpdateDamage(InfoPanel.DamageValue?.Text ?? "0");
+            _overlayManager.UpdateRoundStatus(InfoPanel.RoundTypeValue.Text ?? string.Empty);
         }
 
         private void UpdateItemDisplay(JObject json)
@@ -2546,7 +2533,7 @@ namespace ToNRoundCounter.UI
                         UpdateRoundTypeLabel();
                         InfoPanel.RoundTypeValue.ForeColor = Color.White;
                         InfoPanel.DamageValue.Text = "0";
-                        UpdateOverlay(OverlaySection.Damage, form => form.SetValue(GetDamageOverlayText()));
+                        _overlayManager.UpdateDamage(InfoPanel.DamageValue?.Text ?? "0");
                     });
                     EvaluateAutoRecording("RoundActiveStarted");
                 }
@@ -2790,7 +2777,7 @@ namespace ToNRoundCounter.UI
             if (round == null)
             {
                 InfoPanel.RoundTypeValue.Text = string.Empty;
-                UpdateOverlay(OverlaySection.RoundStatus, form => form.SetValue(InfoPanel.RoundTypeValue.Text ?? string.Empty));
+                _overlayManager.UpdateRoundStatus(InfoPanel.RoundTypeValue.Text ?? string.Empty);
                 return;
             }
 
@@ -2803,7 +2790,7 @@ namespace ToNRoundCounter.UI
                 InfoPanel.RoundTypeValue.Text = round.RoundType;
             }
 
-            UpdateOverlay(OverlaySection.RoundStatus, form => form.SetValue(InfoPanel.RoundTypeValue.Text ?? string.Empty));
+            _overlayManager.UpdateRoundStatus(InfoPanel.RoundTypeValue.Text ?? string.Empty);
         }
 
         private Color ConvertColorFromInt(int colorInt)
@@ -3076,7 +3063,7 @@ namespace ToNRoundCounter.UI
                 InfoPanel.TerrorValue.Text = infoText;
             }
 
-            UpdateOverlay(OverlaySection.Terror, form => form.SetValue(overlayText));
+            _overlayManager.UpdateTerror(overlayText);
         }
 
         private static string CombineBaseAndSuffix(string? baseText, string? suffix)
@@ -3126,7 +3113,8 @@ namespace ToNRoundCounter.UI
 
         private void RefreshTerrorInfoOverlay()
         {
-            UpdateOverlay(OverlaySection.TerrorInfo, form => form.SetValue(BuildTerrorInfoOverlayText()));
+            string terrorInfoText = BuildTerrorInfoOverlayText();
+            _overlayManager.UpdateTerror(InfoPanel?.TerrorValue?.Text ?? string.Empty, terrorInfoText);
         }
 
         private string BuildTerrorInfoOverlayText()
@@ -3640,6 +3628,146 @@ namespace ToNRoundCounter.UI
             {
                 _logger?.LogEvent("CloudStream", $"Failed to handle stream message: {ex.Message}", LogEventLevel.Warning);
             }
+        }
+
+        /// <summary>
+        /// Updates the shortcut overlay state by delegating to OverlayManager.
+        /// </summary>
+        private void UpdateShortcutOverlayState()
+        {
+            _overlayManager.UpdateShortcutOverlayState(
+                _settings.AutoSuicideEnabled,
+                issetAllSelfKillMode,
+                _settings.CoordinatedAutoSuicideBrainEnabled,
+                _settings.AfkSoundCancelEnabled,
+                overlayTemporarilyHidden,
+                autoSuicideService.HasScheduled);
+        }
+
+        /// <summary>
+        /// Updates the next round overlay by delegating to OverlayManager.
+        /// </summary>
+        private void UpdateNextRoundOverlay()
+        {
+            string nextRoundText = InfoPanel?.NextRoundType?.Text ?? string.Empty;
+            _overlayManager.UpdateNextRound(nextRoundText, hasObservedSpecialRound);
+        }
+
+        /// <summary>
+        /// Records round history by delegating to OverlayManager.
+        /// </summary>
+        private void RecordRoundHistory(string? statusOverride, int? roundCycleForHistory = null)
+        {
+            string label = !string.IsNullOrWhiteSpace(lastRoundTypeForHistory)
+                ? lastRoundTypeForHistory
+                : InfoPanel?.NextRoundType?.Text ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(label) && string.IsNullOrWhiteSpace(statusOverride))
+            {
+                return;
+            }
+
+            string status = statusOverride ?? GetDefaultRoundHistoryStatus(roundCycleForHistory ?? stateService.RoundCycle);
+            _overlayManager.RecordRoundHistory(label, status);
+        }
+
+        /// <summary>
+        /// Gets the default round history status based on round cycle.
+        /// </summary>
+        private static string GetDefaultRoundHistoryStatus(int roundCycle)
+        {
+            if (roundCycle <= 0)
+            {
+                return "クラシック確定";
+            }
+
+            if (roundCycle == 1)
+            {
+                return "50/50";
+            }
+
+            return "特殊確定";
+        }
+
+        /// <summary>
+        /// Handles shortcut button clicks from the overlay manager.
+        /// </summary>
+        private async void OverlayManager_ShortcutButtonClicked(object? sender, ShortcutButtonClickedEventArgs e)
+        {
+            switch (e.Button)
+            {
+                case ShortcutButton.AutoSuicideToggle:
+                    _settings.AutoSuicideEnabled = !_settings.AutoSuicideEnabled;
+                    LoadAutoSuicideRules();
+                    if (!_settings.AutoSuicideEnabled && !issetAllSelfKillMode)
+                    {
+                        CancelAutoSuicide();
+                    }
+                    UpdateShortcutOverlayState();
+                    await _settings.SaveAsync();
+                    break;
+
+                case ShortcutButton.AutoSuicideCancel:
+                    bool hadScheduled = autoSuicideService.HasScheduled;
+                    if (hadScheduled)
+                    {
+                        CancelAutoSuicide(manualOverride: true);
+                    }
+                    else
+                    {
+                        UpdateShortcutOverlayState();
+                    }
+                    break;
+
+                case ShortcutButton.AutoSuicideDelay:
+                    bool canDelay = autoSuicideService.HasScheduled;
+                    if (canDelay)
+                    {
+                        DelayAutoSuicide(manualOverride: true);
+                    }
+                    else
+                    {
+                        UpdateShortcutOverlayState();
+                    }
+                    break;
+
+                case ShortcutButton.ManualSuicide:
+                    _ = Task.Run(PerformAutoSuicide);
+                    break;
+
+                case ShortcutButton.AllRoundsModeToggle:
+                    issetAllSelfKillMode = !issetAllSelfKillMode;
+                    if (issetAllSelfKillMode)
+                    {
+                        EnsureAllRoundsModeAutoSuicide();
+                    }
+                    else if (allRoundsForcedSchedule)
+                    {
+                        CancelAutoSuicide();
+                    }
+                    UpdateShortcutOverlayState();
+                    break;
+
+                case ShortcutButton.CoordinatedBrainToggle:
+                    _settings.CoordinatedAutoSuicideBrainEnabled = !_settings.CoordinatedAutoSuicideBrainEnabled;
+                    UpdateShortcutOverlayState();
+                    await _settings.SaveAsync();
+                    break;
+
+                case ShortcutButton.AfkDetectionToggle:
+                    _settings.AfkSoundCancelEnabled = !_settings.AfkSoundCancelEnabled;
+                    UpdateShortcutOverlayState();
+                    await _settings.SaveAsync();
+                    break;
+
+                case ShortcutButton.HideUntilRoundEnd:
+                    _overlayManager.SetTemporarilyHidden(!overlayTemporarilyHidden);
+                    overlayTemporarilyHidden = !overlayTemporarilyHidden;
+                    UpdateShortcutOverlayState();
+                    break;
+            }
+
+            WindowUtilities.TryFocusProcessWindowIfAltNotPressed("VRChat");
         }
     }
 }

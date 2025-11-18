@@ -156,6 +156,11 @@ namespace ToNRoundCounter
             services.AddSingleton<ISoundManager>(sp => new SoundManager(
                 sp.GetRequiredService<IAppSettings>(),
                 sp.GetRequiredService<IEventLogger>()));
+            services.AddSingleton<IOverlayManager>(sp => new OverlayManager(
+                sp.GetRequiredService<IAppSettings>(),
+                sp.GetRequiredService<IEventLogger>(),
+                sp.GetRequiredService<StateService>(),
+                sp.GetRequiredService<IUiDispatcher>()));
             services.AddSingleton<MainPresenter>(sp => new MainPresenter(
                 sp.GetRequiredService<StateService>(),
                 sp.GetRequiredService<IAppSettings>(),
@@ -181,7 +186,8 @@ namespace ToNRoundCounter
                 sp.GetRequiredService<AutoRecordingService>(),
                 sp.GetRequiredService<ModuleHost>(),
                 sp.GetRequiredService<CloudWebSocketClient>(),
-                sp.GetRequiredService<ISoundManager>()));
+                sp.GetRequiredService<ISoundManager>(),
+                sp.GetRequiredService<IOverlayManager>()));
 
             eventLogger.LogEvent("Bootstrap", "Building service provider (pre-build notifications).");
             moduleHost.NotifyServiceProviderBuilding(new ModuleServiceProviderBuildContext(services, eventLogger, eventBus));

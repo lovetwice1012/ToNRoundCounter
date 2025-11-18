@@ -304,6 +304,12 @@ namespace ToNRoundCounter.Infrastructure.Services
             });
         }
 
+        public void ClearRoundHistory()
+        {
+            _overlayRoundHistory.Clear();
+            RefreshRoundHistoryOverlay();
+        }
+
         public void UpdateClock()
         {
             DateTimeOffset now = DateTimeOffset.Now;

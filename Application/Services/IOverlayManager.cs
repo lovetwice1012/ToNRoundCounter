@@ -51,6 +51,11 @@ namespace ToNRoundCounter.Application.Services
         void RefreshRoundStats();
 
         /// <summary>
+        /// Clears the round history.
+        /// </summary>
+        void ClearRoundHistory();
+
+        /// <summary>
         /// Updates the clock overlay.
         /// </summary>
         void UpdateClock();
