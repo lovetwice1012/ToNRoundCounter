@@ -452,6 +452,7 @@ export class ProtocolZeroHandler {
       request.player_id,
       request.velocity,
       request.afk_duration,
+      request.items || [],
       request.damage,
       request.is_alive
     );
@@ -479,7 +480,7 @@ export class ProtocolZeroHandler {
   // ==========================================================================
 
   private async handleAnnounceThreat(reqId: number, request: any): Promise<void> {
-    logger.info({ instanceId: request.instance_id, terrorName: request.terror_name }, 'Threat announced');
+    logger.info({ instanceId: request.instance_id, terrorKey: request.terror_key, roundType: request.round_type }, 'Threat announced');
     this.sendSuccess(reqId, { ok: true });
   }
 
@@ -499,7 +500,7 @@ export class ProtocolZeroHandler {
 
   private async handleStartVoting(reqId: number, request: any): Promise<void> {
     const campaignId = this.generateId(16);
-    const expiresAt = Date.now() + (request.timeout * 1000);
+    const expiresAt = request.expires_at; // Already Unix timestamp from client
 
     this.sendSuccess(reqId, {
       campaign_id: campaignId,
@@ -725,6 +726,7 @@ export class ProtocolZeroHandler {
     playerId: string,
     velocity: number,
     afkDuration: number,
+    items: string[],
     damage: number,
     isAlive: boolean
   ): void {
@@ -735,6 +737,7 @@ export class ProtocolZeroHandler {
       player_id: playerId,
       velocity,
       afk_duration: afkDuration,
+      items,
       damage,
       is_alive: isAlive
     });
@@ -758,10 +761,12 @@ export class ProtocolZeroHandler {
   // ==========================================================================
 
   private generateId(length: number): string {
+    // Use crypto for secure ID generation
+    const bytes = require('crypto').randomBytes(length);
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
     let result = '';
     for (let i = 0; i < length; i++) {
-      result += chars[Math.floor(Math.random() * chars.length)];
+      result += chars[bytes[i] % chars.length];
     }
     return result;
   }
