@@ -277,6 +277,11 @@ namespace ToNRoundCounter.Infrastructure.Services
             }
         }
 
+        public int EvaluateDecision(string roundType, string? terrorName, out bool hasPendingDelayed)
+        {
+            return EvaluateAutoSuicideDecision(roundType, terrorName, out hasPendingDelayed);
+        }
+
         private int EvaluateAutoSuicideDecision(string roundType, string? terrorName, out bool hasPendingDelayed)
         {
             hasPendingDelayed = false;

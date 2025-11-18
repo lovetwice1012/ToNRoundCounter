@@ -68,6 +68,15 @@ namespace ToNRoundCounter.Application.Services
         bool ShouldScheduleForRound(Round round);
 
         /// <summary>
+        /// Evaluates auto-suicide decision for the given round type and terror.
+        /// </summary>
+        /// <param name="roundType">The round type.</param>
+        /// <param name="terrorName">The terror name (optional).</param>
+        /// <param name="hasPendingDelayed">Output: whether there is a pending delayed suicide.</param>
+        /// <returns>0 = no action, 1 = immediate suicide, 2 = delayed suicide.</returns>
+        int EvaluateDecision(string roundType, string? terrorName, out bool hasPendingDelayed);
+
+        /// <summary>
         /// Toggles AllRoundsMode on or off.
         /// </summary>
         void ToggleAllRoundsMode();

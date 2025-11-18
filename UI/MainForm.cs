@@ -104,7 +104,6 @@ namespace ToNRoundCounter.UI
         private Random randomGenerator = new Random();
 
         // OSC/Velocity 関連
-        private List<AutoSuicideRule> autoSuicideRules = new List<AutoSuicideRule>();
         private static readonly string[] AllRoundTypes = new string[]
         {
             "クラシック", "走れ！", "オルタネイト", "パニッシュ", "狂気", "サボタージュ", "霧", "ブラッドバス", "ダブルトラブル", "EX", "ミッドナイト", "ゴースト", "8ページ", "アンバウンド", "寒い夜", "ミスティックムーン", "ブラッドムーン", "トワイライト", "ソルスティス"
@@ -117,11 +116,6 @@ namespace ToNRoundCounter.UI
         private static readonly string[] testerNames = new string[] { "yussy5373", "Kotetsu Wilde", "tofu_shoyu", "ちよ千夜", "Blackpit", "shari_1928", "MitarashiMochi", "Motimotiusa3" };
 
         private bool isRestarted = false;
-
-        private bool issetAllSelfKillMode = false;
-        private bool allRoundsForcedSchedule;
-        private bool autoSuicideManualCancelRequested;
-        private DateTime? autoSuicideManualDelayUntil;
 
         private string _lastSaveCode = string.Empty;
 
@@ -830,9 +824,9 @@ namespace ToNRoundCounter.UI
                     _settings.DiscordWebhookUrl = settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text.Trim();
                     _settings.ThemeKey = settingsForm.SettingsPanel.SelectedThemeKey;
                     _autoSuicideCoordinator.LoadRules();
-                    if (!_settings.AutoSuicideEnabled && !issetAllSelfKillMode)
+                    if (!_settings.AutoSuicideEnabled && !_autoSuicideCoordinator.IsAllRoundsModeEnabled)
                     {
-                        CancelAutoSuicide();
+                        _autoSuicideCoordinator.Cancel();
                     }
                     _soundManager.UpdateItemMusicPlayer(null);
                     _soundManager.ResetItemMusicTracking();
@@ -1522,19 +1516,27 @@ namespace ToNRoundCounter.UI
                         PlayFromStart(tester_roundStartAlternatePlayer);
                     }
                     //issetAllSelfKillModeがtrueなら13秒後に自殺入力をする
-                    int autoAction = ShouldAutoSuicide(roundType, null, out var hasPendingDelayed);
-                    if (issetAllSelfKillMode)
+                    if (_autoSuicideCoordinator.IsAllRoundsModeEnabled)
                     {
-                        ScheduleAutoSuicide(TimeSpan.FromSeconds(13), true, true);
+                        _autoSuicideCoordinator.Schedule(TimeSpan.FromSeconds(13), true, true);
                     }
-                    else if (autoAction == 1)
+                    else
                     {
-                        var delay = hasPendingDelayed ? TimeSpan.FromSeconds(40) : TimeSpan.FromSeconds(13);
-                        ScheduleAutoSuicide(delay, true);
-                    }
-                    else if (autoAction == 2)
-                    {
-                        ScheduleAutoSuicide(TimeSpan.FromSeconds(40), true);
+                        // Delegate auto-suicide decision to coordinator
+                        var currentRound = stateService.CurrentRound;
+                        if (currentRound != null && _autoSuicideCoordinator.ShouldScheduleForRound(currentRound))
+                        {
+                            int autoAction = _autoSuicideCoordinator.EvaluateDecision(roundType, null, out var hasPendingDelayed);
+                            if (autoAction == 1)
+                            {
+                                var delay = hasPendingDelayed ? TimeSpan.FromSeconds(40) : TimeSpan.FromSeconds(13);
+                                _autoSuicideCoordinator.Schedule(delay, true);
+                            }
+                            else if (autoAction == 2)
+                            {
+                                _autoSuicideCoordinator.Schedule(TimeSpan.FromSeconds(40), true);
+                            }
+                        }
                     }
 
                     EvaluateAutoRecording("RoundTypeUpdated");
@@ -1712,20 +1714,20 @@ namespace ToNRoundCounter.UI
                             roundType = "EX";
                         }
                         //もしroundTypeが自動自殺ラウンド対象なら自動自殺
-                        int terrorAction = ShouldAutoSuicide(roundType, activeRoundForAuto.TerrorKey);
-                        if (terrorAction == 0 && autoSuicideService.HasScheduled && !issetAllSelfKillMode)
+                        int terrorAction = _autoSuicideCoordinator.EvaluateDecision(roundType, activeRoundForAuto.TerrorKey, out _);
+                        if (terrorAction == 0 && autoSuicideService.HasScheduled && !_autoSuicideCoordinator.IsAllRoundsModeEnabled)
                         {
-                            CancelAutoSuicide();
+                            _autoSuicideCoordinator.Cancel();
                         }
 
-                        if (issetAllSelfKillMode)
+                        if (_autoSuicideCoordinator.IsAllRoundsModeEnabled)
                         {
-                            _ = Task.Run(() => PerformAutoSuicide());
+                            _ = Task.Run(() => _autoSuicideCoordinator.Execute());
                         }
                         else if (terrorAction == 1)
                         {
                             // Non-delayed auto suicide - check for desire players
-                            ScheduleAutoSuicideWithDesireCheck(TimeSpan.FromSeconds(3), true, allRoundsForcedSchedule);
+                            ScheduleAutoSuicideWithDesireCheck(TimeSpan.FromSeconds(3), true, _autoSuicideCoordinator.IsAllRoundsModeForced);
                         }
                         else if (terrorAction == 2)
                         {
@@ -1745,7 +1747,7 @@ namespace ToNRoundCounter.UI
                                 }
                             }
 
-                            ScheduleAutoSuicide(remaining, resetStartTime, allRoundsForcedSchedule);
+                            _autoSuicideCoordinator.Schedule(remaining, resetStartTime, _autoSuicideCoordinator.IsAllRoundsModeForced);
                         }
                     }
                 }
@@ -2553,19 +2555,19 @@ namespace ToNRoundCounter.UI
                     }
                     if (!autoSuicideService.HasScheduled)
                     {
-                        int action = ShouldAutoSuicide(checkType, terror, out var hasPendingDelayed);
-                        if (issetAllSelfKillMode)
+                        int action = _autoSuicideCoordinator.EvaluateDecision(checkType, terror, out var hasPendingDelayed);
+                        if (_autoSuicideCoordinator.IsAllRoundsModeEnabled)
                         {
-                            ScheduleAutoSuicide(TimeSpan.FromSeconds(13), true, true);
+                            _autoSuicideCoordinator.Schedule(TimeSpan.FromSeconds(13), true, true);
                         }
                         else if (action == 1)
                         {
                             var delay = hasPendingDelayed ? TimeSpan.FromSeconds(40) : TimeSpan.FromSeconds(13);
-                            ScheduleAutoSuicide(delay, true);
+                            _autoSuicideCoordinator.Schedule(delay, true);
                         }
                         else if (action == 2)
                         {
-                            ScheduleAutoSuicide(TimeSpan.FromSeconds(40), true);
+                            _autoSuicideCoordinator.Schedule(TimeSpan.FromSeconds(40), true);
                         }
                     }
                 }
@@ -2576,195 +2578,8 @@ namespace ToNRoundCounter.UI
                 {
                     FinalizeCurrentRound(stateService.CurrentRound.IsDeath ? "☠" : "✅");
                 }
-                CancelAutoSuicide();
+                _autoSuicideCoordinator.Cancel();
             }
-        }
-
-        private void PerformAutoSuicide()
-        {
-            _logger.LogEvent("Suicide", "Performing Suside");
-            LaunchSuicideInputIfExists();
-            _logger.LogEvent("Suicide", "finish");
-            allRoundsForcedSchedule = false;
-            UpdateShortcutOverlayState();
-        }
-
-        private void ScheduleAutoSuicide(TimeSpan delay, bool resetStartTime, bool fromAllRoundsMode = false, bool isManualAction = false)
-        {
-            if (!isManualAction && autoSuicideManualCancelRequested)
-            {
-                autoSuicideManualCancelRequested = false;
-                autoSuicideManualDelayUntil = null;
-                UpdateShortcutOverlayState();
-                return;
-            }
-
-            if (resetStartTime)
-            {
-                autoSuicideManualCancelRequested = false;
-                autoSuicideManualDelayUntil = null;
-            }
-
-            if (!isManualAction)
-            {
-                if (autoSuicideManualDelayUntil.HasValue)
-                {
-                    DateTime now = DateTime.UtcNow;
-                    if (autoSuicideManualDelayUntil.Value > now)
-                    {
-                        TimeSpan manualRemaining = autoSuicideManualDelayUntil.Value - now;
-                        if (manualRemaining > delay)
-                        {
-                            delay = manualRemaining;
-                        }
-                    }
-                    else
-                    {
-                        autoSuicideManualDelayUntil = null;
-                    }
-                }
-            }
-            else
-            {
-                if (delay < TimeSpan.Zero)
-                {
-                    delay = TimeSpan.Zero;
-                }
-
-                autoSuicideManualCancelRequested = false;
-                autoSuicideManualDelayUntil = DateTime.UtcNow + delay;
-            }
-
-            if (delay < TimeSpan.Zero)
-            {
-                delay = TimeSpan.Zero;
-            }
-
-            autoSuicideService.Schedule(delay, resetStartTime, PerformAutoSuicide);
-            allRoundsForcedSchedule = fromAllRoundsMode;
-            UpdateShortcutOverlayState();
-        }
-
-        private void CancelAutoSuicide(bool manualOverride = false)
-        {
-            if (autoSuicideService.HasScheduled)
-            {
-                autoSuicideService.Cancel();
-            }
-
-            if (manualOverride)
-            {
-                autoSuicideManualCancelRequested = true;
-            }
-
-            autoSuicideManualDelayUntil = null;
-            allRoundsForcedSchedule = false;
-            UpdateShortcutOverlayState();
-        }
-
-        private TimeSpan? DelayAutoSuicide(bool manualOverride = false)
-        {
-            if (!autoSuicideService.HasScheduled)
-            {
-                UpdateShortcutOverlayState();
-                return null;
-            }
-
-            TimeSpan elapsed = DateTime.UtcNow - autoSuicideService.RoundStartTime;
-            TimeSpan remaining = TimeSpan.FromSeconds(40) - elapsed;
-            if (remaining <= TimeSpan.Zero)
-            {
-                remaining = TimeSpan.FromSeconds(40);
-            }
-
-            if (manualOverride)
-            {
-                autoSuicideManualCancelRequested = false;
-            }
-
-            ScheduleAutoSuicide(remaining, false, allRoundsForcedSchedule, manualOverride);
-            return remaining;
-        }
-
-        private void LoadAutoSuicideRules()
-        {
-            autoSuicideRules = new List<AutoSuicideRule>();
-            var lines = new List<string>();
-            if (!_settings.AutoSuicideUseDetail)
-            {
-                foreach (var round in AllRoundTypes)
-                {
-                    bool enabled = _settings.AutoSuicideRoundTypes.Contains(round);
-                    lines.Add($"{round}::{(enabled ? 1 : 0)}");
-                }
-            }
-            if (_settings.AutoSuicideDetailCustom != null)
-                lines.AddRange(_settings.AutoSuicideDetailCustom);
-            var temp = new List<AutoSuicideRule>();
-            foreach (var line in lines)
-            {
-                if (AutoSuicideRule.TryParse(line, out var r) && r != null)
-                    temp.Add(r);
-            }
-            var cleaned = new List<AutoSuicideRule>();
-            for (int i = temp.Count - 1; i >= 0; i--)
-            {
-                var r = temp[i];
-                bool redundant = cleaned.Any(c => c.Covers(r));
-                if (!redundant)
-                    cleaned.Add(r);
-            }
-            cleaned.Reverse();
-            autoSuicideRules = cleaned;
-            if (_settings.CoordinatedAutoSuicideBrainEnabled)
-            {
-                _moduleHost.NotifyAutoSuicideRulesPrepared(new ModuleAutoSuicideRuleContext(autoSuicideRules, _settings, _moduleHost.CurrentServiceProvider));
-            }
-            UpdateShortcutOverlayState();
-        }
-
-        private int ShouldAutoSuicide(string roundType, string? terrorName, out bool hasPendingDelayed)
-        {
-            hasPendingDelayed = false;
-            if (!_settings.AutoSuicideEnabled) return 0;
-            Func<string, string, bool> comparer;
-            if (_settings.AutoSuicideFuzzyMatch)
-                comparer = (a, b) => MatchWithTypoTolerance(a, b).result;
-            else
-                comparer = (a, b) => a == b;
-
-            if (string.IsNullOrWhiteSpace(terrorName))
-            {
-                terrorName = null;
-                hasPendingDelayed = autoSuicideRules.Any(r =>
-                    r.Value == 2 &&
-                    r.MatchesRound(roundType, comparer) &&
-                    !r.Matches(roundType, null, comparer));
-            }
-
-            int decision = 0;
-            for (int i = autoSuicideRules.Count - 1; i >= 0; i--)
-            {
-                var r = autoSuicideRules[i];
-                if (r.Matches(roundType, terrorName, comparer))
-                {
-                    decision = r.Value;
-                    break;
-                }
-            }
-
-            var decisionContext = new ModuleAutoSuicideDecisionContext(roundType, terrorName, decision, hasPendingDelayed, _moduleHost.CurrentServiceProvider);
-            if (_settings.CoordinatedAutoSuicideBrainEnabled)
-            {
-                _moduleHost.NotifyAutoSuicideDecisionEvaluated(decisionContext);
-            }
-            hasPendingDelayed = decisionContext.HasPendingDelayed;
-            return decisionContext.Decision;
-        }
-
-        private int ShouldAutoSuicide(string roundType, string? terrorName)
-        {
-            return ShouldAutoSuicide(roundType, terrorName, out _);
         }
 
         private void UpdateRoundTypeLabel()
@@ -3641,7 +3456,7 @@ namespace ToNRoundCounter.UI
         {
             _overlayManager.UpdateShortcutOverlayState(
                 _settings.AutoSuicideEnabled,
-                issetAllSelfKillMode,
+                _autoSuicideCoordinator.IsAllRoundsModeEnabled,
                 _settings.CoordinatedAutoSuicideBrainEnabled,
                 _settings.AfkSoundCancelEnabled,
                 overlayTemporarilyHidden,
@@ -3703,9 +3518,9 @@ namespace ToNRoundCounter.UI
                 case ShortcutButton.AutoSuicideToggle:
                     _settings.AutoSuicideEnabled = !_settings.AutoSuicideEnabled;
                     _autoSuicideCoordinator.LoadRules();
-                    if (!_settings.AutoSuicideEnabled && !issetAllSelfKillMode)
+                    if (!_settings.AutoSuicideEnabled && !_autoSuicideCoordinator.IsAllRoundsModeEnabled)
                     {
-                        CancelAutoSuicide();
+                        _autoSuicideCoordinator.Cancel();
                     }
                     UpdateShortcutOverlayState();
                     await _settings.SaveAsync();
@@ -3715,7 +3530,7 @@ namespace ToNRoundCounter.UI
                     bool hadScheduled = autoSuicideService.HasScheduled;
                     if (hadScheduled)
                     {
-                        CancelAutoSuicide(manualOverride: true);
+                        _autoSuicideCoordinator.Cancel(manualOverride: true);
                     }
                     else
                     {
@@ -3727,7 +3542,7 @@ namespace ToNRoundCounter.UI
                     bool canDelay = autoSuicideService.HasScheduled;
                     if (canDelay)
                     {
-                        DelayAutoSuicide(manualOverride: true);
+                        _autoSuicideCoordinator.Delay(manualOverride: true);
                     }
                     else
                     {
@@ -3736,19 +3551,11 @@ namespace ToNRoundCounter.UI
                     break;
 
                 case ShortcutButton.ManualSuicide:
-                    _ = Task.Run(PerformAutoSuicide);
+                    _ = Task.Run(_autoSuicideCoordinator.Execute);
                     break;
 
                 case ShortcutButton.AllRoundsModeToggle:
-                    issetAllSelfKillMode = !issetAllSelfKillMode;
-                    if (issetAllSelfKillMode)
-                    {
-                        EnsureAllRoundsModeAutoSuicide();
-                    }
-                    else if (allRoundsForcedSchedule)
-                    {
-                        CancelAutoSuicide();
-                    }
+                    _autoSuicideCoordinator.ToggleAllRoundsMode();
                     UpdateShortcutOverlayState();
                     break;
 
