@@ -348,7 +348,11 @@ namespace ToNRoundCounter.UI
                                     }
                                 }
                             }
-                            catch { }
+                            catch (JsonException)
+                            {
+                                // Ignore JSON deserialization errors for stats display
+                                // This prevents UI crashes from malformed data
+                            }
                         }
                     }
 

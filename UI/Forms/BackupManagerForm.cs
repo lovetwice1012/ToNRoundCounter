@@ -28,6 +28,7 @@ namespace ToNRoundCounter.UI
         private CheckBox includeSettingsCheckBox = null!;
         private CheckBox includeStatsCheckBox = null!;
         private CheckBox includeRoundsCheckBox = null!;
+        private CheckBox encryptBackupCheckBox = null!;
         private Button createBackupButton = null!;
         private GroupBox backupsListGroup = null!;
         private ListView backupsListView = null!;
@@ -124,6 +125,16 @@ namespace ToNRoundCounter.UI
                 Checked = true
             };
 
+            encryptBackupCheckBox = new CheckBox
+            {
+                Text = "バックアップを暗号化する（推奨）",
+                Location = new Point(15, 120),
+                AutoSize = true,
+                Checked = true,
+                Font = new Font("Yu Gothic UI", 9, FontStyle.Regular),
+                ForeColor = Color.FromArgb(46, 125, 50)
+            };
+
             createBackupButton = new Button
             {
                 Text = "バックアップ作成",
@@ -137,10 +148,11 @@ namespace ToNRoundCounter.UI
             };
             createBackupButton.Click += async (s, e) => await CreateBackupAsync();
 
-            createBackupGroup.Controls.AddRange(new Control[] { 
-                backupNameLabel, backupNameTextBox, 
+            createBackupGroup.Controls.AddRange(new Control[] {
+                backupNameLabel, backupNameTextBox,
                 includeSettingsCheckBox, includeStatsCheckBox, includeRoundsCheckBox,
-                createBackupButton 
+                encryptBackupCheckBox,
+                createBackupButton
             });
 
             // Backups List Group
@@ -319,9 +331,19 @@ namespace ToNRoundCounter.UI
         {
             if (_cloudClient == null) return;
 
-            if (string.IsNullOrWhiteSpace(backupNameTextBox.Text))
+            var backupName = backupNameTextBox.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(backupName))
             {
                 MessageBox.Show("バックアップ名を入力してください", "入力エラー", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            // Validate backup name (prevent path traversal and invalid file characters)
+            var invalidChars = System.IO.Path.GetInvalidFileNameChars();
+            if (backupName.Length > 200 || backupName.IndexOfAny(invalidChars) >= 0 || backupName.Contains(".."))
+            {
+                MessageBox.Show("バックアップ名に無効な文字が含まれています。\nファイル名として使用できる文字のみを入力してください。",
+                    "入力エラー", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -342,7 +364,7 @@ namespace ToNRoundCounter.UI
                 var result = await _cloudClient.CreateBackupAsync(
                     backupType,
                     compress: true,
-                    encrypt: false,
+                    encrypt: encryptBackupCheckBox.Checked,
                     description: description,
                     cancellationToken: CancellationToken.None
                 );

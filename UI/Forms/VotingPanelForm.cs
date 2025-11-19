@@ -219,9 +219,17 @@ namespace ToNRoundCounter.UI
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(terrorNameTextBox.Text))
+            var terrorName = terrorNameTextBox.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(terrorName))
             {
                 MessageBox.Show("Terror Nameを入力してください", "入力エラー", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            // Validate terror name length and content
+            if (terrorName.Length < 2 || terrorName.Length > 100)
+            {
+                MessageBox.Show("Terror Nameは2文字以上100文字以内で入力してください", "入力エラー", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -232,7 +240,7 @@ namespace ToNRoundCounter.UI
             {
                 var result = await _cloudClient.StartVotingAsync(
                     _currentInstanceId!, // Non-null assertion
-                    terrorNameTextBox.Text.Trim(),
+                    terrorName,
                     expiresAtPicker.Value,
                     CancellationToken.None
                 );
@@ -330,9 +338,10 @@ namespace ToNRoundCounter.UI
                     cancelButton.Enabled = !_hasVoted;
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Campaign might have expired or been deleted
+                // Campaign might have expired or been deleted, or network error occurred
+                System.Diagnostics.Debug.WriteLine($"Failed to retrieve campaign data: {ex.Message}");
                 _activeCampaignId = null;
                 _hasVoted = false;
                 statusLabel.Text = "投票キャンペーンはありません";

@@ -190,8 +190,11 @@ namespace ToNRoundCounter.Application
             using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
             try
             {
-                var url = "https://toncloud.sprink.cloud/api/roundlogs/create/" + _settings.ApiKey;
-                using var response = await _httpClient.PostAsync(url, content, System.Threading.CancellationToken.None).ConfigureAwait(false);
+                var url = "https://toncloud.sprink.cloud/api/roundlogs/create";
+                using var request = new HttpRequestMessage(HttpMethod.Post, url);
+                request.Content = content;
+                request.Headers.Add("Authorization", $"Bearer {_settings.ApiKey}");
+                using var response = await _httpClient.SendAsync(request, System.Threading.CancellationToken.None).ConfigureAwait(false);
                 if (response.IsSuccessStatusCode)
                 {
                     _logger.LogEvent("RoundLogUpload", "ラウンドログのアップロードに成功しました。");

@@ -15,9 +15,21 @@ namespace ToNRoundCounter.Infrastructure.Security
 
         public SecureSettingsEncryption()
         {
-            // Additional entropy for extra security
-            // This should be kept secret and not committed to source control
-            _entropy = Encoding.UTF8.GetBytes("ToNRoundCounter-Entropy-v1");
+            // Generate entropy from machine-specific information
+            // This provides security without storing secrets in source code
+            _entropy = GenerateEntropyFromMachineInfo();
+        }
+
+        private static byte[] GenerateEntropyFromMachineInfo()
+        {
+            // Combine multiple machine-specific values for entropy
+            var machineId = Environment.MachineName;
+            var userId = Environment.UserName;
+            var appName = "ToNRoundCounter";
+            var version = "v2"; // Change this if entropy generation changes
+
+            var entropySource = $"{appName}:{version}:{machineId}:{userId}";
+            return Encoding.UTF8.GetBytes(entropySource);
         }
 
         /// <summary>
@@ -97,8 +109,9 @@ namespace ToNRoundCounter.Infrastructure.Security
                 // Additional heuristic: encrypted strings are typically longer than plain text
                 return value.Length > 20;
             }
-            catch
+            catch (FormatException)
             {
+                // Not valid Base64, so not encrypted
                 return false;
             }
         }
