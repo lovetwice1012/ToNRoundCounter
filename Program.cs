@@ -282,8 +282,10 @@ namespace ToNRoundCounter
                 var json = await Task.Run(() => File.ReadAllText("appsettings.json")).ConfigureAwait(false);
                 return JsonConvert.DeserializeObject<AppSettingsData>(json) ?? new AppSettingsData();
             }
-            catch
+            catch (Exception ex)
             {
+                // Log to console since logger may not be available yet
+                Console.WriteLine($"[Warning] Failed to load settings from appsettings.json: {ex.Message}. Using default settings.");
                 return new AppSettingsData();
             }
         }

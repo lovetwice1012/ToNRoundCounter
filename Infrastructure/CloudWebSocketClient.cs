@@ -251,6 +251,11 @@ namespace ToNRoundCounter.Infrastructure
             }
 
             // Parse session info
+            if (response.Result == null)
+            {
+                throw new InvalidOperationException("Authentication succeeded but no result data received");
+            }
+
             var resultJson = JsonSerializer.Serialize(response.Result);
             using (var doc = JsonDocument.Parse(resultJson))
             {
@@ -462,6 +467,11 @@ namespace ToNRoundCounter.Infrastructure
                 throw new InvalidOperationException($"Failed to start round: {response.Error?.Message}");
             }
 
+            if (response.Result == null)
+            {
+                throw new InvalidOperationException("Start round succeeded but no result data received");
+            }
+
             var resultJson = JsonSerializer.Serialize(response.Result);
             using (var doc = JsonDocument.Parse(resultJson))
             {
@@ -510,12 +520,15 @@ namespace ToNRoundCounter.Infrastructure
             }
 
             var result = new Dictionary<string, object>();
-            var resultJson = JsonSerializer.Serialize(response.Result);
-            using (var doc = JsonDocument.Parse(resultJson))
+            if (response.Result != null)
             {
-                foreach (var prop in doc.RootElement.EnumerateObject())
+                var resultJson = JsonSerializer.Serialize(response.Result);
+                using (var doc = JsonDocument.Parse(resultJson))
                 {
-                    result[prop.Name] = prop.Value;
+                    foreach (var prop in doc.RootElement.EnumerateObject())
+                    {
+                        result[prop.Name] = prop.Value;
+                    }
                 }
             }
 

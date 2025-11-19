@@ -63,9 +63,10 @@ namespace ToNRoundCounter.UI
                 if (!_settings.OSCPortChanged)
                 {
                     int port = 30000;
+                    const int maxPort = 40000; // Prevent infinite loop by limiting port range
                     bool portFound = false;
                     LogUi("Selecting OSC port for repeater.", LogEventLevel.Debug);
-                    while (!portFound)
+                    while (!portFound && port < maxPort)
                     {
                         try
                         {
@@ -79,7 +80,17 @@ namespace ToNRoundCounter.UI
                             port++;
                         }
                     }
-                    LogUi($"OSC repeater port selected: {port}.", LogEventLevel.Debug);
+
+                    if (!portFound)
+                    {
+                        LogUi($"Failed to find available OSC port in range 30000-{maxPort}. Using default port 30000.", LogEventLevel.Error);
+                        port = 30000; // Fallback to default port
+                    }
+                    else
+                    {
+                        LogUi($"OSC repeater port selected: {port}.", LogEventLevel.Debug);
+                    }
+
                     _settings.OSCPort = port;
                     _settings.OSCPortChanged = true;
                     await _settings.SaveAsync();
@@ -199,7 +210,7 @@ namespace ToNRoundCounter.UI
                 if (suicideFlag)
                 {
                     LogUi("Immediate suicide flag received. Executing auto suicide action.");
-                    _ = Task.Run(() => PerformAutoSuicide());
+                    Infrastructure.AsyncErrorHandler.Execute(async () => await Task.Run(() => PerformAutoSuicide()), "Perform auto-suicide from OSC");
                 }
             }
             else if (message.Address == "/avatar/parameters/autosuside")

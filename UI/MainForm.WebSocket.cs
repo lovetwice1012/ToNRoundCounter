@@ -18,6 +18,7 @@ namespace ToNRoundCounter.UI
         private static readonly SemaphoreSlim sendAlertSemaphore = new SemaphoreSlim(1, 1);
         private int connected = 0;
         private bool followAutoSelfKill = false;
+        private int instanceWsReconnectAttempts = 0;
 
         private async Task ConnectToInstance(string instanceValue)
         {
@@ -36,8 +37,9 @@ namespace ToNRoundCounter.UI
             instanceWsConnection = new ClientWebSocket();
             try
             {
-                LogUi($"Connecting to shared instance stream at {url}.");
+                LogUi($"Connecting to shared instance stream at {url} (attempt #{instanceWsReconnectAttempts + 1}).");
                 await instanceWsConnection.ConnectAsync(new Uri(url), _cancellation.Token);
+                instanceWsReconnectAttempts = 0; // Reset on successful connection
                 LogUi("Instance WebSocket connection established.", LogEventLevel.Debug);
                 while (instanceWsConnection.State == WebSocketState.Open)
                 {
@@ -76,12 +78,26 @@ namespace ToNRoundCounter.UI
             {
                 if (instanceWsConnection != null)
                 {
-                    try { await instanceWsConnection.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", _cancellation.Token); } catch { }
+                    try
+                    {
+                        await instanceWsConnection.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", _cancellation.Token);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUi($"Failed to close instance WebSocket gracefully: {ex.Message}", LogEventLevel.Debug);
+                    }
                     instanceWsConnection.Dispose();
                     instanceWsConnection = null;
-                    LogUi("Instance WebSocket connection disposed. Scheduling reconnect.", LogEventLevel.Warning);
-                    await Task.Delay(Infrastructure.Constants.Network.WebSocketReconnectDelayMs);
-                    _ = Task.Run(() => ConnectToInstance(instanceValue));
+
+                    // Exponential backoff: delay = baseDelay * 2^attempts, capped at maxDelay
+                    instanceWsReconnectAttempts++;
+                    int baseDelay = Infrastructure.Constants.Network.WebSocketReconnectDelayMs;
+                    int maxDelay = 30000; // Cap at 30 seconds
+                    int backoffDelay = Math.Min(baseDelay * (1 << Math.Min(instanceWsReconnectAttempts - 1, 10)), maxDelay);
+
+                    LogUi($"Instance WebSocket connection disposed. Reconnecting in {backoffDelay}ms (attempt #{instanceWsReconnectAttempts}).", LogEventLevel.Warning);
+                    await Task.Delay(backoffDelay);
+                    Infrastructure.AsyncErrorHandler.Execute(async () => await ConnectToInstance(instanceValue), "Auto-reconnect to instance");
                 }
             }
         }
@@ -110,14 +126,14 @@ namespace ToNRoundCounter.UI
                         _logger.LogEvent("alertIncoming", "start process");
                         float alertNum = json.Value<float>("alertNum");
                         bool isLocal = json.Value<bool>("isLocal");
-                        _ = Task.Run(() => SendAlertOscMessagesAsync(alertNum, isLocal));
+                        Infrastructure.AsyncErrorHandler.Execute(async () => await SendAlertOscMessagesAsync(alertNum, isLocal), "Send alert OSC from WebSocket");
                     }
                 }
                 else if (type == "performFollowAutoSucide")
                 {
                     if (followAutoSelfKill)
                     {
-                        _ = Task.Run(() => PerformAutoSuicide());
+                        Infrastructure.AsyncErrorHandler.Execute(async () => await Task.Run(() => PerformAutoSuicide()), "Perform auto-suicide from WebSocket");
                     }
                 }
             }

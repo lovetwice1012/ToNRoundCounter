@@ -220,8 +220,9 @@ namespace ToNRoundCounter.Application
             {
                 recorder.Dispose();
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogEvent("AutoRecording", () => $"Failed to dispose recorder: {ex.Message}", LogEventLevel.Warning);
             }
 
             if (shouldLog)

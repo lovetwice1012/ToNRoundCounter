@@ -77,7 +77,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                         }
 
                         client = await acceptTask.ConfigureAwait(false);
-                        _ = Task.Run(() => HandleClientAsync(client, token));
+                        ToNRoundCounter.Infrastructure.AsyncErrorHandler.Execute(async () => await HandleClientAsync(client, token), "Handle VPN client connection");
                     }
                     catch (OperationCanceledException)
                     {
@@ -102,9 +102,9 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                 {
                     listener.Stop();
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Ignore shutdown failures.
+                    _logger.LogEvent("NetworkAnalyzer.Vpn", $"VPN listener stop failed: {ex.Message}", LogEventLevel.Debug);
                 }
             }
         }
@@ -174,9 +174,9 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                 {
                     _cts.Cancel();
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Ignore cancellation exceptions.
+                    _logger.LogEvent("NetworkAnalyzer.Vpn", $"VPN CancellationTokenSource cancel failed: {ex.Message}", LogEventLevel.Debug);
                 }
 
                 _cts.Dispose();
@@ -189,9 +189,9 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                 {
                     _listenerTask.Wait(TimeSpan.FromSeconds(2));
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Suppress shutdown exceptions.
+                    _logger.LogEvent("NetworkAnalyzer.Vpn", $"VPN listener task wait failed: {ex.Message}", LogEventLevel.Debug);
                 }
 
                 _listenerTask = null;

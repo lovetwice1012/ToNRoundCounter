@@ -95,7 +95,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                         settings.NetworkAnalyzerConsentMarkerId = Guid.NewGuid().ToString("N");
                         PersistConsentMarker(settings, logger);
                         logger?.LogEvent("NetworkAnalyzer", "User granted consent for the network analyzer proxy.");
-                        _ = Task.Run(async () => await settings.SaveAsync().ConfigureAwait(false));
+                        ToNRoundCounter.Infrastructure.AsyncErrorHandler.Execute(async () => await settings.SaveAsync().ConfigureAwait(false), "Save NetworkAnalyzer consent settings");
                     }
                     else
                     {
@@ -510,7 +510,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                 return;
             }
 
-            _ = Task.Run(async () =>
+            ToNRoundCounter.Infrastructure.AsyncErrorHandler.Execute(async () =>
             {
                 bool started = await _proxy.EnsureRunningAsync(settings).ConfigureAwait(false);
                 bool vpnStarted = true;
@@ -566,7 +566,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                 {
                     logger?.LogEvent("NetworkAnalyzer", "Local VPN service failed to initialize. Falling back to proxy-only mode.", LogEventLevel.Warning);
                 }
-            });
+            }, "Start NetworkAnalyzer proxy");
         }
 
         private void EnsureConsentMarkerValidity(IAppSettings settings, IEventLogger? logger)
@@ -584,7 +584,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                     if (TryReadConsentMarker(out var storedId, logger))
                     {
                         settings.NetworkAnalyzerConsentMarkerId = storedId;
-                        _ = Task.Run(async () => await settings.SaveAsync().ConfigureAwait(false));
+                        ToNRoundCounter.Infrastructure.AsyncErrorHandler.Execute(async () => await settings.SaveAsync().ConfigureAwait(false), "Save NetworkAnalyzer consent marker");
                     }
                     else
                     {
@@ -604,7 +604,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                 if (!string.IsNullOrEmpty(settings.NetworkAnalyzerConsentMarkerId))
                 {
                     settings.NetworkAnalyzerConsentMarkerId = null;
-                    _ = Task.Run(async () => await settings.SaveAsync().ConfigureAwait(false));
+                    ToNRoundCounter.Infrastructure.AsyncErrorHandler.Execute(async () => await settings.SaveAsync().ConfigureAwait(false), "Clear NetworkAnalyzer consent marker");
                 }
 
                 DeleteConsentMarker(logger);
@@ -827,7 +827,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
             _vpnService?.Stop();
             _proxy?.Stop();
             logger?.LogEvent("NetworkAnalyzer", reason, LogEventLevel.Information);
-            _ = Task.Run(async () => await settings.SaveAsync().ConfigureAwait(false));
+            ToNRoundCounter.Infrastructure.AsyncErrorHandler.Execute(async () => await settings.SaveAsync().ConfigureAwait(false), "Save NetworkAnalyzer settings after consent revocation");
         }
 
         private static string GetConsentMarkerPath()

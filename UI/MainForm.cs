@@ -1982,10 +1982,10 @@ namespace ToNRoundCounter.UI
                 }
 
                 // Check for desire players
-                _ = Task.Run(async () =>
+                Infrastructure.AsyncErrorHandler.Execute(async () =>
                 {
                     await CheckDesirePlayersForRoundAsync(roundType, activeRoundForAuto.TerrorKey);
-                });
+                }, "Check desire players for round");
 
                 if (roundType == "ブラッドバス" && namesForLogic != null && namesForLogic.Any(n => n.Contains("LVL 3")))
                 {
@@ -2000,7 +2000,7 @@ namespace ToNRoundCounter.UI
 
                 if (_autoSuicideCoordinator.IsAllRoundsModeEnabled)
                 {
-                    _ = Task.Run(() => _autoSuicideCoordinator.Execute());
+                    Infrastructure.AsyncErrorHandler.Execute(async () => await Task.Run(() => _autoSuicideCoordinator.Execute()), "Execute auto-suicide coordinator");
                 }
                 else if (terrorAction == 1)
                 {
@@ -2063,7 +2063,7 @@ namespace ToNRoundCounter.UI
                 });
 
                 // Send damage update to Cloud
-                _ = Task.Run(async () => await UpdateCloudPlayerState());
+                Infrastructure.AsyncErrorHandler.Execute(async () => await UpdateCloudPlayerState(), "Update cloud player state");
             }
         }
 
@@ -2157,7 +2157,7 @@ namespace ToNRoundCounter.UI
         {
             if (!isNotifyActivated)
             {
-                _ = Task.Run(() => SendAlertOscMessagesAsync(0.9f, false));
+                Infrastructure.AsyncErrorHandler.Execute(async () => await SendAlertOscMessagesAsync(0.9f, false), "Send alert OSC message");
                 isNotifyActivated = true;
             }
             bool optedIn = json.Value<bool?>("Value") ?? true;
@@ -2192,7 +2192,7 @@ namespace ToNRoundCounter.UI
                     UpdateInstanceTimerOverlay();
                 }
 
-                _ = Task.Run(() => ConnectToInstance(instanceValue));
+                Infrastructure.AsyncErrorHandler.Execute(async () => await ConnectToInstance(instanceValue), "Connect to instance");
                 isNotifyActivated = false;
             }
             else
@@ -2443,7 +2443,7 @@ namespace ToNRoundCounter.UI
                         if (!handled)
                         {
                             _soundManager.PlayAfkWarning();
-                            _ = Task.Run(() => SendAlertOscMessagesAsync(0.1f));
+                            Infrastructure.AsyncErrorHandler.Execute(async () => await SendAlertOscMessagesAsync(0.1f), "Send final alert OSC");
                         }
                         afkSoundPlayed = true;
                     }
@@ -3754,17 +3754,10 @@ namespace ToNRoundCounter.UI
         /// <param name="operationName">The operation name for logging (e.g., "round end", "round start").</param>
         private void RunPresenterAsyncWithErrorHandling(Func<Task> operation, string operationName)
         {
-            _ = Task.Run(async () =>
+            Infrastructure.AsyncErrorHandler.Execute(async () =>
             {
-                try
-                {
-                    await operation();
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogEvent("CloudSync", $"Failed to sync {operationName}: {ex.Message}", LogEventLevel.Warning);
-                }
-            });
+                await operation();
+            }, ex => _logger?.LogEvent("CloudSync", $"Failed to sync {operationName}: {ex.Message}", LogEventLevel.Warning), $"Sync {operationName}");
         }
 
         /// <summary>
@@ -3857,7 +3850,7 @@ namespace ToNRoundCounter.UI
                         break;
 
                     case ShortcutButton.ManualSuicide:
-                        _ = Task.Run(_autoSuicideCoordinator.Execute);
+                        Infrastructure.AsyncErrorHandler.Execute(async () => await Task.Run(_autoSuicideCoordinator.Execute), "Execute auto-suicide from shortcut");
                         break;
 
                     case ShortcutButton.AllRoundsModeToggle:

@@ -29,7 +29,7 @@ namespace ToNRoundCounter.Infrastructure
                 SingleReader = true,
                 SingleWriter = false
             });
-            _ = Task.Run(ProcessQueueAsync);
+            AsyncErrorHandler.Execute(ProcessQueueAsync, "Process EventBus queue");
             
             // Suppress debug logging for high-frequency event types
             lock (_suppressSync)

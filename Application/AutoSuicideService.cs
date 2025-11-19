@@ -64,7 +64,7 @@ namespace ToNRoundCounter.Application
             oldCts?.Cancel();
             oldCts?.Dispose();
 
-            _ = Task.Run(async () =>
+            Infrastructure.AsyncErrorHandler.Execute(async () =>
             {
                 try
                 {
@@ -102,7 +102,7 @@ namespace ToNRoundCounter.Application
                     _logger?.LogEvent("AutoSuicideService", "Schedule cleanup complete.");
                     cts.Dispose();
                 }
-            });
+            }, "Execute scheduled auto suicide");
 
             _bus?.Publish(new AutoSuicideScheduled(delay, resetStartTime));
             _logger?.LogEvent("AutoSuicideService", "Auto suicide scheduled event published.");
