@@ -188,6 +188,41 @@ namespace ToNRoundCounter.UI
             }
         }
 
+        /// <summary>
+        /// Validates that all UI controls marked with null-forgiving operator (!) have been properly initialized
+        /// </summary>
+        private void ValidateUIControlsInitialization()
+        {
+            var uninitializedControls = new List<string>();
+
+            // Validate MainForm controls
+            if (lblStatus == null) uninitializedControls.Add(nameof(lblStatus));
+            if (lblOSCStatus == null) uninitializedControls.Add(nameof(lblOSCStatus));
+            if (btnToggleTopMost == null) uninitializedControls.Add(nameof(btnToggleTopMost));
+            if (btnSettings == null) uninitializedControls.Add(nameof(btnSettings));
+            if (mainMenuStrip == null) uninitializedControls.Add(nameof(mainMenuStrip));
+            if (fileMenuItem == null) uninitializedControls.Add(nameof(fileMenuItem));
+            if (settingsMenuItem == null) uninitializedControls.Add(nameof(settingsMenuItem));
+            if (exitMenuItem == null) uninitializedControls.Add(nameof(exitMenuItem));
+            if (windowsMenuItem == null) uninitializedControls.Add(nameof(windowsMenuItem));
+            if (lblDebugInfo == null) uninitializedControls.Add(nameof(lblDebugInfo));
+            if (InfoPanel == null) uninitializedControls.Add(nameof(InfoPanel));
+            if (terrorInfoPanel == null) uninitializedControls.Add(nameof(terrorInfoPanel));
+            if (splitContainerMain == null) uninitializedControls.Add(nameof(splitContainerMain));
+            if (lblStatsTitle == null) uninitializedControls.Add(nameof(lblStatsTitle));
+            if (lblRoundLogTitle == null) uninitializedControls.Add(nameof(lblRoundLogTitle));
+            if (rtbStatsDisplay == null) uninitializedControls.Add(nameof(rtbStatsDisplay));
+
+            if (uninitializedControls.Count > 0)
+            {
+                var errorMessage = $"CRITICAL: The following UI controls were not properly initialized: {string.Join(", ", uninitializedControls)}";
+                LogUi(errorMessage, LogEventLevel.Error);
+                throw new InvalidOperationException(errorMessage);
+            }
+
+            LogUi($"UI controls validation passed. All {16} null-forgiving operator controls properly initialized.", LogEventLevel.Debug);
+        }
+
         private void ProcessUiLogQueue()
         {
             try
@@ -335,6 +370,9 @@ namespace ToNRoundCounter.UI
             instanceMemberUpdateTimer.Interval = Infrastructure.Constants.Network.DefaultRefreshIntervalMs; // Update every 2 seconds
             instanceMemberUpdateTimer.Tick += InstanceMemberUpdateTimer_Tick;
             instanceMemberUpdateTimer.Start();
+
+            // Validate all null-forgiving operator controls were properly initialized
+            ValidateUIControlsInitialization();
 
             LogUi("Main form construction complete. Background listeners and timers started.");
         }
@@ -1305,6 +1343,10 @@ namespace ToNRoundCounter.UI
                 UnsubscribeEventBus();
                 velocityTimer?.Stop();
                 velocityTimer?.Dispose();
+
+                // Dispose instance member update timer
+                instanceMemberUpdateTimer?.Stop();
+                instanceMemberUpdateTimer?.Dispose();
 
                 try
                 {

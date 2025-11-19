@@ -209,7 +209,7 @@ namespace ToNRoundCounter.UI
             }
             catch (Exception ex)
             {
-                _logger?.LogEvent("CloudPlayerState", $"Failed to update player state: {ex.Message}", LogEventLevel.Debug);
+                _logger?.LogEvent("CloudPlayerState", $"Failed to update player state: {ex.Message}", LogEventLevel.Warning);
             }
         }
 
@@ -251,7 +251,7 @@ namespace ToNRoundCounter.UI
             }
             catch (Exception ex)
             {
-                _logger?.LogEvent("CloudMonitoring", $"Failed to report monitoring status: {ex.Message}", LogEventLevel.Debug);
+                _logger?.LogEvent("CloudMonitoring", $"Failed to report monitoring status: {ex.Message}", LogEventLevel.Warning);
             }
         }
     }
