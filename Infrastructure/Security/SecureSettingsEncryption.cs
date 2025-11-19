@@ -2,22 +2,48 @@ using System;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace ToNRoundCounter.Infrastructure.Security
 {
     /// <summary>
-    /// Provides encryption and decryption for sensitive settings using DPAPI (Data Protection API).
-    /// This uses Windows DPAPI to encrypt data using machine and user-specific keys.
+    /// Provides cross-platform encryption and decryption for sensitive settings.
+    /// Uses ASP.NET Core Data Protection API which:
+    /// - On Windows: Uses DPAPI with user-specific keys
+    /// - On Linux/macOS: Uses file-based key storage with appropriate permissions
+    /// This provides consistent security across all platforms.
     /// </summary>
     public class SecureSettingsEncryption : ISecureSettingsEncryption
     {
-        private readonly byte[] _entropy;
+        private readonly IDataProtector _protector;
+        private readonly byte[] _legacyEntropy; // For migrating old DPAPI-encrypted data
+        private readonly bool _isWindows;
 
         public SecureSettingsEncryption()
         {
-            // Generate entropy from machine-specific information
-            // This provides security without storing secrets in source code
-            _entropy = GenerateEntropyFromMachineInfo();
+            // Determine platform
+            _isWindows = OperatingSystem.IsWindows();
+
+            // Set up key storage directory in user's AppData
+            var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            var keyDirectory = Path.Combine(appDataPath, "ToNRoundCounter", "DataProtectionKeys");
+            Directory.CreateDirectory(keyDirectory);
+
+            // Create Data Protection provider with application-specific name
+            var provider = DataProtectionProvider.Create(
+                new DirectoryInfo(keyDirectory),
+                configuration =>
+                {
+                    configuration.SetApplicationName("ToNRoundCounter");
+                }
+            );
+
+            // Create protector with purpose string (acts like a salt)
+            // Version suffix allows key rotation if needed
+            _protector = provider.CreateProtector("ToNRoundCounter.Settings.v1");
+
+            // Keep legacy entropy for backward compatibility on Windows
+            _legacyEntropy = GenerateEntropyFromMachineInfo();
         }
 
         private static byte[] GenerateEntropyFromMachineInfo()
@@ -26,14 +52,14 @@ namespace ToNRoundCounter.Infrastructure.Security
             var machineId = Environment.MachineName;
             var userId = Environment.UserName;
             var appName = "ToNRoundCounter";
-            var version = "v2"; // Change this if entropy generation changes
+            var version = "v2";
 
             var entropySource = $"{appName}:{version}:{machineId}:{userId}";
             return Encoding.UTF8.GetBytes(entropySource);
         }
 
         /// <summary>
-        /// Encrypts a plain text string using DPAPI.
+        /// Encrypts a plain text string using Data Protection API.
         /// </summary>
         /// <param name="plainText">The text to encrypt.</param>
         /// <returns>Base64 encoded encrypted string, or empty string if input is null/empty.</returns>
@@ -46,22 +72,19 @@ namespace ToNRoundCounter.Infrastructure.Security
 
             try
             {
-                byte[] plainBytes = Encoding.UTF8.GetBytes(plainText);
-                byte[] encryptedBytes = ProtectedData.Protect(
-                    plainBytes,
-                    _entropy,
-                    DataProtectionScope.CurrentUser
-                );
+                // Use Data Protection API (cross-platform)
+                var encryptedBytes = _protector.Protect(Encoding.UTF8.GetBytes(plainText));
                 return Convert.ToBase64String(encryptedBytes);
             }
             catch (CryptographicException ex)
             {
-                throw new InvalidOperationException("Failed to encrypt data. Ensure you are running on Windows with DPAPI support.", ex);
+                throw new InvalidOperationException("Failed to encrypt data. Ensure the application has proper file system permissions.", ex);
             }
         }
 
         /// <summary>
-        /// Decrypts an encrypted string using DPAPI.
+        /// Decrypts an encrypted string using Data Protection API.
+        /// Supports automatic migration from legacy Windows DPAPI encryption.
         /// </summary>
         /// <param name="encryptedText">Base64 encoded encrypted string.</param>
         /// <returns>Decrypted plain text, or empty string if input is null/empty.</returns>
@@ -75,12 +98,37 @@ namespace ToNRoundCounter.Infrastructure.Security
             try
             {
                 byte[] encryptedBytes = Convert.FromBase64String(encryptedText);
-                byte[] decryptedBytes = ProtectedData.Unprotect(
-                    encryptedBytes,
-                    _entropy,
-                    DataProtectionScope.CurrentUser
-                );
-                return Encoding.UTF8.GetString(decryptedBytes);
+
+                // Try new Data Protection API first
+                try
+                {
+                    var decryptedBytes = _protector.Unprotect(encryptedBytes);
+                    return Encoding.UTF8.GetString(decryptedBytes);
+                }
+                catch (CryptographicException) when (_isWindows)
+                {
+                    // On Windows, attempt to decrypt using legacy DPAPI for backward compatibility
+                    // This allows migration from old encryption method
+                    try
+                    {
+                        var decryptedBytes = ProtectedData.Unprotect(
+                            encryptedBytes,
+                            _legacyEntropy,
+                            DataProtectionScope.CurrentUser
+                        );
+                        var plainText = Encoding.UTF8.GetString(decryptedBytes);
+
+                        // Successfully decrypted legacy data - could re-encrypt with new method here
+                        // For now, just return the decrypted value
+                        // Note: Next save will use new encryption method automatically
+                        return plainText;
+                    }
+                    catch
+                    {
+                        // Both methods failed, rethrow original exception
+                        throw;
+                    }
+                }
             }
             catch (FormatException ex)
             {
@@ -88,8 +136,13 @@ namespace ToNRoundCounter.Infrastructure.Security
             }
             catch (CryptographicException ex)
             {
-                throw new InvalidOperationException("Failed to decrypt data. The data may have been encrypted on a different machine or user account.", ex);
+                throw new InvalidOperationException(
+                    "Failed to decrypt data. The data may have been encrypted on a different machine or user account, " +
+                    "or the encryption keys may have been lost.", ex);
             }
+
+            // Unreachable, but required for compilation
+            return string.Empty;
         }
 
         /// <summary>
