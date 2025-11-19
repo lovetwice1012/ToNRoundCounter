@@ -418,20 +418,53 @@ namespace ToNRoundCounter.UI
             }
         }
 
-        private void DeleteButton_Click(object? sender, EventArgs e)
+        private async void DeleteButton_Click(object? sender, EventArgs e)
         {
-            if (backupsListView.SelectedItems.Count == 0) return;
+            if (_cloudClient == null || backupsListView.SelectedItems.Count == 0) return;
+
+            var selectedBackup = backupsListView.SelectedItems[0].Tag as Dictionary<string, object>;
+            if (selectedBackup == null) return;
+
+            var backupId = selectedBackup.TryGetValue("backup_id", out var bid) ? bid?.ToString() : null;
+            var backupName = selectedBackup.TryGetValue("backup_name", out var bn) ? bn?.ToString() : "Unknown";
+
+            if (string.IsNullOrEmpty(backupId))
+            {
+                MessageBox.Show("バックアップIDが無効です", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
 
             var result = MessageBox.Show(
-                "選択したバックアップを削除します。この操作は元に戻せません。\n続行しますか?",
+                $"バックアップ「{backupName}」を削除します。この操作は元に戻せません。\n続行しますか?",
                 "確認",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning
             );
 
-            if (result == DialogResult.Yes)
+            if (result != DialogResult.Yes) return;
+
+            progressBar.Visible = true;
+            deleteButton.Enabled = false;
+            statusLabel.Text = "バックアップを削除中...";
+
+            try
             {
-                MessageBox.Show("バックアップ削除機能は未実装です", "情報", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                await _cloudClient.DeleteBackupAsync(backupId!, CancellationToken.None);
+
+                MessageBox.Show("バックアップを削除しました", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                statusLabel.Text = "削除完了";
+
+                await LoadBackupsAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"バックアップの削除に失敗しました: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                statusLabel.Text = "削除失敗";
+            }
+            finally
+            {
+                progressBar.Visible = false;
+                deleteButton.Enabled = backupsListView.SelectedItems.Count > 0;
             }
         }
 

@@ -70,7 +70,8 @@ namespace ToNRoundCounter.Application.Recording
 
         public void WriteAudioSample(ReadOnlySpan<byte> data, int frames)
         {
-            throw new NotSupportedException("Audio capture is not supported for GIF recordings.");
+            throw new NotSupportedException("Audio capture is not supported for GIF recordings due to format limitations. " +
+                "Please use MP4, WebM, or MKV format for audio recording support.");
         }
 
         public void CompleteAudio()

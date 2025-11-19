@@ -1976,6 +1976,29 @@ namespace ToNRoundCounter.Infrastructure
             return result;
         }
 
+        /// <summary>
+        /// Delete a backup
+        /// </summary>
+        public async Task DeleteBackupAsync(
+            string backupId,
+            CancellationToken cancellationToken = default)
+        {
+            var request = new CloudMessage
+            {
+                Id = Guid.NewGuid().ToString(),
+                Type = "request",
+                Method = "backup.delete",
+                Params = new { backup_id = backupId }
+            };
+
+            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (response.Status == "error")
+            {
+                throw new InvalidOperationException($"Failed to delete backup: {response.Error?.Message}");
+            }
+        }
+
         #endregion
 
         #region Remote Control APIs - REMOVED FOR SECURITY

@@ -179,14 +179,16 @@ namespace ToNRoundCounter.Application.Recording
                 case "gif":
                     if (audioFormat.HasValue)
                     {
-                        throw new NotSupportedException("Audio capture is not supported for GIF recordings.");
+                        throw new NotSupportedException("Audio capture is not supported for GIF recordings due to format limitations. " +
+                            "Please use MP4, WebM, or MKV format for audio recording support.");
                     }
 
                     return new GifFrameWriter(outputPath, width, height, frameRate);
                 case "avi":
                     if (audioFormat.HasValue)
                     {
-                        throw new NotSupportedException("Audio capture is not supported for AVI recordings.");
+                        throw new NotSupportedException("Audio capture is not supported for AVI recordings using SimpleAviWriter. " +
+                            "Please use MP4, WebM, or MKV format with MediaFoundation for audio recording support.");
                     }
 
                     return new SimpleAviWriter(outputPath, width, height, frameRate);
