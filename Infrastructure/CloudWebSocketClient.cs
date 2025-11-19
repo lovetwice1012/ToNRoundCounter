@@ -502,24 +502,6 @@ namespace ToNRoundCounter.Infrastructure
         #region Instance Management APIs
 
         /// <summary>
-        /// [DEPRECATED] Join instance - DISABLED (VRChat constraint violation)
-        /// </summary>
-        [Obsolete("Remote instance joining has been disabled due to VRChat platform constraints")]
-        public Task<string> InstanceJoinAsync(string instanceId, string playerName, CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException("Remote instance joining is not supported. VRChat platform does not allow external applications to control world joining. Players must manually join worlds through the VRChat client.");
-        }
-
-        /// <summary>
-        /// [DEPRECATED] Leave instance - DISABLED (VRChat constraint violation)
-        /// </summary>
-        [Obsolete("Remote instance leaving has been disabled due to VRChat platform constraints")]
-        public Task InstanceLeaveAsync(string instanceId, CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException("Remote instance leaving is not supported. VRChat platform does not allow external applications to control world joining/leaving. Players must manually leave worlds through the VRChat client.");
-        }
-
-        /// <summary>
         /// Create a new instance
         /// </summary>
         public async Task<Dictionary<string, object>> InstanceCreateAsync(
@@ -1997,55 +1979,6 @@ namespace ToNRoundCounter.Infrastructure
             {
                 throw new InvalidOperationException($"Failed to delete backup: {response.Error?.Message}");
             }
-        }
-
-        #endregion
-
-        #region Remote Control APIs - REMOVED FOR SECURITY
-
-        // SECURITY WARNING: Remote control functionality has been permanently disabled
-        // These methods allowed remote command execution which posed critical security risks:
-        // - Unauthorized access to application controls
-        // - Potential for malicious command injection
-        // - No way to properly authenticate/authorize remote commands
-        // 
-        // All remote.command.* endpoints have been removed from the server as well
-
-        /// <summary>
-        /// [DEPRECATED] Create remote command - DISABLED FOR SECURITY
-        /// </summary>
-        [Obsolete("Remote control functionality has been disabled for security reasons")]
-        public Task<Dictionary<string, object>> CreateRemoteCommandAsync(
-            string instanceId,
-            string commandType,
-            string action,
-            Dictionary<string, object>? parameters = null,
-            int priority = 0,
-            CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException("Remote control functionality has been permanently disabled for security reasons. This feature allowed unauthorized remote command execution.");
-        }
-
-        /// <summary>
-        /// [DEPRECATED] Execute remote command - DISABLED FOR SECURITY
-        /// </summary>
-        [Obsolete("Remote control functionality has been disabled for security reasons")]
-        public Task<Dictionary<string, object>> ExecuteRemoteCommandAsync(
-            string commandId,
-            CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException("Remote control functionality has been permanently disabled for security reasons. This feature allowed unauthorized remote command execution.");
-        }
-
-        /// <summary>
-        /// [DEPRECATED] Get remote command status - DISABLED FOR SECURITY
-        /// </summary>
-        [Obsolete("Remote control functionality has been disabled for security reasons")]
-        public Task<Dictionary<string, object>> GetRemoteCommandStatusAsync(
-            string commandId,
-            CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException("Remote control functionality has been permanently disabled for security reasons. This feature allowed unauthorized remote command execution.");
         }
 
         #endregion
