@@ -332,7 +332,7 @@ namespace ToNRoundCounter.UI
 
             // Initialize instance member update timer
             instanceMemberUpdateTimer = new System.Windows.Forms.Timer();
-            instanceMemberUpdateTimer.Interval = 2000; // Update every 2 seconds
+            instanceMemberUpdateTimer.Interval = Infrastructure.Constants.Network.DefaultRefreshIntervalMs; // Update every 2 seconds
             instanceMemberUpdateTimer.Tick += InstanceMemberUpdateTimer_Tick;
             instanceMemberUpdateTimer.Start();
 
@@ -344,7 +344,7 @@ namespace ToNRoundCounter.UI
             LogUi("Initializing main form visual components.", LogEventLevel.Debug);
             this.Text = LanguageManager.Translate("ToNRoundCouter");
             this.Size = new Size(600, 800);
-            this.MinimumSize = new Size(300, 400);
+            this.MinimumSize = new Size(Infrastructure.Constants.UI.MinimumWindowWidth, Infrastructure.Constants.UI.MinimumWindowHeight);
             this.BackColor = Theme.Current.Background;
             this.Resize += MainForm_Resize;
 
@@ -3823,72 +3823,79 @@ namespace ToNRoundCounter.UI
         /// </summary>
         private async void OverlayManager_ShortcutButtonClicked(object? sender, ShortcutButtonClickedEventArgs e)
         {
-            switch (e.Button)
+            try
             {
-                case ShortcutButton.AutoSuicideToggle:
-                    _settings.AutoSuicideEnabled = !_settings.AutoSuicideEnabled;
-                    _autoSuicideCoordinator.LoadRules();
-                    if (!_settings.AutoSuicideEnabled && !_autoSuicideCoordinator.IsAllRoundsModeEnabled)
-                    {
-                        _autoSuicideCoordinator.Cancel();
-                    }
-                    UpdateShortcutOverlayState();
-                    await _settings.SaveAsync();
-                    break;
-
-                case ShortcutButton.AutoSuicideCancel:
-                    bool hadScheduled = autoSuicideService.HasScheduled;
-                    if (hadScheduled)
-                    {
-                        _autoSuicideCoordinator.Cancel(manualOverride: true);
-                    }
-                    else
-                    {
+                switch (e.Button)
+                {
+                    case ShortcutButton.AutoSuicideToggle:
+                        _settings.AutoSuicideEnabled = !_settings.AutoSuicideEnabled;
+                        _autoSuicideCoordinator.LoadRules();
+                        if (!_settings.AutoSuicideEnabled && !_autoSuicideCoordinator.IsAllRoundsModeEnabled)
+                        {
+                            _autoSuicideCoordinator.Cancel();
+                        }
                         UpdateShortcutOverlayState();
-                    }
-                    break;
+                        await _settings.SaveAsync();
+                        break;
 
-                case ShortcutButton.AutoSuicideDelay:
-                    bool canDelay = autoSuicideService.HasScheduled;
-                    if (canDelay)
-                    {
-                        _autoSuicideCoordinator.Delay(manualOverride: true);
-                    }
-                    else
-                    {
+                    case ShortcutButton.AutoSuicideCancel:
+                        bool hadScheduled = autoSuicideService.HasScheduled;
+                        if (hadScheduled)
+                        {
+                            _autoSuicideCoordinator.Cancel(manualOverride: true);
+                        }
+                        else
+                        {
+                            UpdateShortcutOverlayState();
+                        }
+                        break;
+
+                    case ShortcutButton.AutoSuicideDelay:
+                        bool canDelay = autoSuicideService.HasScheduled;
+                        if (canDelay)
+                        {
+                            _autoSuicideCoordinator.Delay(manualOverride: true);
+                        }
+                        else
+                        {
+                            UpdateShortcutOverlayState();
+                        }
+                        break;
+
+                    case ShortcutButton.ManualSuicide:
+                        _ = Task.Run(_autoSuicideCoordinator.Execute);
+                        break;
+
+                    case ShortcutButton.AllRoundsModeToggle:
+                        _autoSuicideCoordinator.ToggleAllRoundsMode();
                         UpdateShortcutOverlayState();
-                    }
-                    break;
+                        break;
 
-                case ShortcutButton.ManualSuicide:
-                    _ = Task.Run(_autoSuicideCoordinator.Execute);
-                    break;
+                    case ShortcutButton.CoordinatedBrainToggle:
+                        _settings.CoordinatedAutoSuicideBrainEnabled = !_settings.CoordinatedAutoSuicideBrainEnabled;
+                        UpdateShortcutOverlayState();
+                        await _settings.SaveAsync();
+                        break;
 
-                case ShortcutButton.AllRoundsModeToggle:
-                    _autoSuicideCoordinator.ToggleAllRoundsMode();
-                    UpdateShortcutOverlayState();
-                    break;
+                    case ShortcutButton.AfkDetectionToggle:
+                        _settings.AfkSoundCancelEnabled = !_settings.AfkSoundCancelEnabled;
+                        UpdateShortcutOverlayState();
+                        await _settings.SaveAsync();
+                        break;
 
-                case ShortcutButton.CoordinatedBrainToggle:
-                    _settings.CoordinatedAutoSuicideBrainEnabled = !_settings.CoordinatedAutoSuicideBrainEnabled;
-                    UpdateShortcutOverlayState();
-                    await _settings.SaveAsync();
-                    break;
+                    case ShortcutButton.HideUntilRoundEnd:
+                        _overlayManager.SetTemporarilyHidden(!overlayTemporarilyHidden);
+                        overlayTemporarilyHidden = !overlayTemporarilyHidden;
+                        UpdateShortcutOverlayState();
+                        break;
+                }
 
-                case ShortcutButton.AfkDetectionToggle:
-                    _settings.AfkSoundCancelEnabled = !_settings.AfkSoundCancelEnabled;
-                    UpdateShortcutOverlayState();
-                    await _settings.SaveAsync();
-                    break;
-
-                case ShortcutButton.HideUntilRoundEnd:
-                    _overlayManager.SetTemporarilyHidden(!overlayTemporarilyHidden);
-                    overlayTemporarilyHidden = !overlayTemporarilyHidden;
-                    UpdateShortcutOverlayState();
-                    break;
+                WindowUtilities.TryFocusProcessWindowIfAltNotPressed("VRChat");
             }
-
-            WindowUtilities.TryFocusProcessWindowIfAltNotPressed("VRChat");
+            catch (Exception ex)
+            {
+                LogUi($"Unhandled error in shortcut button click: {ex.Message}", LogEventLevel.Error);
+            }
         }
     }
 }

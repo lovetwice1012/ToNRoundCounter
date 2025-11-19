@@ -257,8 +257,8 @@ namespace ToNRoundCounter.UI
             grpOsc.Controls.Add(oscPortLabel);
 
             oscPortNumericUpDown = new NumericUpDown();
-            oscPortNumericUpDown.Minimum = 1024;
-            oscPortNumericUpDown.Maximum = 65535;
+            oscPortNumericUpDown.Minimum = Constants.Network.MinimumPort;
+            oscPortNumericUpDown.Maximum = Constants.Network.MaximumPort;
             oscPortNumericUpDown.Value = _settings.OSCPort;
             oscPortNumericUpDown.Location = new Point(oscPortLabel.Right + 10, 20);
             grpOsc.Controls.Add(oscPortNumericUpDown);
@@ -1876,7 +1876,7 @@ namespace ToNRoundCounter.UI
             GroupBox grpApiKey = new GroupBox();
             grpApiKey.Text = LanguageManager.Translate("ToNRoundCounter-Cloudの設定");
             grpApiKey.Location = new Point(margin, currentY);
-            grpApiKey.Size = new Size(columnWidth, 300);
+            grpApiKey.Size = new Size(columnWidth, Constants.UI.StandardControlWidth);
             this.Controls.Add(grpApiKey);
 
             Label apiKeyDescription = new Label();
@@ -1893,7 +1893,26 @@ namespace ToNRoundCounter.UI
             openCloudButton.Location = new Point(innerMargin2, apiInnerY);
             openCloudButton.Click += (s, e) =>
             {
-                System.Diagnostics.Process.Start("https://toncloud.sprink.cloud");
+                try
+                {
+                    var url = "https://toncloud.sprink.cloud";
+                    if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+                    {
+                        MessageBox.Show("無効なURLです", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = url,
+                        UseShellExecute = true
+                    };
+                    System.Diagnostics.Process.Start(psi);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"ブラウザを開けませんでした: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             };
             grpApiKey.Controls.Add(openCloudButton);
             apiInnerY += openCloudButton.Height + 10;

@@ -175,7 +175,7 @@ namespace ToNRoundCounter.Application.Recording
             {
                 while (!token.IsCancellationRequested)
                 {
-                    uint waitResult = CoreAudioInterop.WaitForSingleObject(_eventHandle, 2000);
+                    uint waitResult = CoreAudioInterop.WaitForSingleObject(_eventHandle, ToNRoundCounter.Infrastructure.Constants.Audio.WasapiEventTimeoutMs);
                     if (waitResult == CoreAudioInterop.WAIT_OBJECT_0)
                     {
                         DrainPackets(handler, token);

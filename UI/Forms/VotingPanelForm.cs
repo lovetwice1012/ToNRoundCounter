@@ -47,7 +47,7 @@ namespace ToNRoundCounter.UI
             {
                 // Poll for active voting campaigns every 2 seconds
                 _refreshTimer = new System.Windows.Forms.Timer();
-                _refreshTimer.Interval = 2000;
+                _refreshTimer.Interval = Infrastructure.Constants.Network.DefaultRefreshIntervalMs;
                 _refreshTimer.Tick += RefreshTimer_Tick;
                 _refreshTimer.Start();
             }
@@ -113,7 +113,7 @@ namespace ToNRoundCounter.UI
             expiresAtPicker = new DateTimePicker
             {
                 Location = new Point(15, 115),
-                Size = new Size(300, 25),
+                Size = new Size(Infrastructure.Constants.UI.StandardControlWidth, 25),
                 Format = DateTimePickerFormat.Custom,
                 CustomFormat = "yyyy/MM/dd HH:mm:ss",
                 Value = DateTime.Now.AddMinutes(5)
@@ -215,21 +215,21 @@ namespace ToNRoundCounter.UI
         {
             if (_cloudClient == null || string.IsNullOrEmpty(_currentInstanceId))
             {
-                MessageBox.Show("Cloud接続またはインスタンスIDが無効です", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                DialogHelper.ShowError("Cloud接続またはインスタンスIDが無効です");
                 return;
             }
 
             var terrorName = terrorNameTextBox.Text?.Trim();
             if (string.IsNullOrWhiteSpace(terrorName))
             {
-                MessageBox.Show("Terror Nameを入力してください", "入力エラー", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                DialogHelper.ShowInputError("Terror Nameを入力してください");
                 return;
             }
 
             // Validate terror name length and content
             if (terrorName.Length < 2 || terrorName.Length > 100)
             {
-                MessageBox.Show("Terror Nameは2文字以上100文字以内で入力してください", "入力エラー", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                DialogHelper.ShowInputError("Terror Nameは2文字以上100文字以内で入力してください");
                 return;
             }
 
@@ -249,13 +249,13 @@ namespace ToNRoundCounter.UI
                 {
                     _activeCampaignId = result["campaign_id"].ToString();
                     _hasVoted = false;
-                    MessageBox.Show("投票キャンペーンを開始しました!", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    DialogHelper.ShowSuccess("投票キャンペーンを開始しました!");
                     await RefreshActiveCampaignAsync();
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"投票開始に失敗しました: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                DialogHelper.ShowException("投票開始", ex);
             }
             finally
             {
@@ -266,12 +266,26 @@ namespace ToNRoundCounter.UI
 
         private async void ProceedButton_Click(object? sender, EventArgs e)
         {
-            await SubmitVoteAsync("Proceed");
+            try
+            {
+                await SubmitVoteAsync("Proceed");
+            }
+            catch (Exception ex)
+            {
+                DialogHelper.ShowException("投票送信", ex);
+            }
         }
 
         private async void CancelButton_Click(object? sender, EventArgs e)
         {
-            await SubmitVoteAsync("Cancel");
+            try
+            {
+                await SubmitVoteAsync("Cancel");
+            }
+            catch (Exception ex)
+            {
+                DialogHelper.ShowException("投票送信", ex);
+            }
         }
 
         private async Task SubmitVoteAsync(string decision)
@@ -288,12 +302,12 @@ namespace ToNRoundCounter.UI
             {
                 await _cloudClient.SubmitVoteAsync(_activeCampaignId!, _playerId!, decision, CancellationToken.None);
                 _hasVoted = true;
-                MessageBox.Show($"投票しました: {decision}", "投票完了", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                DialogHelper.ShowInfo($"投票しました: {decision}", "投票完了");
                 await RefreshActiveCampaignAsync();
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"投票に失敗しました: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                DialogHelper.ShowException("投票", ex);
                 proceedButton.Enabled = !_hasVoted;
                 cancelButton.Enabled = !_hasVoted;
             }
@@ -301,7 +315,14 @@ namespace ToNRoundCounter.UI
 
         private async void RefreshTimer_Tick(object? sender, EventArgs e)
         {
-            await RefreshActiveCampaignAsync();
+            try
+            {
+                await RefreshActiveCampaignAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error refreshing campaign: {ex.Message}");
+            }
         }
 
         private async Task RefreshActiveCampaignAsync()

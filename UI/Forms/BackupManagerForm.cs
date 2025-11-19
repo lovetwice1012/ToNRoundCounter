@@ -277,7 +277,7 @@ namespace ToNRoundCounter.UI
         {
             if (_cloudClient == null)
             {
-                MessageBox.Show("Cloud接続が無効です", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                DialogHelper.ShowError("Cloud接続が無効です");
                 return;
             }
 
@@ -317,7 +317,7 @@ namespace ToNRoundCounter.UI
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"バックアップ一覧の取得に失敗しました: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                DialogHelper.ShowException("バックアップ一覧の取得", ex);
                 statusLabel.Text = "読み込み失敗";
             }
             finally
@@ -334,7 +334,7 @@ namespace ToNRoundCounter.UI
             var backupName = backupNameTextBox.Text?.Trim();
             if (string.IsNullOrWhiteSpace(backupName))
             {
-                MessageBox.Show("バックアップ名を入力してください", "入力エラー", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                DialogHelper.ShowInputError("バックアップ名を入力してください");
                 return;
             }
 
@@ -342,8 +342,7 @@ namespace ToNRoundCounter.UI
             var invalidChars = System.IO.Path.GetInvalidFileNameChars();
             if (backupName.Length > 200 || backupName.IndexOfAny(invalidChars) >= 0 || backupName.Contains(".."))
             {
-                MessageBox.Show("バックアップ名に無効な文字が含まれています。\nファイル名として使用できる文字のみを入力してください。",
-                    "入力エラー", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                DialogHelper.ShowInputError("バックアップ名に無効な文字が含まれています。\nファイル名として使用できる文字のみを入力してください。");
                 return;
             }
 
@@ -369,7 +368,7 @@ namespace ToNRoundCounter.UI
                     cancellationToken: CancellationToken.None
                 );
 
-                MessageBox.Show("バックアップを作成しました", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                DialogHelper.ShowSuccess("バックアップを作成しました");
                 statusLabel.Text = "バックアップ作成完了";
 
                 // Generate new default name for next backup
@@ -379,7 +378,7 @@ namespace ToNRoundCounter.UI
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"バックアップの作成に失敗しました: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                DialogHelper.ShowException("バックアップの作成", ex);
                 statusLabel.Text = "バックアップ作成失敗";
             }
             finally
@@ -399,18 +398,14 @@ namespace ToNRoundCounter.UI
             var backupId = selectedBackup.TryGetValue("backup_id", out var bid) ? bid?.ToString() : null;
             if (string.IsNullOrEmpty(backupId))
             {
-                MessageBox.Show("バックアップIDが無効です", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                DialogHelper.ShowError("バックアップIDが無効です");
                 return;
             }
 
-            var result = MessageBox.Show(
-                "選択したバックアップから復元します。現在のデータは上書きされます。\n続行しますか?",
-                "確認",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Warning
-            );
-
-            if (result != DialogResult.Yes) return;
+            if (!DialogHelper.ShowConfirmation("選択したバックアップから復元します。現在のデータは上書きされます。\n続行しますか?"))
+            {
+                return;
+            }
 
             progressBar.Visible = true;
             restoreButton.Enabled = false;
@@ -424,13 +419,13 @@ namespace ToNRoundCounter.UI
                     createBackupBeforeRestore: true,
                     cancellationToken: CancellationToken.None
                 );
-                
-                MessageBox.Show("バックアップから復元しました", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                DialogHelper.ShowSuccess("バックアップから復元しました");
                 statusLabel.Text = "復元完了";
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"復元に失敗しました: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                DialogHelper.ShowException("復元", ex);
                 statusLabel.Text = "復元失敗";
             }
             finally
@@ -452,18 +447,14 @@ namespace ToNRoundCounter.UI
 
             if (string.IsNullOrEmpty(backupId))
             {
-                MessageBox.Show("バックアップIDが無効です", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                DialogHelper.ShowError("バックアップIDが無効です");
                 return;
             }
 
-            var result = MessageBox.Show(
-                $"バックアップ「{backupName}」を削除します。この操作は元に戻せません。\n続行しますか?",
-                "確認",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Warning
-            );
-
-            if (result != DialogResult.Yes) return;
+            if (!DialogHelper.ShowConfirmation($"バックアップ「{backupName}」を削除します。この操作は元に戻せません。\n続行しますか?"))
+            {
+                return;
+            }
 
             progressBar.Visible = true;
             deleteButton.Enabled = false;
@@ -473,14 +464,14 @@ namespace ToNRoundCounter.UI
             {
                 await _cloudClient.DeleteBackupAsync(backupId!, CancellationToken.None);
 
-                MessageBox.Show("バックアップを削除しました", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                DialogHelper.ShowSuccess("バックアップを削除しました");
                 statusLabel.Text = "削除完了";
 
                 await LoadBackupsAsync();
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"バックアップの削除に失敗しました: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                DialogHelper.ShowException("バックアップの削除", ex);
                 statusLabel.Text = "削除失敗";
             }
             finally
@@ -507,12 +498,12 @@ namespace ToNRoundCounter.UI
                     var selectedBackup = backupsListView.SelectedItems[0].Tag as Dictionary<string, object>;
                     var json = JsonSerializer.Serialize(selectedBackup, new JsonSerializerOptions { WriteIndented = true });
                     System.IO.File.WriteAllText(saveDialog.FileName, json);
-                    
-                    MessageBox.Show("エクスポート完了", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                    DialogHelper.ShowSuccess("エクスポート完了");
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"エクスポートに失敗しました: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    DialogHelper.ShowException("エクスポート", ex);
                 }
             }
         }
@@ -530,10 +521,10 @@ namespace ToNRoundCounter.UI
             string[] sizes = { "B", "KB", "MB", "GB" };
             double len = bytes;
             int order = 0;
-            while (len >= 1024 && order < sizes.Length - 1)
+            while (len >= Infrastructure.Constants.Data.BytesPerKilobyte && order < sizes.Length - 1)
             {
                 order++;
-                len = len / 1024;
+                len = len / Infrastructure.Constants.Data.BytesPerKilobyte;
             }
             return $"{len:0.##} {sizes[order]}";
         }

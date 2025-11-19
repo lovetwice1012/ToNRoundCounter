@@ -634,11 +634,11 @@ namespace ToNRoundCounter.Infrastructure
         private List<string> Validate()
         {
             var errors = new List<string>();
-            if (OSCPort <= 0 || OSCPort > 65535)
+            if (OSCPort <= 0 || OSCPort > Constants.Network.MaximumPort)
             {
                 errors.Add("Invalid OSCPort value.");
             }
-            if (NetworkAnalyzerProxyPort < 1025 || NetworkAnalyzerProxyPort > 65535)
+            if (NetworkAnalyzerProxyPort < Constants.Network.MinimumProxyPort || NetworkAnalyzerProxyPort > Constants.Network.MaximumPort)
             {
                 errors.Add("Invalid NetworkAnalyzerProxyPort value.");
             }

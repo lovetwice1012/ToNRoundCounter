@@ -673,7 +673,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
 
         private static int NormalizePort(int port)
         {
-            if (port < 1025 || port > 65535)
+            if (port < ToNRoundCounter.Infrastructure.Constants.Network.MinimumProxyPort || port > ToNRoundCounter.Infrastructure.Constants.Network.MaximumPort)
             {
                 return 8890;
             }

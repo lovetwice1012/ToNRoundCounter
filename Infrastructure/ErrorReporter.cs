@@ -194,7 +194,7 @@ namespace ToNRoundCounter.Infrastructure
             string[] units = { "B", "KB", "MB", "GB", "TB", "PB" };
             for (int i = units.Length - 1; i > 0; i--)
             {
-                double value = bytes / Math.Pow(1024, i);
+                double value = bytes / Math.Pow(Constants.Data.BytesPerKilobyte, i);
                 if (value >= 0.9)
                 {
                     return $"{value:0.##}{units[i]}";

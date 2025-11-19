@@ -275,7 +275,7 @@ namespace ToNRoundCounter.UI
         {
             if (_cloudClient == null)
             {
-                MessageBox.Show("Cloud接続が無効です", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                DialogHelper.ShowError("Cloud接続が無効です");
                 return;
             }
 
@@ -362,7 +362,7 @@ namespace ToNRoundCounter.UI
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"プロフィール読込に失敗しました: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                DialogHelper.ShowException("プロフィール読込", ex);
             }
             finally
             {
@@ -393,7 +393,7 @@ namespace ToNRoundCounter.UI
                     cancellationToken: CancellationToken.None
                 );
 
-                MessageBox.Show("プロフィールを保存しました", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                DialogHelper.ShowSuccess("プロフィールを保存しました");
                 _isDirty = false;
                 saveButton.Enabled = false;
 
@@ -402,7 +402,7 @@ namespace ToNRoundCounter.UI
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"プロフィール保存に失敗しました: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                DialogHelper.ShowException("プロフィール保存", ex);
                 saveButton.Enabled = _isDirty;
             }
             finally

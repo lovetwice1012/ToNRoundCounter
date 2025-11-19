@@ -110,42 +110,49 @@ namespace ToNRoundCounter.UI
 
         private async void ScheduleAutoSuicideWithDesireCheck(TimeSpan delay, bool resetStartTime, bool fromAllRoundsMode = false)
         {
-            // Check if there are desire players
-            if (currentDesirePlayers.Count > 0)
+            try
             {
-                // Add 10 seconds delay and show confirmation dialog
-                var extendedDelay = delay.Add(TimeSpan.FromSeconds(10));
-
-                // Schedule with extended delay first
-                _autoSuicideCoordinator.Schedule(extendedDelay, resetStartTime, fromAllRoundsMode, false);
-
-                // Show confirmation dialog after brief delay
-                await Task.Delay(100);
-
-                _dispatcher.Invoke(async () =>
+                // Check if there are desire players
+                if (currentDesirePlayers.Count > 0)
                 {
-                    using (var confirmDialog = new AutoSuicideConfirmationOverlay(currentDesirePlayers.Count))
-                    {
-                        var result = confirmDialog.ShowDialog();
+                    // Add 10 seconds delay and show confirmation dialog
+                    var extendedDelay = delay.Add(TimeSpan.FromSeconds(10));
 
-                        if (result == System.Windows.Forms.DialogResult.OK && confirmDialog.UserConfirmed)
+                    // Schedule with extended delay first
+                    _autoSuicideCoordinator.Schedule(extendedDelay, resetStartTime, fromAllRoundsMode, false);
+
+                    // Show confirmation dialog after brief delay
+                    await Task.Delay(100);
+
+                    _dispatcher.Invoke(async () =>
+                    {
+                        using (var confirmDialog = new AutoSuicideConfirmationOverlay(currentDesirePlayers.Count))
                         {
-                            // User confirmed - proceed with auto suicide
-                            _logger?.LogEvent("AutoSuicide", $"User confirmed auto suicide despite {currentDesirePlayers.Count} desire players");
+                            var result = confirmDialog.ShowDialog();
+
+                            if (result == System.Windows.Forms.DialogResult.OK && confirmDialog.UserConfirmed)
+                            {
+                                // User confirmed - proceed with auto suicide
+                                _logger?.LogEvent("AutoSuicide", $"User confirmed auto suicide despite {currentDesirePlayers.Count} desire players");
+                            }
+                            else if (result == System.Windows.Forms.DialogResult.Cancel && confirmDialog.UserCancelled)
+                            {
+                                // User cancelled - cancel auto suicide
+                                _autoSuicideCoordinator.Cancel(true);
+                                _logger?.LogEvent("AutoSuicide", "User cancelled auto suicide due to desire players");
+                            }
                         }
-                        else if (result == System.Windows.Forms.DialogResult.Cancel && confirmDialog.UserCancelled)
-                        {
-                            // User cancelled - cancel auto suicide
-                            _autoSuicideCoordinator.Cancel(true);
-                            _logger?.LogEvent("AutoSuicide", "User cancelled auto suicide due to desire players");
-                        }
-                    }
-                });
+                    });
+                }
+                else
+                {
+                    // No desire players - proceed normally
+                    _autoSuicideCoordinator.Schedule(delay, resetStartTime, fromAllRoundsMode, false);
+                }
             }
-            else
+            catch (Exception ex)
             {
-                // No desire players - proceed normally
-                _autoSuicideCoordinator.Schedule(delay, resetStartTime, fromAllRoundsMode, false);
+                _logger?.LogEvent("AutoSuicide", $"Unhandled error in desire check: {ex.Message}", LogEventLevel.Error);
             }
         }
 
@@ -221,7 +228,7 @@ namespace ToNRoundCounter.UI
                 using (var process = Process.GetCurrentProcess())
                 {
                     var uptime = (int)(DateTime.Now - process.StartTime).TotalSeconds;
-                    var memoryMB = process.WorkingSet64 / (1024.0 * 1024.0);
+                    var memoryMB = process.WorkingSet64 / Infrastructure.Constants.Data.BytesPerMegabyte;
                     var cpuPercent = 0.0; // CPU calculation is complex, simplified here
 
                     var oscStatus = "CONNECTED"; // Simplified - assume connected if OSC events are coming

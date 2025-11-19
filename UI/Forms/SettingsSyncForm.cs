@@ -97,7 +97,7 @@ namespace ToNRoundCounter.UI
             {
                 Text = "ローカルバージョン: 0",
                 Location = new Point(15, 30),
-                Size = new Size(300, 25),
+                Size = new Size(Infrastructure.Constants.UI.StandardControlWidth, 25),
                 Font = new Font("Yu Gothic UI", 9)
             };
 
@@ -105,7 +105,7 @@ namespace ToNRoundCounter.UI
             {
                 Text = "リモートバージョン: 0",
                 Location = new Point(15, 60),
-                Size = new Size(300, 25),
+                Size = new Size(Infrastructure.Constants.UI.StandardControlWidth, 25),
                 Font = new Font("Yu Gothic UI", 9)
             };
 
@@ -294,7 +294,7 @@ namespace ToNRoundCounter.UI
         {
             if (_cloudClient == null)
             {
-                MessageBox.Show("Cloud接続が無効です", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                DialogHelper.ShowError("Cloud接続が無効です");
                 return;
             }
 
@@ -321,7 +321,7 @@ namespace ToNRoundCounter.UI
             catch (Exception ex)
             {
                 remoteSettingsTextBox.Text = $"取得失敗: {ex.Message}";
-                MessageBox.Show($"リモート設定の取得に失敗しました: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                DialogHelper.ShowException("リモート設定の取得", ex);
             }
             finally
             {

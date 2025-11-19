@@ -190,8 +190,8 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
 
             _portInput = new NumericUpDown
             {
-                Minimum = 1025,
-                Maximum = 65535,
+                Minimum = ToNRoundCounter.Infrastructure.Constants.Network.MinimumProxyPort,
+                Maximum = ToNRoundCounter.Infrastructure.Constants.Network.MaximumPort,
                 Increment = 1,
                 Value = NormalizePort(context.Settings.NetworkAnalyzerProxyPort),
                 Anchor = AnchorStyles.Left,
@@ -732,7 +732,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
 
         private static int NormalizePort(int port)
         {
-            if (port < 1025 || port > 65535)
+            if (port < ToNRoundCounter.Infrastructure.Constants.Network.MinimumProxyPort || port > ToNRoundCounter.Infrastructure.Constants.Network.MaximumPort)
             {
                 return 8890;
             }

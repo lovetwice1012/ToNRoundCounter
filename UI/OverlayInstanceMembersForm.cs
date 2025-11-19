@@ -156,7 +156,7 @@ namespace ToNRoundCounter.UI
                 Margin = new Padding(0, 1, 0, 1),
                 Font = new Font(Font.FontFamily, 12f, FontStyle.Regular),
                 Height = 20,
-                Width = 300,
+                Width = Infrastructure.Constants.UI.StandardControlWidth,
             };
 
             richLabel.SelectionStart = 0;

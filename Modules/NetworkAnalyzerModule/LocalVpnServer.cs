@@ -137,7 +137,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
 
         private static async Task RelayAsync(Stream input, Stream output, CancellationToken token)
         {
-            var buffer = new byte[16 * 1024];
+            var buffer = new byte[ToNRoundCounter.Infrastructure.Constants.Network.VpnBufferSize];
             while (!token.IsCancellationRequested)
             {
                 int read;

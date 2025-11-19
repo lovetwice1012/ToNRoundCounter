@@ -46,7 +46,7 @@ namespace ToNRoundCounter.UI
                             {
                                 _logger?.LogEvent("OSCRepeater", "Existing OSCRepeater instance detected. Terminating before restart.");
                                 existingProcess.Kill();
-                                existingProcess.WaitForExit(5000);
+                                existingProcess.WaitForExit(Infrastructure.Constants.Network.ProcessWaitTimeoutMs);
                             }
                         }
                         catch (Exception ex)

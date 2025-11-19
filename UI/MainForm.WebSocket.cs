@@ -80,7 +80,7 @@ namespace ToNRoundCounter.UI
                     instanceWsConnection.Dispose();
                     instanceWsConnection = null;
                     LogUi("Instance WebSocket connection disposed. Scheduling reconnect.", LogEventLevel.Warning);
-                    await Task.Delay(300);
+                    await Task.Delay(Infrastructure.Constants.Network.WebSocketReconnectDelayMs);
                     _ = Task.Run(() => ConnectToInstance(instanceValue));
                 }
             }

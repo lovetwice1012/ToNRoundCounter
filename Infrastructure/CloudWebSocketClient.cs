@@ -189,8 +189,8 @@ namespace ToNRoundCounter.Infrastructure
 
                         if (!token.IsCancellationRequested)
                         {
-                            _logger.LogEvent("CloudWebSocket", "Scheduling reconnect in 300ms.");
-                            await Task.Delay(300, token).ConfigureAwait(false);
+                            _logger.LogEvent("CloudWebSocket", $"Scheduling reconnect in {Constants.Network.WebSocketReconnectDelayMs}ms.");
+                            await Task.Delay(Constants.Network.WebSocketReconnectDelayMs, token).ConfigureAwait(false);
                         }
                     }
                     finally

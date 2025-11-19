@@ -71,7 +71,7 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
 
             using (var busyTimeoutCommand = connection.CreateCommand())
             {
-                busyTimeoutCommand.CommandText = "PRAGMA busy_timeout=5000;";
+                busyTimeoutCommand.CommandText = $"PRAGMA busy_timeout={Constants.Database.SqliteBusyTimeoutMs};";
                 busyTimeoutCommand.ExecuteNonQuery();
             }
         }
