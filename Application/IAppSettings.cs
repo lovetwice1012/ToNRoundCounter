@@ -33,7 +33,7 @@ namespace ToNRoundCounter.Application
         bool OverlayShowRoundStats { get; set; }
         bool OverlayShowTerrorInfo { get; set; }
         bool OverlayShowShortcuts { get; set; }
-        bool OverlayShowAngle { get; set; }
+        // Angle overlay feature removed - cannot be implemented due to specification limitations
         bool OverlayShowClock { get; set; }
         bool OverlayShowInstanceTimer { get; set; }
         bool OverlayShowUnboundTerrorDetails { get; set; }

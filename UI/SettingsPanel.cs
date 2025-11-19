@@ -36,7 +36,7 @@ namespace ToNRoundCounter.UI
         public CheckBox OverlayVelocityCheckBox { get; private set; } = null!;
         public CheckBox OverlayTerrorCheckBox { get; private set; } = null!;
         public CheckBox OverlayDamageCheckBox { get; private set; } = null!;
-        public CheckBox OverlayAngleCheckBox { get; private set; } = null!;
+        // Angle overlay feature removed - cannot be implemented due to specification limitations
         public CheckBox OverlayNextRoundCheckBox { get; private set; } = null!;
         public CheckBox OverlayRoundStatusCheckBox { get; private set; } = null!;
         public CheckBox OverlayRoundHistoryCheckBox { get; private set; } = null!;
@@ -826,13 +826,7 @@ namespace ToNRoundCounter.UI
 
             overlayInnerY = OverlayVelocityCheckBox.Bottom + 8;
 
-            OverlayAngleCheckBox = new CheckBox();
-            OverlayAngleCheckBox.Text = LanguageManager.Translate("角度を表示");
-            OverlayAngleCheckBox.AutoSize = true;
-            OverlayAngleCheckBox.Location = new Point(overlayInnerMargin, overlayInnerY);
-            grpOverlay.Controls.Add(OverlayAngleCheckBox);
-
-            overlayInnerY = OverlayAngleCheckBox.Bottom + 8;
+            // Angle overlay feature removed - cannot be implemented due to specification limitations
 
             OverlayTerrorCheckBox = new CheckBox();
             OverlayTerrorCheckBox.Text = LanguageManager.Translate("テラーを表示");

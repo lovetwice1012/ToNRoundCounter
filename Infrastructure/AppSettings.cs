@@ -53,7 +53,7 @@ namespace ToNRoundCounter.Infrastructure
         public bool OverlayShowRoundStats { get; set; } = true;
         public bool OverlayShowTerrorInfo { get; set; } = true;
         public bool OverlayShowShortcuts { get; set; } = true;
-        public bool OverlayShowAngle { get; set; } = true;
+        // Angle overlay feature removed - cannot be implemented due to specification limitations
         public bool OverlayShowClock { get; set; } = true;
         public bool OverlayShowInstanceTimer { get; set; } = true;
         public bool OverlayShowUnboundTerrorDetails { get; set; } = true;
@@ -681,7 +681,7 @@ namespace ToNRoundCounter.Infrastructure
                 OverlayShowRoundStats = OverlayShowRoundStats,
                 OverlayShowTerrorInfo = OverlayShowTerrorInfo,
                 OverlayShowShortcuts = OverlayShowShortcuts,
-                OverlayShowAngle = OverlayShowAngle,
+                // Angle overlay removed
                 OverlayShowClock = OverlayShowClock,
                 OverlayShowInstanceTimer = OverlayShowInstanceTimer,
                 OverlayOpacity = OverlayOpacity,
@@ -787,7 +787,7 @@ namespace ToNRoundCounter.Infrastructure
         public bool OverlayShowRoundStats { get; set; }
         public bool OverlayShowTerrorInfo { get; set; }
         public bool OverlayShowShortcuts { get; set; }
-        public bool OverlayShowAngle { get; set; }
+        // Angle overlay removed
         public bool OverlayShowClock { get; set; }
         public bool OverlayShowInstanceTimer { get; set; }
         public double OverlayOpacity { get; set; }

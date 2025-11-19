@@ -94,6 +94,9 @@ namespace ToNRoundCounter.Infrastructure
         private const int ReceiveBufferSize = 8192;
         private const int MaxMessagePreviewLength = 200;
         private const string DEFAULT_SESSION_ID = "net-client";
+        private const int MaxReconnectDelayMs = 30000; // 30 seconds
+        private const int InitialReconnectDelayMs = 1000; // 1 second
+        private const double BackoffMultiplier = 1.5;
 
         private Uri _uri;
         private ClientWebSocket? _socket;
@@ -104,6 +107,7 @@ namespace ToNRoundCounter.Infrastructure
         private readonly Channel<string> _messageChannel;
         private Task? _processingTask;
         private int _connectionAttempts;
+        private int _consecutiveFailures;
         private long _receivedMessages;
         private Dictionary<string, TaskCompletionSource<CloudMessage>> _pendingRequests =
             new Dictionary<string, TaskCompletionSource<CloudMessage>>();
@@ -149,6 +153,7 @@ namespace ToNRoundCounter.Infrastructure
         {
             _logger.LogEvent("CloudWebSocket", () => $"Starting client for {_uri}.");
             _connectionAttempts = 0;
+            _consecutiveFailures = 0;
             _receivedMessages = 0;
             _cts?.Dispose();
 
@@ -176,6 +181,7 @@ namespace ToNRoundCounter.Infrastructure
                         // Authenticate
                         await AuthenticateAsync(token).ConfigureAwait(false);
 
+                        _consecutiveFailures = 0; // Reset on successful connection
                         Connected?.Invoke(this, EventArgs.Empty);
                         await ReceiveLoopAsync(token).ConfigureAwait(false);
 
@@ -184,13 +190,15 @@ namespace ToNRoundCounter.Infrastructure
                     }
                     catch (Exception ex)
                     {
+                        _consecutiveFailures++;
                         _logger.LogEvent("CloudWebSocket", () => ex.Message, Serilog.Events.LogEventLevel.Error);
                         ErrorOccurred?.Invoke(this, ex);
 
                         if (!token.IsCancellationRequested)
                         {
-                            _logger.LogEvent("CloudWebSocket", $"Scheduling reconnect in {Constants.Network.WebSocketReconnectDelayMs}ms.");
-                            await Task.Delay(Constants.Network.WebSocketReconnectDelayMs, token).ConfigureAwait(false);
+                            var delayMs = CalculateBackoffDelay(_consecutiveFailures);
+                            _logger.LogEvent("CloudWebSocket", $"Scheduling reconnect in {delayMs}ms (failure #{_consecutiveFailures}).");
+                            await Task.Delay(delayMs, token).ConfigureAwait(false);
                         }
                     }
                     finally
@@ -209,6 +217,14 @@ namespace ToNRoundCounter.Infrastructure
                 }
                 cts.Dispose();
             }
+        }
+
+        private int CalculateBackoffDelay(int failureCount)
+        {
+            // Exponential backoff: initialDelay * (multiplier ^ (failureCount - 1))
+            // Capped at MaxReconnectDelayMs
+            var delay = InitialReconnectDelayMs * Math.Pow(BackoffMultiplier, failureCount - 1);
+            return (int)Math.Min(delay, MaxReconnectDelayMs);
         }
 
         private async Task AuthenticateAsync(CancellationToken token)

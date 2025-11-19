@@ -642,7 +642,7 @@ namespace ToNRoundCounter.UI
                     _settings.Filter_Death = settingsForm.SettingsPanel.DeathCountCheckBox.Checked;
                     _settings.Filter_SurvivalRate = settingsForm.SettingsPanel.SurvivalRateCheckBox.Checked;
                     _settings.OverlayShowVelocity = settingsForm.SettingsPanel.OverlayVelocityCheckBox.Checked;
-                    _settings.OverlayShowAngle = false;
+                    // Angle overlay feature removed
                     _settings.OverlayShowTerror = settingsForm.SettingsPanel.OverlayTerrorCheckBox.Checked;
                     _settings.OverlayShowUnboundTerrorDetails = settingsForm.SettingsPanel.OverlayUnboundTerrorDetailsCheckBox.Checked;
                     _settings.OverlayShowDamage = settingsForm.SettingsPanel.OverlayDamageCheckBox.Checked;
@@ -839,8 +839,7 @@ namespace ToNRoundCounter.UI
             settingsForm.SettingsPanel.DeathCountCheckBox.Checked = _settings.Filter_Death;
             settingsForm.SettingsPanel.SurvivalRateCheckBox.Checked = _settings.Filter_SurvivalRate;
             settingsForm.SettingsPanel.OverlayVelocityCheckBox.Checked = _settings.OverlayShowVelocity;
-            settingsForm.SettingsPanel.OverlayAngleCheckBox.Checked = false;
-            settingsForm.SettingsPanel.OverlayAngleCheckBox.Enabled = false;
+            // Angle overlay feature removed - cannot be implemented due to specification limitations
             settingsForm.SettingsPanel.OverlayTerrorCheckBox.Checked = _settings.OverlayShowTerror;
             settingsForm.SettingsPanel.OverlayUnboundTerrorDetailsCheckBox.Checked = _settings.OverlayShowUnboundTerrorDetails;
             settingsForm.SettingsPanel.OverlayDamageCheckBox.Checked = _settings.OverlayShowDamage;
@@ -3160,15 +3159,7 @@ namespace ToNRoundCounter.UI
             return CombineBaseAndSuffix(overlayBase, currentTerrorCountdownSuffix);
         }
 
-        private string GetOverlayAngleDisplayText()
-        {
-            if (!hasFacingAngleMeasurement)
-            {
-                return "―";
-            }
-
-            return $"{lastKnownFacingAngle:0.#}°";
-        }
+        // Angle overlay feature removed - cannot be implemented due to specification limitations
 
         private void RefreshTerrorInfoOverlay()
         {

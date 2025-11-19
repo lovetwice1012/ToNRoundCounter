@@ -17,6 +17,9 @@ namespace ToNRoundCounter.Infrastructure
     {
         private const int ReceiveBufferSize = 8192;
         private const int MaxMessagePreviewLength = 200;
+        private const int MaxReconnectDelayMs = 30000; // 30 seconds
+        private const int InitialReconnectDelayMs = 1000; // 1 second
+        private const double BackoffMultiplier = 1.5;
 
         private readonly Uri _uri;
         private ClientWebSocket? _socket;
@@ -27,6 +30,7 @@ namespace ToNRoundCounter.Infrastructure
         private readonly Channel<string> _channel;
         private Task? _processingTask;
         private int _connectionAttempts;
+        private int _consecutiveFailures;
         private long _receivedMessages;
 
         public WebSocketClient(string url, IEventBus bus, ICancellationProvider cancellation, IEventLogger logger)
@@ -46,6 +50,7 @@ namespace ToNRoundCounter.Infrastructure
         {
             _logger.LogEvent("WebSocket", () => $"Starting client for {_uri}.");
             _connectionAttempts = 0;
+            _consecutiveFailures = 0;
             _receivedMessages = 0;
             _cts?.Dispose();
             var cts = CancellationTokenSource.CreateLinkedTokenSource(_cancellation.Token);
@@ -65,6 +70,7 @@ namespace ToNRoundCounter.Infrastructure
                         _bus.Publish(new WebSocketConnecting(_uri));
                         await _socket.ConnectAsync(_uri, token).ConfigureAwait(false);
                         _logger.LogEvent("WebSocket", "Connection established.");
+                        _consecutiveFailures = 0; // Reset on successful connection
                         _bus.Publish(new WebSocketConnected(_uri));
                         await ReceiveLoopAsync(token).ConfigureAwait(false);
                         _logger.LogEvent("WebSocket", "Receive loop completed.");
@@ -72,13 +78,15 @@ namespace ToNRoundCounter.Infrastructure
                     }
                     catch (Exception ex)
                     {
+                        _consecutiveFailures++;
                         _logger.LogEvent("WebSocket", () => ex.Message, Serilog.Events.LogEventLevel.Error);
                         _bus.Publish(new WebSocketDisconnected(_uri, ex));
                         if (!token.IsCancellationRequested)
                         {
+                            var delayMs = CalculateBackoffDelay(_consecutiveFailures);
                             _bus.Publish(new WebSocketReconnecting(_uri, ex));
-                            _logger.LogEvent("WebSocket", $"Scheduling reconnect in {Constants.Network.WebSocketReconnectDelayMs}ms.");
-                            await Task.Delay(Constants.Network.WebSocketReconnectDelayMs, token).ConfigureAwait(false);
+                            _logger.LogEvent("WebSocket", $"Scheduling reconnect in {delayMs}ms (failure #{_consecutiveFailures}).");
+                            await Task.Delay(delayMs, token).ConfigureAwait(false);
                         }
                     }
                     finally
@@ -97,6 +105,14 @@ namespace ToNRoundCounter.Infrastructure
                 }
                 cts.Dispose();
             }
+        }
+
+        private int CalculateBackoffDelay(int failureCount)
+        {
+            // Exponential backoff: initialDelay * (multiplier ^ (failureCount - 1))
+            // Capped at MaxReconnectDelayMs
+            var delay = InitialReconnectDelayMs * Math.Pow(BackoffMultiplier, failureCount - 1);
+            return (int)Math.Min(delay, MaxReconnectDelayMs);
         }
 
         private async Task ReceiveLoopAsync(CancellationToken token)
