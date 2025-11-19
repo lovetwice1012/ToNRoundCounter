@@ -124,6 +124,10 @@ namespace ToNRoundCounter
             var eventBus = new EventBus(eventLogger);
             var moduleHost = new ModuleHost(eventLogger, eventBus, safeModeManager);
 
+            // Initialize async error handler for unhandled async void exceptions
+            Infrastructure.AsyncErrorHandler.Initialize(eventLogger);
+            eventLogger.LogEvent("Bootstrap", "Async error handler initialized.");
+
             services.AddSingleton<ICancellationProvider, CancellationProvider>();
             services.AddSingleton<IEventLogger>(eventLogger);
             services.AddSingleton<IEventLogRepository>(eventLogRepository);

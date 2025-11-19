@@ -109,8 +109,9 @@ namespace ToNRoundCounter.Infrastructure
         private int _connectionAttempts;
         private int _consecutiveFailures;
         private long _receivedMessages;
-        private Dictionary<string, TaskCompletionSource<CloudMessage>> _pendingRequests =
+        private readonly Dictionary<string, TaskCompletionSource<CloudMessage>> _pendingRequests =
             new Dictionary<string, TaskCompletionSource<CloudMessage>>();
+        private readonly object _pendingRequestsLock = new object();
         private string _sessionId = DEFAULT_SESSION_ID;
         private string? _userId;
 
@@ -392,7 +393,10 @@ namespace ToNRoundCounter.Infrastructure
             }
 
             var tcs = new TaskCompletionSource<CloudMessage>();
-            _pendingRequests[request.Id] = tcs;
+            lock (_pendingRequestsLock)
+            {
+                _pendingRequests[request.Id] = tcs;
+            }
 
             try
             {
@@ -420,7 +424,10 @@ namespace ToNRoundCounter.Infrastructure
             }
             finally
             {
-                _pendingRequests.Remove(request.Id);
+                lock (_pendingRequestsLock)
+                {
+                    _pendingRequests.Remove(request.Id);
+                }
             }
         }
 
@@ -2179,9 +2186,17 @@ namespace ToNRoundCounter.Infrastructure
                             _logger.LogEvent("CloudWebSocket", $"Error message: {msg.Error?.Message}", Serilog.Events.LogEventLevel.Warning);
                             
                             // If this is a response to a request, fail the pending task
-                            if (!string.IsNullOrEmpty(msg.Id) && _pendingRequests.TryGetValue(msg.Id, out var errorTcs))
+                            TaskCompletionSource<CloudMessage>? errorTcs = null;
+                            lock (_pendingRequestsLock)
                             {
-                                _pendingRequests.Remove(msg.Id);
+                                if (!string.IsNullOrEmpty(msg.Id) && _pendingRequests.TryGetValue(msg.Id, out errorTcs))
+                                {
+                                    _pendingRequests.Remove(msg.Id);
+                                }
+                            }
+
+                            if (errorTcs != null)
+                            {
                                 errorTcs.SetResult(msg);
                             }
                         }
@@ -2198,9 +2213,17 @@ namespace ToNRoundCounter.Infrastructure
                             msg.Type = "response";
                             msg.Status = "success";
                             
-                            if (_pendingRequests.TryGetValue(msg.Id, out var tcs))
+                            TaskCompletionSource<CloudMessage>? tcs = null;
+                            lock (_pendingRequestsLock)
                             {
-                                _pendingRequests.Remove(msg.Id);
+                                if (_pendingRequests.TryGetValue(msg.Id, out tcs))
+                                {
+                                    _pendingRequests.Remove(msg.Id);
+                                }
+                            }
+
+                            if (tcs != null)
+                            {
                                 tcs.SetResult(msg);
                             }
                         }
