@@ -4,12 +4,13 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Updater
 {
     internal static class Program
     {
-        static int Main(string[] args)
+        static async Task<int> Main(string[] args)
         {
             if (args.Length < 2)
             {
@@ -21,10 +22,10 @@ namespace Updater
             string targetExe = args[1];
             string targetDir = Path.GetDirectoryName(targetExe) ?? ".";
 
-            // wait for the target file to be unlocked
+            // wait for the target file to be unlocked (async with cancellation support)
             for (int i = 0; i < 30 && IsFileLocked(targetExe); i++)
             {
-                Thread.Sleep(1000);
+                await Task.Delay(1000);
             }
 
             var backupDirectory = Path.Combine(targetDir, $".update-backup-{DateTime.UtcNow:yyyyMMddHHmmssfff}");
@@ -36,27 +37,51 @@ namespace Updater
                 {
                     foreach (var entry in archive.Entries)
                     {
-                        var destinationPath = Path.Combine(targetDir, entry.FullName);
+                        // Security: Validate archive entry path to prevent directory traversal attacks
+                        if (string.IsNullOrWhiteSpace(entry.FullName))
+                        {
+                            continue; // Skip invalid entries
+                        }
+
+                        // Normalize the entry path and prevent directory traversal
+                        var entryPath = entry.FullName.Replace('\\', '/').TrimStart('/');
+                        if (entryPath.Contains("..") || Path.IsPathRooted(entryPath))
+                        {
+                            Console.WriteLine($"Skipping potentially malicious entry: {entry.FullName}");
+                            continue;
+                        }
+
+                        var destinationPath = Path.Combine(targetDir, entryPath);
+                        var fullDestinationPath = Path.GetFullPath(destinationPath);
+                        var fullTargetDir = Path.GetFullPath(targetDir);
+
+                        // Ensure the destination is within the target directory
+                        if (!fullDestinationPath.StartsWith(fullTargetDir, StringComparison.OrdinalIgnoreCase))
+                        {
+                            Console.WriteLine($"Blocked directory traversal attempt: {entry.FullName}");
+                            continue;
+                        }
+
                         if (string.IsNullOrEmpty(entry.Name))
                         {
-                            Directory.CreateDirectory(destinationPath);
+                            Directory.CreateDirectory(fullDestinationPath);
                         }
                         else
                         {
-                            var destinationDirectory = Path.GetDirectoryName(destinationPath);
+                            var destinationDirectory = Path.GetDirectoryName(fullDestinationPath);
                             if (!string.IsNullOrEmpty(destinationDirectory))
                             {
                                 Directory.CreateDirectory(destinationDirectory);
                             }
 
-                            if (IsAudioEntry(entry) && File.Exists(destinationPath) && HasFileChanged(entry, destinationPath))
+                            if (IsAudioEntry(entry) && File.Exists(fullDestinationPath) && HasFileChanged(entry, fullDestinationPath))
                             {
                                 Console.WriteLine($"Skipping modified audio file: {entry.FullName}");
                                 continue;
                             }
 
-                            BackupExistingFile(destinationPath, entry.FullName, backupDirectory, backedUpEntries);
-                            entry.ExtractToFile(destinationPath, true);
+                            BackupExistingFile(fullDestinationPath, entryPath, backupDirectory, backedUpEntries);
+                            entry.ExtractToFile(fullDestinationPath, true);
                         }
                     }
                 }
@@ -75,8 +100,23 @@ namespace Updater
                 return 1;
             }
 
-            Process.Start(new ProcessStartInfo(targetExe) { UseShellExecute = true });
-            return 0;
+            // Security: Validate executable path before starting
+            if (!IsExecutablePathSafe(targetExe))
+            {
+                Console.WriteLine("Target executable path is not safe.");
+                return 1;
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo(targetExe) { UseShellExecute = true });
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to start target executable: {ex.Message}");
+                return 1;
+            }
         }
 
         private static void BackupExistingFile(string destinationPath, string relativeEntryPath, string backupDirectory, HashSet<string> backedUpEntries)
@@ -166,6 +206,39 @@ namespace Updater
         {
             var normalizedPath = entry.FullName.Replace('\\', '/');
             return normalizedPath.StartsWith("audio/", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsExecutablePathSafe(string path)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(path))
+                {
+                    return false;
+                }
+
+                // Get full path to resolve any relative paths or symlinks
+                var fullPath = Path.GetFullPath(path);
+
+                // Check if file exists
+                if (!File.Exists(fullPath))
+                {
+                    return false;
+                }
+
+                // Ensure it's an executable file
+                var extension = Path.GetExtension(fullPath).ToLowerInvariant();
+                if (extension != ".exe" && extension != ".com")
+                {
+                    return false;
+                }
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool HasFileChanged(ZipArchiveEntry entry, string destinationPath)

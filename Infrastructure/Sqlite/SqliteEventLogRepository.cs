@@ -195,7 +195,8 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
 
         public void Dispose()
         {
-            DisposeAsync().AsTask().GetAwaiter().GetResult();
+            // Note: Prefer DisposeAsync() when possible. Synchronous disposal blocks on async cleanup.
+            DisposeAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
         }
 
         public async ValueTask DisposeAsync()

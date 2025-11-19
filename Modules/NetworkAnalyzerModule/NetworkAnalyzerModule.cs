@@ -697,7 +697,8 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
 
             try
             {
-                if (File.Exists(path) || Directory.Exists(path))
+                if ((File.Exists(path) || Directory.Exists(path)) &&
+                    ToNRoundCounter.Infrastructure.Security.ProcessStartValidator.IsFileSystemPathSafe(path, out _))
                 {
                     Process.Start(new ProcessStartInfo
                     {
@@ -708,7 +709,9 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                 else
                 {
                     var directory = Path.GetDirectoryName(path);
-                    if (!string.IsNullOrEmpty(directory) && Directory.Exists(directory))
+                    if (!string.IsNullOrEmpty(directory) &&
+                        Directory.Exists(directory) &&
+                        ToNRoundCounter.Infrastructure.Security.ProcessStartValidator.IsFileSystemPathSafe(directory, out _))
                     {
                         Process.Start(new ProcessStartInfo
                         {

@@ -1141,49 +1141,48 @@ namespace ToNRoundCounter.UI
             try
             {
                 LogUi("Checking for application updates.", LogEventLevel.Debug);
-                using (var client = new HttpClient())
+                var client = HttpClientHelper.Client;
+                var json = await client.GetStringAsync("https://raw.githubusercontent.com/lovetwice1012/ToNRoundCounter/refs/heads/master/version.json");
+                var data = JObject.Parse(json);
+                var latest = data["latest"]?.ToString();
+                var url = data["url"]?.ToString();
+                if (!string.IsNullOrEmpty(latest) && !string.IsNullOrEmpty(url) && IsOlderVersion(version, latest))
                 {
-                    var json = await client.GetStringAsync("https://raw.githubusercontent.com/lovetwice1012/ToNRoundCounter/refs/heads/master/version.json");
-                    var data = JObject.Parse(json);
-                    var latest = data["latest"]?.ToString();
-                    var url = data["url"]?.ToString();
-                    if (!string.IsNullOrEmpty(latest) && !string.IsNullOrEmpty(url) && IsOlderVersion(version, latest))
+                    LogUi($"Update available. Current: {version}, Latest: {latest}.");
+                    var result = MessageBox.Show($"新しいバージョン {latest} が利用可能です。\n更新をダウンロードして適用しますか？", "アップデート", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                    if (result == DialogResult.Yes)
                     {
-                        LogUi($"Update available. Current: {version}, Latest: {latest}.");
-                        var result = MessageBox.Show($"新しいバージョン {latest} が利用可能です。\n更新をダウンロードして適用しますか？", "アップデート", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
-                        if (result == DialogResult.Yes)
-                        {
-                            LogUi("User accepted update download.");
-                            var zipPath = Path.Combine(Path.GetTempPath(), "ToNRoundCounter_update.zip");
-                            var bytes = await client.GetByteArrayAsync(url);
-                            File.WriteAllBytes(zipPath, bytes);
+                        LogUi("User accepted update download.");
+                        var zipPath = Path.Combine(Path.GetTempPath(), "ToNRoundCounter_update.zip");
+                        var bytes = await client.GetByteArrayAsync(url);
+                        File.WriteAllBytes(zipPath, bytes);
 
-                            var updaterExe = Path.Combine(Directory.GetCurrentDirectory(), "Updater.exe");
-                            if (File.Exists(updaterExe))
+                        var updaterExe = Path.Combine(Directory.GetCurrentDirectory(), "Updater.exe");
+                        if (File.Exists(updaterExe) && Infrastructure.Security.ProcessStartValidator.IsExecutablePathSafe(updaterExe, out var updaterError))
+                        {
+                            LogUi($"Launching updater from '{updaterExe}' with package '{zipPath}'.");
+                            Process.Start(new ProcessStartInfo(updaterExe)
                             {
-                                LogUi($"Launching updater from '{updaterExe}' with package '{zipPath}'.");
-                                Process.Start(new ProcessStartInfo(updaterExe)
-                                {
-                                    Arguments = $"\"{zipPath}\" \"{WinFormsApp.ExecutablePath}\"",
-                                    UseShellExecute = false
-                                });
-                                WinFormsApp.Exit();
-                            }
-                            else
-                            {
-                                LogUi("Updater executable not found during update attempt.", LogEventLevel.Error);
-                                MessageBox.Show("Updater.exe が見つかりません。", "アップデート", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                            }
+                                Arguments = $"\"{zipPath}\" \"{WinFormsApp.ExecutablePath}\"",
+                                UseShellExecute = false
+                            });
+                            WinFormsApp.Exit();
                         }
                         else
                         {
-                            LogUi("User declined update installation.", LogEventLevel.Debug);
+                            var errorMsg = updaterError ?? "Updater executable not found.";
+                            LogUi($"Cannot launch updater: {errorMsg}", LogEventLevel.Error);
+                            MessageBox.Show($"アップデーターを起動できません: {errorMsg}", "アップデート", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         }
                     }
                     else
                     {
-                        LogUi("Application is up to date.", LogEventLevel.Debug);
+                        LogUi("User declined update installation.", LogEventLevel.Debug);
                     }
+                }
+                else
+                {
+                    LogUi("Application is up to date.", LogEventLevel.Debug);
                 }
             }
             catch (Exception ex)
@@ -2269,26 +2268,24 @@ namespace ToNRoundCounter.UI
             }
             if (savecode != String.Empty && _settings.ApiKey != String.Empty)
             {
-                using (var client = new HttpClient())
+                var client = HttpClientHelper.Client;
+                var requestUri = "https://toncloud.sprink.cloud/api/savecode/create/" + _settings.ApiKey;
+                var content = new StringContent("{\"savecode\":\"" + savecode + "\"}", Encoding.UTF8, "application/json");
+                try
                 {
-                    client.BaseAddress = new Uri("https://toncloud.sprink.cloud/api/savecode/create/" + _settings.ApiKey);
-                    var content = new StringContent("{\"savecode\":\"" + savecode + "\"}", Encoding.UTF8, "application/json");
-                    try
+                    var response = await client.PostAsync(requestUri, content);
+                    if (response.IsSuccessStatusCode)
                     {
-                        var response = await client.PostAsync("", content);
-                        if (response.IsSuccessStatusCode)
-                        {
-                            _logger.LogEvent("SaveCode", "Save code sent successfully.");
-                        }
-                        else
-                        {
-                            _logger.LogEvent("SaveCodeError", $"Failed to send save code: {response.StatusCode}");
-                        }
+                        _logger.LogEvent("SaveCode", "Save code sent successfully.");
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        _logger.LogEvent("SaveCodeError", $"Exception occurred: {ex.Message}");
+                        _logger.LogEvent("SaveCodeError", $"Failed to send save code: {response.StatusCode}");
                     }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogEvent("SaveCodeError", $"Exception occurred: {ex.Message}");
                 }
             }
         }
@@ -3285,6 +3282,12 @@ namespace ToNRoundCounter.UI
                 else
                 {
                     return;
+                }
+
+                // Validate executable path before restarting
+                if (!Infrastructure.Security.ProcessStartValidator.IsExecutablePathSafe(exePath, out var exeValidationError))
+                {
+                    throw new InvalidOperationException($"ToNSaveManager executable path validation failed: {exeValidationError}");
                 }
 
                 try

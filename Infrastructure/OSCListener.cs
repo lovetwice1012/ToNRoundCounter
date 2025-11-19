@@ -220,7 +220,7 @@ namespace ToNRoundCounter.Infrastructure
 
             try
             {
-                listenerTask?.GetAwaiter().GetResult();
+                listenerTask?.ConfigureAwait(false).GetAwaiter().GetResult();
             }
             catch (OperationCanceledException)
             {
@@ -232,7 +232,7 @@ namespace ToNRoundCounter.Infrastructure
 
             try
             {
-                processingTask?.GetAwaiter().GetResult();
+                processingTask?.ConfigureAwait(false).GetAwaiter().GetResult();
             }
             catch (OperationCanceledException)
             {

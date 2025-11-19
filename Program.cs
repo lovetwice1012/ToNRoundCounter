@@ -40,7 +40,7 @@ namespace ToNRoundCounter
                 try
                 {
                     var exporter = new RoundLogExporter(Log.Logger);
-                    Task.Run(() => exporter.ExportAsync(exportOptions!)).GetAwaiter().GetResult();
+                    exporter.ExportAsync(exportOptions!).ConfigureAwait(false).GetAwaiter().GetResult();
                     return;
                 }
                 catch (Exception ex)
@@ -57,7 +57,7 @@ namespace ToNRoundCounter
 
             LanguageAssemblyResolver.Initialize();
 
-            var bootstrap = LoadBootstrapAsync().GetAwaiter().GetResult();
+            var bootstrap = LoadBootstrapAsync().ConfigureAwait(false).GetAwaiter().GetResult();
 
             var useDefaultLogPath = string.IsNullOrWhiteSpace(bootstrap.LogFilePath);
             var defaultLogPath = Path.Combine("logs", $"log-{DateTime.Now:yyyyMMdd_HHmmss}.txt");
@@ -176,7 +176,7 @@ namespace ToNRoundCounter
                 sp.GetRequiredService<IEventLogger>(),
                 sp.GetRequiredService<IHttpClient>(),
                 sp.GetRequiredService<CloudWebSocketClient>()));
-            Task.Run(() => ModuleLoader.LoadModules(services, moduleHost, eventLogger, eventBus, safeMode: safeModeActive)).GetAwaiter().GetResult();
+            ModuleLoader.LoadModules(services, moduleHost, eventLogger, eventBus, safeMode: safeModeActive).ConfigureAwait(false).GetAwaiter().GetResult();
             eventLogger.LogEvent("Bootstrap", $"Module discovery complete. Discovered modules: {moduleHost.Modules.Count}");
             services.AddSingleton<MainForm>(sp => new MainForm(
                 sp.GetRequiredService<IWebSocketClient>(),
@@ -202,7 +202,7 @@ namespace ToNRoundCounter
             eventLogger.LogEvent("Bootstrap", "Building service provider (pre-build notifications).");
             moduleHost.NotifyServiceProviderBuilding(new ModuleServiceProviderBuildContext(services, eventLogger, eventBus));
 
-            var provider = Task.Run(services.BuildServiceProvider).GetAwaiter().GetResult();
+            var provider = services.BuildServiceProvider();
             eventLogger.LogEvent("Bootstrap", "Service provider built successfully.");
             moduleHost.NotifyServiceProviderBuilt(new ModuleServiceProviderContext(provider, eventLogger, eventBus));
             provider.GetRequiredService<IErrorReporter>().Register();
@@ -246,11 +246,11 @@ namespace ToNRoundCounter
                 throw new InvalidOperationException("Crash report test triggered");
             }
 
-            var launches = Task.Run(() => BuildAutoLaunchPlans(autoLaunchPath, autoLaunchArguments, appSettings)).GetAwaiter().GetResult();
+            var launches = BuildAutoLaunchPlans(autoLaunchPath, autoLaunchArguments, appSettings);
 
             if (launches.Count > 0)
             {
-                Task.Run(() => moduleHost.NotifyAutoLaunchEvaluating(new ModuleAutoLaunchEvaluationContext(launches, appSettings, provider))).GetAwaiter().GetResult();
+                moduleHost.NotifyAutoLaunchEvaluating(new ModuleAutoLaunchEvaluationContext(launches, appSettings, provider));
                 mainForm.Shown += async (s, e) => await Task.Run(() => ExecuteAutoLaunchPlans(launches, moduleHost, eventLogger, provider));
             }
 
@@ -261,7 +261,7 @@ namespace ToNRoundCounter
             moduleHost.NotifyAppRunCompleted(new ModuleAppRunContext(mainForm, provider));
             moduleHost.NotifyAppShutdownStarting(new ModuleAppShutdownContext(provider));
             eventLogger.LogEvent("Bootstrap", "Disposing service provider and shutting down.");
-            Task.Run(() => (provider as IDisposable)?.Dispose()).GetAwaiter().GetResult();
+            (provider as IDisposable)?.Dispose();
             moduleHost.NotifyAppShutdownCompleted(new ModuleAppShutdownContext(provider));
             eventLogger.LogEvent("Bootstrap", "Application shutdown complete.");
         }

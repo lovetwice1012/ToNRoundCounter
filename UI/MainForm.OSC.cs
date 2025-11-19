@@ -86,8 +86,15 @@ namespace ToNRoundCounter.UI
                     LogUi("OSC port persisted to settings.", LogEventLevel.Debug);
                 }
 
+                var oscRepeaterPath = Path.Combine(Directory.GetCurrentDirectory(), "OscRepeater.exe");
+                if (!Infrastructure.Security.ProcessStartValidator.IsExecutablePathSafe(oscRepeaterPath, out var oscValidationError))
+                {
+                    LogUi($"OSC repeater validation failed: {oscValidationError}", LogEventLevel.Error);
+                    return;
+                }
+
                 ProcessStartInfo psi = new ProcessStartInfo();
-                psi.FileName = "./OscRepeater.exe";
+                psi.FileName = oscRepeaterPath;
                 psi.Arguments = $"--autostart --autoconfig 127.0.0.1:{_settings.OSCPort} --minimized";
                 psi.UseShellExecute = false;
                 LogUi($"Starting OSC repeater process with arguments '{psi.Arguments}'.");
@@ -306,13 +313,12 @@ namespace ToNRoundCounter.UI
                     {
                         _ = Task.Run(async () =>
                         {
-                            using (var client = new HttpClient())
+                            var client = HttpClientHelper.Client;
+                            var requestUri = "https://toncloud.sprink.cloud/api/savecode/get/" + _settings.ApiKey + "/latest";
+                            try
                             {
-                                client.BaseAddress = new Uri("https://toncloud.sprink.cloud/api/savecode/get/" + _settings.ApiKey + "/latest");
-                                try
-                                {
-                                    var response = await client.GetAsync("");
-                                    if (response.IsSuccessStatusCode)
+                                var response = await client.GetAsync(requestUri);
+                                if (response.IsSuccessStatusCode)
                                     {
                                         var jsonResponse = await response.Content.ReadAsStringAsync();
                                         var json = JObject.Parse(jsonResponse);
@@ -334,7 +340,6 @@ namespace ToNRoundCounter.UI
                                 {
                                     CopyCachedSaveCode($"Exception occurred: {ex.Message}");
                                 }
-                            }
                         });
                     }
                 }

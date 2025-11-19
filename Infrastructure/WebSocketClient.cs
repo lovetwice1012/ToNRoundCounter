@@ -280,7 +280,8 @@ namespace ToNRoundCounter.Infrastructure
             _logger.LogEvent("WebSocket", "Dispose called.");
             try
             {
-                StopAsync().GetAwaiter().GetResult();
+                // Note: Prefer DisposeAsync() when possible. Synchronous disposal blocks on async cleanup.
+                StopAsync().ConfigureAwait(false).GetAwaiter().GetResult();
             }
             catch (Exception ex)
             {
