@@ -47,6 +47,27 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
             Initialize();
         }
 
+        /// <summary>
+        /// Validates SQL identifier (table name, column name) to prevent SQL injection.
+        /// Only allows alphanumeric characters and underscores.
+        /// </summary>
+        private static void ValidateSqlIdentifier(string identifier, string parameterName)
+        {
+            if (string.IsNullOrWhiteSpace(identifier))
+            {
+                throw new ArgumentException("SQL identifier cannot be null or empty.", parameterName);
+            }
+
+            // Only allow alphanumeric characters and underscores
+            foreach (char c in identifier)
+            {
+                if (!char.IsLetterOrDigit(c) && c != '_')
+                {
+                    throw new ArgumentException($"SQL identifier '{identifier}' contains invalid character '{c}'. Only alphanumeric characters and underscores are allowed.", parameterName);
+                }
+            }
+        }
+
         private void Initialize()
         {
             try
@@ -103,9 +124,15 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
             {
                 lock (_connectionLock)
                 {
+                    // Validate identifiers to prevent SQL injection
+                    // Note: PRAGMA table_info does not support parameterized queries
+                    ValidateSqlIdentifier(tableName, nameof(tableName));
+                    ValidateSqlIdentifier(columnName, nameof(columnName));
+
                     bool exists = false;
                     using (var pragmaCommand = _connection.CreateCommand())
                     {
+                        // Safe to use string interpolation after validation
                         pragmaCommand.CommandText = $"PRAGMA table_info({tableName});";
                         using var reader = pragmaCommand.ExecuteReader();
                         while (reader.Read())
@@ -125,6 +152,8 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
                     }
 
                     using var alterCommand = _connection.CreateCommand();
+                    // Safe to use string interpolation after validation above
+                    // Note: ALTER TABLE does not support parameterized table/column names
                     alterCommand.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnDefinition};";
                     alterCommand.ExecuteNonQuery();
                 }

@@ -23,6 +23,7 @@ using Serilog.Events;
 using ToNRoundCounter.Domain;
 using ToNRoundCounter.Properties;
 using ToNRoundCounter.Infrastructure;
+using ToNRoundCounter.Application.Services;
 using ToNRoundCounter.Application;
 using MediaPlayer = System.Windows.Media.MediaPlayer;
 using WinFormsApp = System.Windows.Forms.Application;
@@ -34,33 +35,30 @@ namespace ToNRoundCounter.UI
 {
     public partial class MainForm : Form, IMainView
     {
-        // 上部固定UI
-        private Label lblStatus = null!;           // WebSocket接続状況
-        private Label lblOSCStatus = null!;        // OSC通信接続状況
-        private Button btnToggleTopMost = null!;   // 画面最前面固定ボタン
-        private Button btnSettings = null!;        // 設定変更ボタン
+        private const int DefaultAutoSuicideDelaySeconds = 13;
+        private const int DelayedAutoSuicideSeconds = 40;
+
+        private Label lblStatus = null!;
+        private Label lblOSCStatus = null!;
+        private Button btnToggleTopMost = null!;
+        private Button btnSettings = null!;
         private MenuStrip mainMenuStrip = null!;
         private ToolStripMenuItem fileMenuItem = null!;
         private ToolStripMenuItem settingsMenuItem = null!;
         private ToolStripMenuItem exitMenuItem = null!;
         private ToolStripMenuItem windowsMenuItem = null!;
 
-        // デバッグ情報用ラベル
         private Label lblDebugInfo = null!;
 
-        // 情報表示パネル
         public InfoPanel InfoPanel { get; private set; } = null!;
         private TerrorInfoPanel terrorInfoPanel = null!;
         private JObject? terrorInfoData;
 
-        // 統計情報表示およびラウンドログ表示は SplitContainer で実装（縦に並べる）
         private SplitContainer splitContainerMain = null!;
         private Label lblStatsTitle = null!;
         private Label lblRoundLogTitle = null!;
-        private RichTextBox rtbStatsDisplay = null!;  // 統計情報表示欄
-        public LogPanel logPanel = null!;             // ラウンドログパネル
-
-        // その他のフィールド
+        private RichTextBox rtbStatsDisplay = null!;
+        public LogPanel logPanel = null!;
         private readonly ICancellationProvider _cancellation;
         private readonly IWebSocketClient webSocketClient;
         private readonly IOSCListener oscListener;
@@ -78,6 +76,13 @@ namespace ToNRoundCounter.UI
         private readonly ModuleHost _moduleHost;
         private readonly AutoRecordingService autoRecordingService;
         private readonly CloudWebSocketClient? _cloudClient;
+        private readonly ISoundManager _soundManager;
+        private readonly IOverlayManager _overlayManager;
+        private readonly IAutoSuicideCoordinator _autoSuicideCoordinator;
+
+        // Overlay-related state that MainForm manages
+        private string lastRoundTypeForHistory = string.Empty;
+        private bool overlayTemporarilyHidden;
 
         private Action<WebSocketConnected>? _wsConnectedHandler;
         private Action<WebSocketDisconnected>? _wsDisconnectedHandler;
@@ -92,11 +97,8 @@ namespace ToNRoundCounter.UI
         private bool _isWebSocketConnected;
         private bool _isOscConnected;
 
-        // 次ラウンド予測用：stateService.RoundCycle==0 → 通常ラウンド, ==1 → 「通常ラウンド or 特殊ラウンド」, >=2 → 特殊ラウンド
         private Random randomGenerator = new Random();
 
-        // OSC/Velocity 関連
-        private List<AutoSuicideRule> autoSuicideRules = new List<AutoSuicideRule>();
         private static readonly string[] AllRoundTypes = new string[]
         {
             "クラシック", "走れ！", "オルタネイト", "パニッシュ", "狂気", "サボタージュ", "霧", "ブラッドバス", "ダブルトラブル", "EX", "ミッドナイト", "ゴースト", "8ページ", "アンバウンド", "寒い夜", "ミスティックムーン", "ブラッドムーン", "トワイライト", "ソルスティス"
@@ -110,32 +112,16 @@ namespace ToNRoundCounter.UI
 
         private bool isRestarted = false;
 
-        private bool issetAllSelfKillMode = false;
-        private bool allRoundsForcedSchedule;
-        private bool autoSuicideManualCancelRequested;
-        private DateTime? autoSuicideManualDelayUntil;
-
         private string _lastSaveCode = string.Empty;
 
         private string version = "1.15.0";
 
         private readonly AutoSuicideService autoSuicideService;
 
-        private MediaPlayer? itemMusicPlayer;
-        private bool itemMusicLoopRequested;
         private bool itemMusicActive;
         private DateTime itemMusicMatchStart = DateTime.MinValue;
-        private string lastLoadedItemMusicPath = string.Empty;
-        private ItemMusicEntry? activeItemMusicEntry;
-        private MediaPlayer? roundBgmPlayer;
-        private bool roundBgmLoopRequested;
         private bool roundBgmActive;
         private DateTime roundBgmMatchStart = DateTime.MinValue;
-        private string lastLoadedRoundBgmPath = string.Empty;
-        private RoundBgmEntry? activeRoundBgmEntry;
-        private string? roundBgmSelectionRoundType;
-        private string? roundBgmSelectionTerrorType;
-        private readonly Random roundBgmRandom = new Random(Guid.NewGuid().GetHashCode());
         private string currentTerrorBaseText = string.Empty;
         private string currentOverlayTerrorBaseText = string.Empty;
         private string currentTerrorCountdownSuffix = string.Empty;
@@ -226,9 +212,14 @@ namespace ToNRoundCounter.UI
         }
 
 
-        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, IEnumerable<IOscRepeaterPolicy> oscRepeaterPolicies, AutoRecordingService autoRecordingService, ModuleHost moduleHost, CloudWebSocketClient cloudClient)
+        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, IEnumerable<IOscRepeaterPolicy> oscRepeaterPolicies, AutoRecordingService autoRecordingService, ModuleHost moduleHost, CloudWebSocketClient cloudClient, ISoundManager soundManager, IOverlayManager overlayManager, IAutoSuicideCoordinator autoSuicideCoordinator)
         {
-            InitializeSoundPlayers();
+            _soundManager = soundManager;
+            _soundManager.Initialize();
+            _overlayManager = overlayManager;
+            _autoSuicideCoordinator = autoSuicideCoordinator;
+            _autoSuicideCoordinator.SetUpdateOverlayStateCallback(UpdateShortcutOverlayState);
+            _autoSuicideCoordinator.Initialize();
             this.Name = "MainForm";
             this.webSocketClient = webSocketClient;
             this.autoSuicideService = autoSuicideService;
@@ -264,21 +255,20 @@ namespace ToNRoundCounter.UI
             _settings.Load();
             _lastSaveCode = _settings.LastSaveCode ?? string.Empty;
             EvaluateAutoRecording("InitialLoad");
-            UpdateItemMusicPlayer(null);
+            _soundManager.UpdateItemMusicPlayer(null);
             LogUi("Initial settings and resources loaded.", LogEventLevel.Debug);
             _moduleHost.NotifyThemeCatalogBuilding(new ModuleThemeCatalogContext(Theme.RegisteredThemes, Theme.RegisterTheme, _moduleHost.CurrentServiceProvider));
             _moduleHost.NotifyAuxiliaryWindowCatalogBuilding();
             Theme.SetTheme(_settings.ThemeKey, new ThemeApplicationContext(this, _moduleHost.CurrentServiceProvider));
             _moduleHost.NotifyMainWindowThemeChanged(new ModuleMainWindowThemeContext(this, _settings.ThemeKey, Theme.CurrentDescriptor, _moduleHost.CurrentServiceProvider));
-            LoadAutoSuicideRules();
+            _autoSuicideCoordinator.LoadRules();
             InitializeComponents();
-            if (lblStatus == null || lblOSCStatus == null || btnToggleTopMost == null || btnSettings == null ||
-                mainMenuStrip == null || windowsMenuItem == null || InfoPanel == null || terrorInfoPanel == null ||
-                splitContainerMain == null || rtbStatsDisplay == null || logPanel == null)
+            if (!AreAllRequiredControlsInitialized())
             {
                 throw new InvalidOperationException("Main form controls failed to initialize.");
             }
-            InitializeOverlay();
+            _overlayManager.Initialize();
+            _overlayManager.ShortcutButtonClicked += OverlayManager_ShortcutButtonClicked;
             _moduleHost.NotifyMainWindowMenuBuilding(new ModuleMainWindowMenuContext(this, mainMenuStrip, _moduleHost.CurrentServiceProvider));
             BuildAuxiliaryWindowsMenu();
             _moduleHost.NotifyMainWindowUiComposed(new ModuleMainWindowUiContext(this, this.Controls, mainMenuStrip, _moduleHost.CurrentServiceProvider));
@@ -325,7 +315,6 @@ namespace ToNRoundCounter.UI
             _ = webSocketClient.StartAsync();
             _ = oscListener.StartAsync(_settings.OSCPort);
 
-            // Cloud WebSocketクライアントの起動
             if (_settings.CloudSyncEnabled)
             {
                 _ = Task.Run(async () =>
@@ -419,7 +408,6 @@ namespace ToNRoundCounter.UI
             int contentWidth = this.ClientSize.Width - 2 * margin;
             bool useCustomPanelColors = string.Equals(_settings.ThemeKey, Theme.DefaultThemeKey, StringComparison.OrdinalIgnoreCase);
 
-            // WebSocket接続状況
             lblStatus = new Label();
             _isWebSocketConnected = false;
             UpdateWebSocketStatusLabel();
@@ -428,7 +416,6 @@ namespace ToNRoundCounter.UI
             lblStatus.Width = contentWidth / 2 - 5;
             this.Controls.Add(lblStatus);
 
-            // OSC接続状況
             lblOSCStatus = new Label();
             _isOscConnected = false;
             UpdateOscStatusLabel();
@@ -436,7 +423,6 @@ namespace ToNRoundCounter.UI
             lblOSCStatus.Location = new Point(lblStatus.Right + 10, currentY);
             this.Controls.Add(lblOSCStatus);
 
-            // デバッグ情報用ラベル
             lblDebugInfo = new Label();
             lblDebugInfo.Text = "";
             lblDebugInfo.ForeColor = Color.Blue;
@@ -446,8 +432,6 @@ namespace ToNRoundCounter.UI
 
             currentY += lblStatus.Height + margin;
 
-
-            // 画面最前面固定ボタン
             btnToggleTopMost = new Button();
             btnToggleTopMost.Text = LanguageManager.Translate("固定する");
             btnToggleTopMost.AutoSize = true;
@@ -456,7 +440,6 @@ namespace ToNRoundCounter.UI
             btnToggleTopMost.Click += BtnToggleTopMost_Click;
             this.Controls.Add(btnToggleTopMost);
 
-            // 設定変更ボタン
             btnSettings = new Button();
             btnSettings.Text = LanguageManager.Translate("設定変更");
             btnSettings.AutoSize = true;
@@ -466,7 +449,6 @@ namespace ToNRoundCounter.UI
             this.Controls.Add(btnSettings);
             currentY += btnToggleTopMost.Height + margin;
 
-            // 情報表示パネル
             InfoPanel = new InfoPanel();
             InfoPanel.BackColor = useCustomPanelColors ? _settings.BackgroundColor_InfoPanel : Theme.Current.PanelBackground;
             InfoPanel.Location = new Point(margin, currentY);
@@ -483,7 +465,6 @@ namespace ToNRoundCounter.UI
             this.Controls.Add(terrorInfoPanel);
             currentY += terrorInfoPanel.Height + margin;
 
-            // SplitContainer（統計情報表示欄とラウンドログを縦に並べる）
             splitContainerMain = new SplitContainer();
             splitContainerMain.Orientation = Orientation.Horizontal;
             splitContainerMain.Location = new Point(margin, currentY);
@@ -492,7 +473,6 @@ namespace ToNRoundCounter.UI
             splitContainerMain.SplitterDistance = splitContainerMain.Height / 2;
             splitContainerMain.IsSplitterFixed = false;
 
-            // 統計情報表示欄
             lblStatsTitle = new Label();
             lblStatsTitle.Text = LanguageManager.Translate("統計情報表示欄");
             lblStatsTitle.Dock = DockStyle.None;
@@ -512,7 +492,6 @@ namespace ToNRoundCounter.UI
             rtbStatsDisplay.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             splitContainerMain.Panel1.Controls.Add(rtbStatsDisplay);
 
-            // ラウンドログ表示欄
             lblRoundLogTitle = new Label();
             lblRoundLogTitle.Text = LanguageManager.Translate("ラウンドログ");
             lblRoundLogTitle.Dock = DockStyle.None;
@@ -528,6 +507,14 @@ namespace ToNRoundCounter.UI
             splitContainerMain.Panel2.Controls.Add(logPanel.RoundLogTextBox);
 
             this.Controls.Add(splitContainerMain);
+        }
+
+        private bool AreAllRequiredControlsInitialized()
+        {
+            return lblStatus != null && lblOSCStatus != null && btnToggleTopMost != null &&
+                   btnSettings != null && mainMenuStrip != null && windowsMenuItem != null &&
+                   InfoPanel != null && terrorInfoPanel != null && splitContainerMain != null &&
+                   rtbStatsDisplay != null && logPanel != null;
         }
 
         private void ReinitializeInfoPanel()
@@ -554,7 +541,7 @@ namespace ToNRoundCounter.UI
             }
             ApplyTheme();
             MainForm_Resize(this, EventArgs.Empty);
-            UpdateOverlay(OverlaySection.NextRound, form => form.SetValue(GetNextRoundOverlayValue()));
+            UpdateNextRoundOverlay();
         }
 
         private void ApplyTheme()
@@ -592,26 +579,12 @@ namespace ToNRoundCounter.UI
 
         private void UpdateWebSocketStatusLabel()
         {
-            if (lblStatus == null)
-            {
-                return;
-            }
-
-            var statusText = LanguageManager.Translate(_isWebSocketConnected ? "Connected" : "Disconnected");
-            lblStatus.Text = $"WebSocket: {statusText}";
-            lblStatus.ForeColor = _isWebSocketConnected ? Color.Green : Color.Red;
+            UpdateStatusLabel(lblStatus, _isWebSocketConnected, "WebSocket:");
         }
 
         private void UpdateOscStatusLabel()
         {
-            if (lblOSCStatus == null)
-            {
-                return;
-            }
-
-            var statusText = LanguageManager.Translate(_isOscConnected ? "Connected" : "Disconnected");
-            lblOSCStatus.Text = $"OSC: {statusText}";
-            lblOSCStatus.ForeColor = _isOscConnected ? Color.Green : Color.Red;
+            UpdateStatusLabel(lblOSCStatus, _isOscConnected, "OSC:");
         }
 
         private void MainForm_Resize(object? sender, EventArgs? e)
@@ -649,6 +622,19 @@ namespace ToNRoundCounter.UI
         }
 
         private async void BtnSettings_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                await BtnSettings_ClickAsync();
+            }
+            catch (Exception ex)
+            {
+                LogUi($"Unhandled error in settings dialog: {ex.Message}", LogEventLevel.Error);
+                MessageBox.Show($"設定ダイアログでエラーが発生しました: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private async Task BtnSettings_ClickAsync()
         {
             LogUi("Settings dialog requested by user.");
             using (SettingsForm settingsForm = new SettingsForm(_settings, _cloudClient))
@@ -822,22 +808,22 @@ namespace ToNRoundCounter.UI
                     _settings.ItemMusicMaxSpeed = 0;
                     _settings.DiscordWebhookUrl = settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text.Trim();
                     _settings.ThemeKey = settingsForm.SettingsPanel.SelectedThemeKey;
-                    LoadAutoSuicideRules();
-                    if (!_settings.AutoSuicideEnabled && !issetAllSelfKillMode)
+                    _autoSuicideCoordinator.LoadRules();
+                    if (!_settings.AutoSuicideEnabled && !_autoSuicideCoordinator.IsAllRoundsModeEnabled)
                     {
-                        CancelAutoSuicide();
+                        _autoSuicideCoordinator.Cancel();
                     }
-                    UpdateItemMusicPlayer(null);
-                    ResetItemMusicTracking();
-                    UpdateRoundBgmPlayer(null);
-                    ResetRoundBgmTracking();
+                    _soundManager.UpdateItemMusicPlayer(null);
+                    _soundManager.ResetItemMusicTracking();
+                    _soundManager.UpdateRoundBgmPlayer(null);
+                    _soundManager.ResetRoundBgmTracking();
 
-                    _settings.apikey = settingsForm.SettingsPanel.apiKeyTextBox.Text.Trim();
-                    if (string.IsNullOrEmpty(_settings.apikey))
+                    _settings.ApiKey = settingsForm.SettingsPanel.apiKeyTextBox.Text.Trim();
+                    if (string.IsNullOrEmpty(_settings.ApiKey))
                     {
-                        _settings.apikey = string.Empty;
+                        _settings.ApiKey = string.Empty;
                     }
-                    else if (_settings.apikey.Length < 32)
+                    else if (_settings.ApiKey.Length < 32)
                     {
                         MessageBox.Show(LanguageManager.Translate("APIキーは32文字以上である必要があります。"), LanguageManager.Translate("エラー"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                         return;
@@ -871,10 +857,10 @@ namespace ToNRoundCounter.UI
                     InfoPanel.TerrorValue.ForeColor = _settings.FixedTerrorColor;
                     UpdateAggregateStatsDisplay();
                     UpdateDisplayVisibility();
-                    ApplyOverlayBackgroundOpacityToForms();
+                    _overlayManager.ApplyBackgroundOpacity();
                     UpdateOverlayVisibility();
                     UpdateShortcutOverlayState();
-                    ApplyOverlayRoundHistorySettings();
+                    _overlayManager.ApplyRoundHistorySettings();
                     _moduleHost.NotifyAuxiliaryWindowCatalogBuilding();
                     BuildAuxiliaryWindowsMenu();
                     await _settings.SaveAsync();
@@ -912,6 +898,72 @@ namespace ToNRoundCounter.UI
                 var closedContext = new ModuleSettingsViewLifecycleContext(settingsForm, settingsForm.SettingsPanel, _settings, ModuleSettingsViewStage.Closed, dialogResult, _moduleHost.CurrentServiceProvider);
                 _moduleHost.NotifySettingsViewClosed(closedContext);
             }
+        }
+
+        private void LoadSettingsIntoForm(SettingsForm settingsForm)
+        {
+            _moduleHost.NotifyThemeCatalogBuilding(new ModuleThemeCatalogContext(Theme.RegisteredThemes, Theme.RegisterTheme, _moduleHost.CurrentServiceProvider));
+            settingsForm.SettingsPanel.LoadThemeOptions(Theme.RegisteredThemes, _settings.ThemeKey);
+            settingsForm.SettingsPanel.ShowStatsCheckBox.Checked = _settings.ShowStats;
+            settingsForm.SettingsPanel.DebugInfoCheckBox.Checked = _settings.ShowDebug;
+            settingsForm.SettingsPanel.ToggleRoundLogCheckBox.Checked = _settings.ShowRoundLog;
+            settingsForm.SettingsPanel.RoundTypeCheckBox.Checked = _settings.Filter_RoundType;
+            settingsForm.SettingsPanel.TerrorCheckBox.Checked = _settings.Filter_Terror;
+            settingsForm.SettingsPanel.AppearanceCountCheckBox.Checked = _settings.Filter_Appearance;
+            settingsForm.SettingsPanel.SurvivalCountCheckBox.Checked = _settings.Filter_Survival;
+            settingsForm.SettingsPanel.DeathCountCheckBox.Checked = _settings.Filter_Death;
+            settingsForm.SettingsPanel.SurvivalRateCheckBox.Checked = _settings.Filter_SurvivalRate;
+            settingsForm.SettingsPanel.OverlayVelocityCheckBox.Checked = _settings.OverlayShowVelocity;
+            settingsForm.SettingsPanel.OverlayAngleCheckBox.Checked = false;
+            settingsForm.SettingsPanel.OverlayAngleCheckBox.Enabled = false;
+            settingsForm.SettingsPanel.OverlayTerrorCheckBox.Checked = _settings.OverlayShowTerror;
+            settingsForm.SettingsPanel.OverlayUnboundTerrorDetailsCheckBox.Checked = _settings.OverlayShowUnboundTerrorDetails;
+            settingsForm.SettingsPanel.OverlayDamageCheckBox.Checked = _settings.OverlayShowDamage;
+            settingsForm.SettingsPanel.OverlayNextRoundCheckBox.Checked = _settings.OverlayShowNextRound;
+            settingsForm.SettingsPanel.OverlayRoundStatusCheckBox.Checked = _settings.OverlayShowRoundStatus;
+            settingsForm.SettingsPanel.OverlayRoundHistoryCheckBox.Checked = _settings.OverlayShowRoundHistory;
+            settingsForm.SettingsPanel.OverlayRoundStatsCheckBox.Checked = _settings.OverlayShowRoundStats;
+            settingsForm.SettingsPanel.OverlayTerrorInfoCheckBox.Checked = _settings.OverlayShowTerrorInfo;
+            settingsForm.SettingsPanel.OverlayShortcutsCheckBox.Checked = _settings.OverlayShowShortcuts;
+            settingsForm.SettingsPanel.OverlayClockCheckBox.Checked = _settings.OverlayShowClock;
+            settingsForm.SettingsPanel.OverlayInstanceTimerCheckBox.Checked = _settings.OverlayShowInstanceTimer;
+            settingsForm.SettingsPanel.SetOverlayOpacity(_settings.OverlayOpacity);
+
+            int historyLength = _settings.OverlayRoundHistoryLength <= 0 ? 3 : _settings.OverlayRoundHistoryLength;
+            historyLength = Math.Max((int)settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Minimum,
+                                     Math.Min((int)settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Maximum, historyLength));
+            settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Value = historyLength;
+
+            settingsForm.SettingsPanel.InfoPanelBgLabel.BackColor = _settings.BackgroundColor_InfoPanel;
+            settingsForm.SettingsPanel.StatsBgLabel.BackColor = _settings.BackgroundColor_Stats;
+            settingsForm.SettingsPanel.LogBgLabel.BackColor = _settings.BackgroundColor_Log;
+            settingsForm.SettingsPanel.FixedTerrorColorLabel.BackColor = _settings.FixedTerrorColor;
+
+            for (int i = 0; i < settingsForm.SettingsPanel.RoundTypeStatsListBox.Items.Count; i++)
+            {
+                string item = settingsForm.SettingsPanel.RoundTypeStatsListBox.Items[i].ToString();
+                settingsForm.SettingsPanel.RoundTypeStatsListBox.SetItemChecked(i, _settings.RoundTypeStats.Contains(item));
+            }
+
+            settingsForm.SettingsPanel.autoSuicideCheckBox.Checked = _settings.AutoSuicideEnabled;
+            settingsForm.SettingsPanel.autoSuicideUseDetailCheckBox.Checked = _settings.AutoSuicideUseDetail;
+
+            for (int i = 0; i < settingsForm.SettingsPanel.autoSuicideRoundListBox.Items.Count; i++)
+            {
+                string item = settingsForm.SettingsPanel.autoSuicideRoundListBox.Items[i].ToString();
+                settingsForm.SettingsPanel.autoSuicideRoundListBox.SetItemChecked(i, _settings.AutoSuicideRoundTypes.Contains(item));
+            }
+
+            settingsForm.SettingsPanel.oscPortNumericUpDown.Value = _settings.OSCPort;
+            settingsForm.SettingsPanel.webSocketIpTextBox.Text = _settings.WebSocketIp;
+            settingsForm.SettingsPanel.AutoLaunchEnabledCheckBox.Checked = _settings.AutoLaunchEnabled;
+            settingsForm.SettingsPanel.LoadAutoLaunchEntries(_settings.AutoLaunchEntries);
+            settingsForm.SettingsPanel.ItemMusicEnabledCheckBox.Checked = _settings.ItemMusicEnabled;
+            settingsForm.SettingsPanel.LoadItemMusicEntries(_settings.ItemMusicEntries);
+            settingsForm.SettingsPanel.RoundBgmEnabledCheckBox.Checked = _settings.RoundBgmEnabled;
+            settingsForm.SettingsPanel.LoadRoundBgmEntries(_settings.RoundBgmEntries);
+            settingsForm.SettingsPanel.SetRoundBgmItemConflictBehavior(_settings.RoundBgmItemConflictBehavior);
+            settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text = _settings.DiscordWebhookUrl;
         }
 
         private static bool IsRunningAsAdministrator()
@@ -1101,6 +1153,19 @@ namespace ToNRoundCounter.UI
 
         private async void MainForm_Load(object sender, EventArgs e)
         {
+            try
+            {
+                await MainForm_LoadAsync();
+            }
+            catch (Exception ex)
+            {
+                LogUi($"Critical error during form load: {ex.Message}", LogEventLevel.Error);
+                MessageBox.Show($"フォームの初期化中にエラーが発生しました: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private async Task MainForm_LoadAsync()
+        {
             LogUi("Main form load sequence starting.");
             MainForm_Resize(null, null);
             UpdateDisplayVisibility();
@@ -1234,9 +1299,25 @@ namespace ToNRoundCounter.UI
 
         protected override async void OnFormClosing(FormClosingEventArgs e)
         {
+            try
+            {
+                await OnFormClosingAsync(e);
+            }
+            catch (Exception ex)
+            {
+                LogUi($"Critical error during form closing: {ex.Message}", LogEventLevel.Error);
+            }
+            finally
+            {
+                base.OnFormClosing(e);
+            }
+        }
+
+        private async Task OnFormClosingAsync(FormClosingEventArgs e)
+        {
             LogUi("Main form closing initiated.");
             SaveRoundLogsToFile();
-            CaptureOverlayPositions();
+            _overlayManager.CapturePositions();
             try
             {
                 await _settings.SaveAsync();
@@ -1263,7 +1344,6 @@ namespace ToNRoundCounter.UI
                 LogUi($"Failed to stop OSC listener: {ex.Message}", LogEventLevel.Warning);
             }
 
-            // Cloud WebSocketクライアントの停止
             if (_settings.CloudSyncEnabled && _cloudClient != null)
             {
                 try
@@ -1312,10 +1392,12 @@ namespace ToNRoundCounter.UI
                     oscRepeaterProcess.Kill();
                     oscRepeaterProcess.WaitForExit();
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    LogUi($"Failed to kill OSC repeater process: {ex.Message}", LogEventLevel.Warning);
+                }
             }
             LogUi("Main form closing sequence finished. Base closing invoked.", LogEventLevel.Debug);
-            base.OnFormClosing(e);
         }
 
         protected override void Dispose(bool disposing)
@@ -1345,26 +1427,10 @@ namespace ToNRoundCounter.UI
                 }
 
                 _cancellation.Cancel();
-                overlayVisibilityTimer?.Stop();
-                overlayVisibilityTimer?.Dispose();
 
-                foreach (var form in overlayForms.Values)
-                {
-                    if (form == null)
-                    {
-                        continue;
-                    }
+                // Overlay forms and timers are now managed and disposed by OverlayManager
+                _overlayManager.Dispose();
 
-                    if (!form.IsDisposed)
-                    {
-                        form.Hide();
-                        form.Close();
-                    }
-
-                    form.Dispose();
-                }
-
-                overlayForms.Clear();
                 components?.Dispose();
 
                 try
@@ -1566,172 +1632,224 @@ namespace ToNRoundCounter.UI
                         InfoPanel.RoundTypeValue.ForeColor = ConvertColorFromInt(displayColorInt);
                     });
 
-                    // Cloud同期: ラウンド開始
-                    if (_settings.CloudSyncEnabled)
-                    {
-                        _ = Task.Run(async () =>
-                        {
-                            try
-                            {
-                                await _presenter.OnRoundStartAsync(currentRound, currentInstanceId);
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger?.LogEvent("CloudSync", $"Failed to sync round start: {ex.Message}", LogEventLevel.Warning);
-                            }
-                        });
-                    }
+            if (_settings.CloudSyncEnabled)
+            {
+                RunPresenterAsyncWithErrorHandling(
+                    () => _presenter.OnRoundStartAsync(currentRound, currentInstanceId),
+                    "round start"
+                );
+            }
 
-                    //もしtesterNamesに含まれているかつオルタネイトなら、オルタネイトラウンド開始の音を鳴らす
-                    if (testerNames.Contains(stateService.PlayerDisplayName) && roundType == "オルタネイト")
+            if (testerNames.Contains(stateService.PlayerDisplayName) && roundType == "オルタネイト")
+            {
+                PlayFromStart(tester_roundStartAlternatePlayer);
+            }
+
+            if (_autoSuicideCoordinator.IsAllRoundsModeEnabled)
+            {
+                _autoSuicideCoordinator.Schedule(TimeSpan.FromSeconds(DefaultAutoSuicideDelaySeconds), true, true);
+            }
+            else
+            {
+                // Delegate auto-suicide decision to coordinator
+                var currentRound = stateService.CurrentRound;
+                if (currentRound != null && _autoSuicideCoordinator.ShouldScheduleForRound(currentRound))
+                {
+                    int autoAction = _autoSuicideCoordinator.EvaluateDecision(roundType, null, out var hasPendingDelayed);
+                    if (autoAction == 1)
                     {
-                        PlayFromStart(tester_roundStartAlternatePlayer);
-                    }
-                    //issetAllSelfKillModeがtrueなら13秒後に自殺入力をする
-                    int autoAction = ShouldAutoSuicide(roundType, null, out var hasPendingDelayed);
-                    if (issetAllSelfKillMode)
-                    {
-                        ScheduleAutoSuicide(TimeSpan.FromSeconds(13), true, true);
-                    }
-                    else if (autoAction == 1)
-                    {
-                        var delay = hasPendingDelayed ? TimeSpan.FromSeconds(40) : TimeSpan.FromSeconds(13);
-                        ScheduleAutoSuicide(delay, true);
+                        var delay = hasPendingDelayed ? TimeSpan.FromSeconds(DelayedAutoSuicideSeconds) : TimeSpan.FromSeconds(DefaultAutoSuicideDelaySeconds);
+                        _autoSuicideCoordinator.Schedule(delay, true);
                     }
                     else if (autoAction == 2)
                     {
-                        ScheduleAutoSuicide(TimeSpan.FromSeconds(40), true);
-                    }
-
-                    EvaluateAutoRecording("RoundTypeUpdated");
-                }
-                else if (eventType == "TRACKER")
-                {
-                    string trackerEvent = json.Value<string>("event") ?? "";
-                    if (trackerEvent == "round_start")
-                    {
-                        if (lastOptedIn != false)
-                        {
-                            var trackerRound = new Round();
-                            stateService.UpdateCurrentRound(trackerRound);
-                            trackerRound.RoundType = string.Empty;
-                            trackerRound.IsDeath = false;
-                            trackerRound.TerrorKey = string.Empty;
-                            trackerRound.RoundColor = 0xFFFFFF;
-                            string mapName = string.Empty;
-                            _dispatcher.Invoke(() => mapName = InfoPanel.MapValue.Text);
-                            trackerRound.MapName = mapName;
-                            trackerRound.Damage = 0;
-                        }
-                    }
-                    else if (trackerEvent == "round_killers")
-                    {
-                        var args = json.Value<JArray>("args");
-                        var activeRound = stateService.CurrentRound;
-                        if (args != null && activeRound != null)
-                        {
-                            if (activeRound.TerrorIds == null || activeRound.TerrorIds.Length < 3)
-                            {
-                                activeRound.TerrorIds = new int[3];
-                            }
-
-                            for (int index = 0; index < activeRound.TerrorIds.Length; index++)
-                            {
-                                activeRound.TerrorIds[index] = 0;
-                            }
-
-                            for (int i = 0; i < Math.Min(3, args.Count); i++)
-                            {
-                                int? terrorId = TryConvertToInt(args[i]);
-                                activeRound.TerrorIds[i] = terrorId ?? 0;
-                            }
-                        }
-                    }
-                    else if (trackerEvent == "round_won")
-                    {
-                        var existingRound = stateService.CurrentRound;
-                        if (existingRound != null)
-                        {
-                            FinalizeCurrentRound(existingRound.IsDeath ? "☠" : "✅");
-                        }
-                    }
-                    else if (trackerEvent == "round_lost")
-                    {
-                        var existingRound = stateService.CurrentRound;
-                        if (existingRound != null && !existingRound.IsDeath)
-                        {
-                            existingRound.IsDeath = true;
-                            FinalizeCurrentRound("☠");
-                        }
+                        _autoSuicideCoordinator.Schedule(TimeSpan.FromSeconds(40), true);
                     }
                 }
-                else if (eventType == "LOCATION" && command == 1)
+            }
+
+            EvaluateAutoRecording("RoundTypeUpdated");
+        }
+
+        /// <summary>
+        /// Handles the TRACKER WebSocket event and routes to specific tracker sub-events.
+        /// </summary>
+        private void HandleTrackerEvent(JObject json)
+        {
+            string trackerEvent = json.Value<string>("event") ?? "";
+            if (trackerEvent == "round_start")
+            {
+                HandleTrackerRoundStart(json);
+            }
+            else if (trackerEvent == "round_killers")
+            {
+                HandleTrackerRoundKillers(json);
+            }
+            else if (trackerEvent == "round_won")
+            {
+                HandleTrackerRoundWon();
+            }
+            else if (trackerEvent == "round_lost")
+            {
+                HandleTrackerRoundLost();
+            }
+        }
+
+        /// <summary>
+        /// Handles the TRACKER round_start sub-event.
+        /// </summary>
+        private void HandleTrackerRoundStart(JObject json)
+        {
+            if (lastOptedIn != false)
+            {
+                var trackerRound = new Round();
+                stateService.UpdateCurrentRound(trackerRound);
+                trackerRound.RoundType = string.Empty;
+                trackerRound.IsDeath = false;
+                trackerRound.TerrorKey = string.Empty;
+                trackerRound.RoundColor = 0xFFFFFF;
+                string mapName = string.Empty;
+                _dispatcher.Invoke(() => mapName = InfoPanel.MapValue.Text);
+                trackerRound.MapName = mapName;
+                trackerRound.Damage = 0;
+            }
+        }
+
+        /// <summary>
+        /// Handles the TRACKER round_killers sub-event.
+        /// Updates terror IDs for the current round.
+        /// </summary>
+        private void HandleTrackerRoundKillers(JObject json)
+        {
+            var args = json.Value<JArray>("args");
+            var activeRound = stateService.CurrentRound;
+            if (args != null && activeRound != null)
+            {
+                if (activeRound.TerrorIds == null || activeRound.TerrorIds.Length < 3)
                 {
-                    string updatedMapName = json.Value<string>("Name") ?? string.Empty;
-                    _dispatcher.Invoke(() =>
-                    {
-                        InfoPanel.MapValue.Text = updatedMapName;
-                    });
-
-                    var existingRound = stateService.CurrentRound;
-                    string? roundTypeForStorage = existingRound?.RoundType;
-                    string? terrorKeyForStorage = existingRound?.TerrorKey;
-
-                    if (existingRound != null)
-                    {
-                        existingRound.MapName = updatedMapName;
-                    }
-
-                    if (string.IsNullOrWhiteSpace(roundTypeForStorage))
-                    {
-                        _dispatcher.Invoke(() =>
-                        {
-                            var currentRoundType = InfoPanel.RoundTypeValue.Text;
-                            if (!string.IsNullOrWhiteSpace(currentRoundType))
-                            {
-                                roundTypeForStorage = currentRoundType;
-                            }
-                        });
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(updatedMapName) && !string.IsNullOrWhiteSpace(roundTypeForStorage))
-                    {
-                        stateService.SetRoundMapName(roundTypeForStorage!, updatedMapName);
-                        if (!string.IsNullOrWhiteSpace(terrorKeyForStorage))
-                        {
-                            stateService.SetTerrorMapName(roundTypeForStorage!, terrorKeyForStorage!, updatedMapName);
-                        }
-                    }
+                    activeRound.TerrorIds = new int[3];
                 }
-                else if (eventType == "TERRORS" && (command == 0 || command == 1))
+
+                for (int index = 0; index < activeRound.TerrorIds.Length; index++)
                 {
-                    string displayName = json.Value<string>("DisplayName") ?? "";
-                    int displayColorInt = json.Value<int>("DisplayColor");
-                    Color color = ConvertColorFromInt(displayColorInt);
+                    activeRound.TerrorIds[index] = 0;
+                }
 
-                    var activeRound = stateService.CurrentRound;
-                    if (activeRound != null && !activeRound.RoundColor.HasValue)
-                    {
-                        activeRound.RoundColor = displayColorInt;
-                    }
+                for (int i = 0; i < Math.Min(3, args.Count); i++)
+                {
+                    int? terrorId = TryConvertToInt(args[i]);
+                    activeRound.TerrorIds[i] = terrorId ?? 0;
+                }
+            }
+        }
 
-                    List<(string name, int count)>? terrors = null;
-                    var namesArray = json.Value<JArray>("Names");
-                    if (namesArray != null && namesArray.Count > 0)
-                    {
-                        var arr = namesArray.Select(token => token.ToString()).ToList();
-                        terrors = arr.Select(n => (n, 1)).ToList();
-                    }
+        /// <summary>
+        /// Handles the TRACKER round_won sub-event.
+        /// </summary>
+        private void HandleTrackerRoundWon()
+        {
+            var existingRound = stateService.CurrentRound;
+            if (existingRound != null)
+            {
+                FinalizeCurrentRound(existingRound.IsDeath ? "☠" : "✅");
+            }
+        }
 
-                    var roundType = stateService.CurrentRound?.RoundType ?? string.Empty;
-                    if ((terrors == null || terrors.Count == 0) && roundType == "アンバウンド")
+        /// <summary>
+        /// Handles the TRACKER round_lost sub-event.
+        /// </summary>
+        private void HandleTrackerRoundLost()
+        {
+            var existingRound = stateService.CurrentRound;
+            if (existingRound != null && !existingRound.IsDeath)
+            {
+                existingRound.IsDeath = true;
+                FinalizeCurrentRound("☠");
+            }
+        }
+
+        /// <summary>
+        /// Handles the LOCATION WebSocket event when command is 1.
+        /// Updates map name for the current round and UI.
+        /// </summary>
+        private void HandleLocationEvent(int command, JObject json)
+        {
+            if (command != 1)
+                return;
+
+            string updatedMapName = json.Value<string>("Name") ?? string.Empty;
+            _dispatcher.Invoke(() =>
+            {
+                InfoPanel.MapValue.Text = updatedMapName;
+            });
+
+            var existingRound = stateService.CurrentRound;
+            string? roundTypeForStorage = existingRound?.RoundType;
+            string? terrorKeyForStorage = existingRound?.TerrorKey;
+
+            if (existingRound != null)
+            {
+                existingRound.MapName = updatedMapName;
+            }
+
+            if (string.IsNullOrWhiteSpace(roundTypeForStorage))
+            {
+                _dispatcher.Invoke(() =>
+                {
+                    var currentRoundType = InfoPanel.RoundTypeValue.Text;
+                    if (!string.IsNullOrWhiteSpace(currentRoundType))
                     {
-                        var lookup = UnboundRoundDefinitions.GetTerrors(displayName);
-                        if (lookup != null)
-                        {
-                            terrors = lookup.ToList();
-                        }
+                        roundTypeForStorage = currentRoundType;
                     }
+                });
+            }
+
+            if (!string.IsNullOrWhiteSpace(updatedMapName) && !string.IsNullOrWhiteSpace(roundTypeForStorage))
+            {
+                stateService.SetRoundMapName(roundTypeForStorage!, updatedMapName);
+                if (!string.IsNullOrWhiteSpace(terrorKeyForStorage))
+                {
+                    stateService.SetTerrorMapName(roundTypeForStorage!, terrorKeyForStorage!, updatedMapName);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Handles the TERRORS WebSocket event when command is 0 or 1.
+        /// Updates terror information and triggers auto-suicide evaluation.
+        /// </summary>
+        private void HandleTerrorsEvent(int command, JObject json)
+        {
+            if (command != 0 && command != 1)
+                return;
+
+            string displayName = json.Value<string>("DisplayName") ?? "";
+            int displayColorInt = json.Value<int>("DisplayColor");
+            Color color = ConvertColorFromInt(displayColorInt);
+
+            var activeRound = stateService.CurrentRound;
+            if (activeRound != null && !activeRound.RoundColor.HasValue)
+            {
+                activeRound.RoundColor = displayColorInt;
+            }
+
+            List<(string name, int count)>? terrors = null;
+            var namesArray = json.Value<JArray>("Names");
+            if (namesArray != null && namesArray.Count > 0)
+            {
+                var arr = namesArray.Select(token => token.ToString()).ToList();
+                terrors = arr.Select(n => (n, 1)).ToList();
+            }
+
+            var roundType = stateService.CurrentRound?.RoundType ?? string.Empty;
+            if ((terrors == null || terrors.Count == 0) && roundType == "アンバウンド")
+            {
+                var lookup = UnboundRoundDefinitions.GetTerrors(displayName);
+                if (lookup != null)
+                {
+                    terrors = lookup.ToList();
+                }
+            }
 
                     var namesForLogic = terrors?.SelectMany(t => Enumerable.Repeat(t.name, t.count)).ToList();
                     var activeRoundForNames = stateService.CurrentRound;
@@ -1756,74 +1874,74 @@ namespace ToNRoundCounter.UI
                         }
                     }
 
-                    _dispatcher.Invoke(() => { UpdateTerrorDisplay(displayName, color, terrors); });
+            _dispatcher.Invoke(() => { UpdateTerrorDisplay(displayName, color, terrors); });
 
-                    var activeRoundForAuto = stateService.CurrentRound;
-                    if (activeRoundForAuto != null)
+            var activeRoundForAuto = stateService.CurrentRound;
+            if (activeRoundForAuto != null)
+            {
+                // Announce threat to Cloud
+                if (_settings.CloudSyncEnabled && _cloudClient != null && _cloudClient.IsConnected && !string.IsNullOrEmpty(currentInstanceId))
+                {
+                    _ = Task.Run(async () =>
                     {
-                        // Announce threat to Cloud
-                        if (_settings.CloudSyncEnabled && _cloudClient != null && _cloudClient.IsConnected && !string.IsNullOrEmpty(currentInstanceId))
+                        try
                         {
-                            _ = Task.Run(async () =>
-                            {
-                                try
-                                {
-                                    await _cloudClient.AnnounceThreatAsync(
-                                        currentInstanceId,
-                                        activeRoundForAuto.TerrorKey ?? displayName,
-                                        roundType
-                                    );
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger?.LogEvent("CloudThreat", $"Failed to announce threat: {ex.Message}", LogEventLevel.Debug);
-                                }
-                            });
+                            await _cloudClient.AnnounceThreatAsync(
+                                currentInstanceId,
+                                activeRoundForAuto.TerrorKey ?? displayName,
+                                roundType
+                            );
                         }
+                        catch (Exception ex)
+                        {
+                            _logger?.LogEvent("CloudThreat", $"Failed to announce threat: {ex.Message}", LogEventLevel.Debug);
+                        }
+                    });
+                }
 
-                        // Check for desire players
-                        _ = Task.Run(async () =>
-                        {
-                            await CheckDesirePlayersForRoundAsync(roundType, activeRoundForAuto.TerrorKey);
-                        });
+                // Check for desire players
+                _ = Task.Run(async () =>
+                {
+                    await CheckDesirePlayersForRoundAsync(roundType, activeRoundForAuto.TerrorKey);
+                });
 
-                        if (roundType == "ブラッドバス" && namesForLogic != null && namesForLogic.Any(n => n.Contains("LVL 3")))
-                        {
-                            roundType = "EX";
-                        }
-                        //もしroundTypeが自動自殺ラウンド対象なら自動自殺
-                        int terrorAction = ShouldAutoSuicide(roundType, activeRoundForAuto.TerrorKey);
-                        if (terrorAction == 0 && autoSuicideService.HasScheduled && !issetAllSelfKillMode)
-                        {
-                            CancelAutoSuicide();
-                        }
+                if (roundType == "ブラッドバス" && namesForLogic != null && namesForLogic.Any(n => n.Contains("LVL 3")))
+                {
+                    roundType = "EX";
+                }
 
-                        if (issetAllSelfKillMode)
+                int terrorAction = _autoSuicideCoordinator.EvaluateDecision(roundType, activeRoundForAuto.TerrorKey, out _);
+                if (terrorAction == 0 && autoSuicideService.HasScheduled && !_autoSuicideCoordinator.IsAllRoundsModeEnabled)
+                {
+                    _autoSuicideCoordinator.Cancel();
+                }
+
+                if (_autoSuicideCoordinator.IsAllRoundsModeEnabled)
+                {
+                    _ = Task.Run(() => _autoSuicideCoordinator.Execute());
+                }
+                else if (terrorAction == 1)
+                {
+                    // Non-delayed auto suicide - check for desire players
+                    ScheduleAutoSuicideWithDesireCheck(TimeSpan.FromSeconds(3), true, _autoSuicideCoordinator.IsAllRoundsModeForced);
+                }
+                else if (terrorAction == 2)
+                {
+                    var roundStart = autoSuicideService.RoundStartTime;
+                    bool resetStartTime = roundStart == default;
+                    TimeSpan remaining;
+                    if (resetStartTime)
+                    {
+                        remaining = TimeSpan.FromSeconds(40);
+                    }
+                    else
+                    {
+                        remaining = TimeSpan.FromSeconds(40) - (DateTime.UtcNow - roundStart);
+                        if (remaining < TimeSpan.Zero)
                         {
-                            _ = Task.Run(() => PerformAutoSuicide());
+                            remaining = TimeSpan.Zero;
                         }
-                        else if (terrorAction == 1)
-                        {
-                            // Non-delayed auto suicide - check for desire players
-                            ScheduleAutoSuicideWithDesireCheck(TimeSpan.FromSeconds(3), true, allRoundsForcedSchedule);
-                        }
-                        else if (terrorAction == 2)
-                        {
-                            var roundStart = autoSuicideService.RoundStartTime;
-                            bool resetStartTime = roundStart == default;
-                            TimeSpan remaining;
-                            if (resetStartTime)
-                            {
-                                remaining = TimeSpan.FromSeconds(40);
-                            }
-                            else
-                            {
-                                remaining = TimeSpan.FromSeconds(40) - (DateTime.UtcNow - roundStart);
-                                if (remaining < TimeSpan.Zero)
-                                {
-                                    remaining = TimeSpan.Zero;
-                                }
-                            }
+                    }
 
                             ScheduleAutoSuicide(remaining, resetStartTime, allRoundsForcedSchedule);
                         }
@@ -1888,117 +2006,85 @@ namespace ToNRoundCounter.UI
                     string statName = json.Value<string>("Name") ?? string.Empty;
                     JToken? valueToken = json["Value"];
 
-                    if (string.IsNullOrWhiteSpace(statName) || valueToken == null)
-                    {
-                        return;
-                    }
+            if (string.IsNullOrWhiteSpace(statName) || valueToken == null)
+            {
+                return;
+            }
 
-                    var statValue = valueToken.Type == JTokenType.Null ? null : valueToken.ToObject<object>();
-                    if (statValue != null)
-                    {
-                        stateService.UpdateStat(statName, statValue);
-                    }
+            var statValue = valueToken.Type == JTokenType.Null ? null : valueToken.ToObject<object>();
+            if (statValue != null)
+            {
+                stateService.UpdateStat(statName, statValue);
+            }
 
-                    int? numericValue = TryConvertToInt(valueToken);
-                    if (numericValue.HasValue && stateService.CurrentRound != null)
+            int? numericValue = TryConvertToInt(valueToken);
+            if (numericValue.HasValue && stateService.CurrentRound != null)
+            {
+                if (string.Equals(statName, "RoundInt", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(statName, "RoundID", StringComparison.OrdinalIgnoreCase))
+                {
+                    stateService.CurrentRound.RoundNumber = numericValue.Value;
+                }
+                else if (string.Equals(statName, "MapInt", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(statName, "MapID", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(statName, "MapId", StringComparison.OrdinalIgnoreCase))
+                {
+                    stateService.CurrentRound.MapId = numericValue.Value;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Handles the PAGE_COUNT WebSocket event.
+        /// Updates page count for the current round.
+        /// </summary>
+        private void HandlePageCountEvent(JObject json)
+        {
+            int pages = json.Value<int>("Value");
+            if (stateService.CurrentRound != null)
+            {
+                stateService.CurrentRound.PageCount = pages;
+                _dispatcher.Invoke(UpdateRoundTypeLabel);
+            }
+        }
+
+        /// <summary>
+        /// Handles the OPTED_IN WebSocket event.
+        /// Manages opt-in status and triggers alert notifications.
+        /// </summary>
+        private void HandleOptedInEvent(JObject json)
+        {
+            if (!isNotifyActivated)
+            {
+                _ = Task.Run(() => SendAlertOscMessagesAsync(0.9f, false));
+                isNotifyActivated = true;
+            }
+            bool optedIn = json.Value<bool?>("Value") ?? true;
+            lastOptedIn = optedIn;
+            if (stateService.CurrentRound != null && optedIn == false)
+                stateService.CurrentRound.IsDeath = true;
+        }
+
+        /// <summary>
+        /// Handles the INSTANCE WebSocket event.
+        /// Manages instance connection and tracking.
+        /// </summary>
+        private async Task HandleInstanceEventAsync(JObject json)
+        {
+            string instanceValue = json.Value<string>("Value") ?? string.Empty;
+            if (!string.IsNullOrEmpty(instanceValue))
+            {
+                bool instanceChanged;
+                DateTimeOffset now = DateTimeOffset.Now;
+                lock (instanceTimerSync)
+                {
+                    instanceChanged = !string.Equals(instanceValue, currentInstanceId, StringComparison.Ordinal);
+                    if (instanceChanged)
                     {
-                        if (string.Equals(statName, "RoundInt", StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(statName, "RoundID", StringComparison.OrdinalIgnoreCase))
-                        {
-                            stateService.CurrentRound.RoundNumber = numericValue.Value;
-                        }
-                        else if (string.Equals(statName, "MapInt", StringComparison.OrdinalIgnoreCase) ||
-                                 string.Equals(statName, "MapID", StringComparison.OrdinalIgnoreCase) ||
-                                 string.Equals(statName, "MapId", StringComparison.OrdinalIgnoreCase))
-                        {
-                            stateService.CurrentRound.MapId = numericValue.Value;
-                        }
+                        currentInstanceId = instanceValue;
+                        currentInstanceEnteredAt = now;
                     }
                 }
-                else if (eventType == "ALIVE")
-                {
-                    /*
-                    bool isAlive = json.Value<bool?>("Value") ?? true;
-                    if (stateService.CurrentRound != null)
-                    {
-                        if (!isAlive && !stateService.CurrentRound.IsDeath)
-                        {
-                            stateService.CurrentRound.IsDeath = true;
-                            FinalizeCurrentRound("☠");
-                        }
-                        else if (isAlive)
-                        {
-                            stateService.CurrentRound.IsDeath = false;
-                        }
-                    }
-                    */
-                }
-                else if (eventType == "REBORN")
-                {
-                    /*
-                    bool reborn = json.Value<bool?>("Value") ?? false;
-                    if (stateService.CurrentRound != null && reborn)
-                    {
-                        stateService.CurrentRound.IsDeath = false;
-                    }
-                    */
-                }
-                else if (eventType == "PAGE_COUNT")
-                {
-                    int pages = json.Value<int>("Value");
-                    if (stateService.CurrentRound != null)
-                    {
-                        stateService.CurrentRound.PageCount = pages;
-                        _dispatcher.Invoke(UpdateRoundTypeLabel);
-                    }
-                }
-                else if (eventType == "PLAYER_JOIN")
-                {
-                    /*
-                    if (stateService.CurrentRound != null)
-                    {
-                        stateService.CurrentRound.InstancePlayersCount++;
-                    }
-                    */
-                }
-                else if (eventType == "PLAYER_LEAVE")
-                {
-                    /*
-                    if (stateService.CurrentRound != null && stateService.CurrentRound.InstancePlayersCount > 0)
-                    {
-                        stateService.CurrentRound.InstancePlayersCount--;
-                    }
-                    */
-                }
-                else if (eventType == "OPTED_IN")
-                {
-                    if (!isNotifyActivated)
-                    {
-                        _ = Task.Run(() => SendAlertOscMessagesAsync(0.9f, false));
-                        isNotifyActivated = true;
-                    }
-                    bool optedIn = json.Value<bool?>("Value") ?? true;
-                    lastOptedIn = optedIn;
-                    if (stateService.CurrentRound != null && optedIn == false)
-                        stateService.CurrentRound.IsDeath = true;
-                }
-                else if (eventType == "INSTANCE")
-                {
-                    // "INSTANCE" タイプの接続を受けたら、メッセージ内の "Value" フィールドを使ってインスタンス接続を開始する
-                    string instanceValue = json.Value<string>("Value") ?? string.Empty;
-                    if (!string.IsNullOrEmpty(instanceValue))
-                    {
-                        bool instanceChanged;
-                        DateTimeOffset now = DateTimeOffset.Now;
-                        lock (instanceTimerSync)
-                        {
-                            instanceChanged = !string.Equals(instanceValue, currentInstanceId, StringComparison.Ordinal);
-                            if (instanceChanged)
-                            {
-                                currentInstanceId = instanceValue;
-                                currentInstanceEnteredAt = now;
-                            }
-                        }
 
                         if (instanceChanged)
                         {
@@ -2029,21 +2115,21 @@ namespace ToNRoundCounter.UI
                             }
                         }
 
-                        _ = Task.Run(() => ConnectToInstance(instanceValue));
-                        isNotifyActivated = false;
-                    }
-                    else
-                    {
-                        bool hadInstance;
-                        string previousInstanceId;
-                        DateTimeOffset now = DateTimeOffset.Now;
-                        lock (instanceTimerSync)
-                        {
-                            hadInstance = !string.IsNullOrEmpty(currentInstanceId);
-                            previousInstanceId = currentInstanceId;
-                            currentInstanceId = string.Empty;
-                            currentInstanceEnteredAt = now;
-                        }
+                _ = Task.Run(() => ConnectToInstance(instanceValue));
+                isNotifyActivated = false;
+            }
+            else
+            {
+                bool hadInstance;
+                string previousInstanceId;
+                DateTimeOffset now = DateTimeOffset.Now;
+                lock (instanceTimerSync)
+                {
+                    hadInstance = !string.IsNullOrEmpty(currentInstanceId);
+                    previousInstanceId = currentInstanceId;
+                    currentInstanceId = string.Empty;
+                    currentInstanceEnteredAt = now;
+                }
 
                         if (hadInstance)
                         {
@@ -2155,140 +2241,12 @@ namespace ToNRoundCounter.UI
                                     });
                                 }
 
-                            });
-                            break;
-                        default:
-                            _logger.LogEvent("CustomEvent", $"Unknown custom event: {customEvent}");
-                            break;
-                    }
-
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogEvent(LanguageManager.Translate("ParseError"), message);
-                LogUi($"Failed to process WebSocket payload: {ex.Message}", LogEventLevel.Error);
-            }
-        }
-
-        /// <summary>
-        /// 共通のラウンド終了処理
-        /// </summary>
-        /// <param name="status">"☠" または "✅"</param>
-        private void FinalizeCurrentRound(string status)
-        {
-            var round = stateService.CurrentRound;
-            if (round != null)
-            {
-                ResetRoundBgmTracking();
-                string roundType = round.RoundType ?? string.Empty;
-
-                if (string.IsNullOrWhiteSpace(round.MapName))
-                {
-                    string latestMapName = string.Empty;
-                    _dispatcher.Invoke(() => latestMapName = InfoPanel.MapValue.Text);
-                    if (!string.IsNullOrWhiteSpace(latestMapName))
-                    {
-                        round.MapName = latestMapName;
-                    }
-                }
-
-                if (!string.IsNullOrWhiteSpace(round.MapName))
-                {
-                    stateService.SetRoundMapName(roundType, round.MapName);
-                }
-                if (!string.IsNullOrEmpty(round.TerrorKey))
-                {
-                    string terrorKey = round.TerrorKey!;
-                    bool survived = lastOptedIn && !round.IsDeath;
-                    stateService.RecordRoundResult(roundType, terrorKey, survived);
-                    if (!string.IsNullOrWhiteSpace(round.MapName))
-                    {
-                        stateService.SetTerrorMapName(roundType, terrorKey, round.MapName);
-                    }
-                }
-                else
-                {
-                    stateService.RecordRoundResult(roundType, null, !round.IsDeath);
-                }
-
-                // 次ラウンド予測ロジック
-                var normalTypes = new[] { "クラシック", "Classic", "RUN", "走れ！" };
-                var overrideTypes = new HashSet<string> { "アンバウンド", "8ページ", "ゴースト", "オルタネイト" };
-                string current = round.RoundType ?? string.Empty;
-                int roundCycleForHistory = stateService.RoundCycle;
-
-                string? historyStatusOverride = null;
-                bool isNormalRound = normalTypes.Any(type => current.Contains(type));
-                bool isOverrideRound = overrideTypes.Contains(current);
-
-                if (isNormalRound)
-                {
-                    // 通常ラウンド
-                    if (stateService.RoundCycle == 0)
-                        stateService.SetRoundCycle(1); // 次は通常 or 特殊
-                    else if (stateService.RoundCycle == 1)
-                        stateService.SetRoundCycle(2); // 次は特殊
-                    else
-                        stateService.SetRoundCycle(1); // 想定外: 状態を不確定へ
-                }
-                else if (isOverrideRound)
-                {
-                    // 8ページ・アンバウンド・ゴースト・オルタネイトによる上書き
-                    if (stateService.RoundCycle >= 2)
-                        stateService.SetRoundCycle(0); // 特殊として扱いリセット
-                    else
-                        stateService.SetRoundCycle(1); // 通常扱いだが次は不確定
-                    historyStatusOverride = "置き換え";
-                    hasObservedSpecialRound = true;
-                }
-                else
-                {
-                    // 確定特殊ラウンド
-                    stateService.SetRoundCycle(0);
-                    hasObservedSpecialRound = true;
-                }
-
-                stateService.UpdateCurrentRound(null);
-                EvaluateAutoRecording("RoundFinalized");
-                var roundForHistory = stateService.PreviousRound ?? round;
-                lastRoundTypeForHistory = roundForHistory?.RoundType ?? string.Empty;
-
-                // Cloud同期: ラウンド終了
-                if (_settings.CloudSyncEnabled && roundForHistory != null)
-                {
-                    _ = Task.Run(async () =>
-                    {
-                        try
-                        {
-                            await _presenter.OnRoundEndAsync(roundForHistory, status);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger?.LogEvent("CloudSync", $"Failed to sync round end: {ex.Message}", LogEventLevel.Warning);
-                        }
                     });
-                }
-
-                _dispatcher.Invoke(() =>
-                {
-                    UpdateNextRoundPrediction(historyStatusOverride, roundCycleForHistory);
-                    UpdateAggregateStatsDisplay();
-                    if (roundForHistory != null)
-                    {
-                        _presenter.AppendRoundLog(roundForHistory, status);
-                    }
-                    ClearEventDisplays();
-                    ClearItemDisplay();
-                    lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2}";
-                });
-                if (roundForHistory != null)
-                {
-                    _ = _presenter.UploadRoundLogAsync(roundForHistory, status);
-                }
-                ResetRoundScopedShortcutButtons();
+                    break;
+                default:
+                    _logger.LogEvent("CustomEvent", $"Unknown custom event: {customEvent}");
+                    break;
             }
-            SetOverlayTemporarilyHidden(false);
         }
 
 
@@ -2326,11 +2284,56 @@ namespace ToNRoundCounter.UI
 
         private async void VelocityTimer_Tick(object sender, EventArgs e)
         {
+            try
+            {
+                await VelocityTimer_TickAsync();
+            }
+            catch (Exception ex)
+            {
+                LogUi($"Error in velocity timer tick: {ex.Message}", LogEventLevel.Error);
+            }
+        }
+
+        private async Task VelocityTimer_TickAsync()
+        {
+            // Update debug info display
             if (Interlocked.Exchange(ref oscUiUpdatePending, 0) == 1)
             {
                 lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2}  Members: {connected}";
             }
 
+            // Send cloud updates (throttled)
+            SendCloudUpdatesAsync();
+
+            // Handle AFK detection and display
+            double idleSecondsForDisplay = await HandleAfkDetectionAsync();
+            lastIdleSeconds = idleSecondsForDisplay;
+
+            // Update velocity overlay with current state
+            UpdateVelocityOverlay();
+
+            // Update round BGM state
+            UpdateRoundBgmState();
+
+            // Handle item music based on current item and velocity
+            string currentItemText = InfoPanel.ItemValue.Text ?? string.Empty;
+            HandleItemMusicAsync(currentItemText);
+
+            // Detect potential auto-suicide conditions
+            HandleAutoSuicideDetection(currentItemText);
+
+            // Update terror countdown display if active
+            if (terrorCountdownActive)
+            {
+                UpdateTerrorCountdownDisplay();
+            }
+        }
+
+        /// <summary>
+        /// Sends cloud state and monitoring status updates with throttling.
+        /// </summary>
+        private void SendCloudUpdatesAsync()
+        {
             // Send state update to Cloud (throttled)
             _ = Task.Run(async () => await UpdateCloudPlayerState());
 
@@ -2344,9 +2347,18 @@ namespace ToNRoundCounter.UI
                     await ReportMonitoringStatusAsync();
                 }
             });
+        }
 
-            // 無操作判定：VelocityMagnitudeの絶対値が1未満の場合、最低1秒連続してidleと判定する
+        /// <summary>
+        /// Handles AFK (Away From Keyboard) detection based on player velocity.
+        /// Tracks idle time, plays warning sounds, and updates UI with color-coded idle status.
+        /// </summary>
+        /// <returns>The current idle time in seconds for display purposes.</returns>
+        private async Task<double> HandleAfkDetectionAsync()
+        {
             double idleSecondsForDisplay = 0d;
+
+            // Only track AFK during active rounds when player is not moving
             if (stateService.CurrentRound != null && currentVelocity < 1)
             {
                 if (idleStartTime == DateTime.MinValue)
@@ -2357,135 +2369,188 @@ namespace ToNRoundCounter.UI
                 {
                     double idleSeconds = (DateTime.Now - idleStartTime).TotalSeconds;
                     idleSecondsForDisplay = idleSeconds;
-                    // 70秒以上無操作の場合、70秒時点で音声再生（まだ再生していなければ）
+
+                    // Play AFK warning sound at 70 seconds
                     if (idleSeconds >= 70 && !afkSoundPlayed)
                     {
                         bool handled = await InvokeAfkWarningHandlersAsync(idleSeconds);
                         if (!handled)
                         {
-                            PlayFromStart(afkPlayer);
+                            _soundManager.PlayAfkWarning();
                             _ = Task.Run(() => SendAlertOscMessagesAsync(0.1f));
                         }
                         afkSoundPlayed = true;
                     }
-                    // 無操作時間に応じた文字色と点滅の制御
-                    if (idleSeconds > 75)
-                    {
-                        bool blink = ((int)((DateTime.Now - idleStartTime).TotalMilliseconds / 250)) % 2 == 0;
-                        InfoPanel.IdleTimeLabel.ForeColor = blink ? Color.Red : Color.Black;
-                        InfoPanel.IdleTimeLabel.Text = $"無操作時間: {idleSeconds:F1}秒";
-                    }
-                    else if (idleSeconds > 70)
-                    {
-                        InfoPanel.IdleTimeLabel.ForeColor = Color.Red;
-                        InfoPanel.IdleTimeLabel.Text = $"無操作時間: {idleSeconds:F1}秒";
-                    }
-                    else if (idleSeconds > 60)
-                    {
-                        InfoPanel.IdleTimeLabel.ForeColor = Color.Orange;
-                        InfoPanel.IdleTimeLabel.Text = $"無操作時間: {idleSeconds:F1}秒";
-                    }
-                    else
-                    {
-                        InfoPanel.IdleTimeLabel.ForeColor = Color.White;
-                        InfoPanel.IdleTimeLabel.Text = $"無操作時間: {idleSeconds:F1}秒";
-                    }
+
+                    // Update idle time display with appropriate color coding
+                    UpdateIdleTimeDisplay(idleSeconds);
                 }
             }
             else
             {
-                idleStartTime = DateTime.MinValue;
-                InfoPanel.IdleTimeLabel.Text = string.Empty;
+                // Reset AFK tracking when player moves or round ends
+                ResetAfkTracking();
+            }
+
+            return idleSecondsForDisplay;
+        }
+
+        /// <summary>
+        /// Updates the idle time display with color-coded warning levels.
+        /// </summary>
+        /// <param name="idleSeconds">The current idle time in seconds.</param>
+        private void UpdateIdleTimeDisplay(double idleSeconds)
+        {
+            InfoPanel.IdleTimeLabel.Text = $"無操作時間: {idleSeconds:F1}秒";
+
+            if (idleSeconds > 75)
+            {
+                // Blink red after 75 seconds (critical warning)
+                bool blink = ((int)((DateTime.Now - idleStartTime).TotalMilliseconds / 250)) % 2 == 0;
+                InfoPanel.IdleTimeLabel.ForeColor = blink ? Color.Red : Color.Black;
+            }
+            else if (idleSeconds > 70)
+            {
+                // Solid red between 70-75 seconds
+                InfoPanel.IdleTimeLabel.ForeColor = Color.Red;
+            }
+            else if (idleSeconds > 60)
+            {
+                // Orange warning between 60-70 seconds
+                InfoPanel.IdleTimeLabel.ForeColor = Color.Orange;
+            }
+            else
+            {
+                // White for idle time under 60 seconds
                 InfoPanel.IdleTimeLabel.ForeColor = Color.White;
-                afkSoundPlayed = false;
+            }
+        }
+
+        /// <summary>
+        /// Resets all AFK tracking state and UI elements.
+        /// </summary>
+        private void ResetAfkTracking()
+        {
+            idleStartTime = DateTime.MinValue;
+            InfoPanel.IdleTimeLabel.Text = string.Empty;
+            InfoPanel.IdleTimeLabel.ForeColor = Color.White;
+            afkSoundPlayed = false;
+        }
+
+        /// <summary>
+        /// Handles item music playback based on current item and velocity.
+        /// Manages music entry matching, player updates, and playback timing.
+        /// </summary>
+        /// <param name="currentItemText">The current item text from the UI.</param>
+        private void HandleItemMusicAsync(string currentItemText)
+        {
+            if (!_settings.ItemMusicEnabled)
+            {
+                _soundManager.ResetItemMusicTracking();
+                return;
             }
 
-            lastIdleSeconds = idleSecondsForDisplay;
-            UpdateVelocityOverlay();
-
-            UpdateRoundBgmState();
-
-            string currentItemText = InfoPanel.ItemValue.Text ?? string.Empty;
-
-            if (_settings.ItemMusicEnabled)
+            var matchingEntry = FindMatchingItemMusicEntry(currentItemText, currentVelocity);
+            if (matchingEntry != null)
             {
-                var matchingEntry = FindMatchingItemMusicEntry(currentItemText, currentVelocity);
-                if (matchingEntry != null)
+                // Update player if entry changed
+                if (!ReferenceEquals(activeItemMusicEntry, matchingEntry))
                 {
-                    if (!ReferenceEquals(activeItemMusicEntry, matchingEntry))
-                    {
-                        itemMusicMatchStart = DateTime.Now;
-                        UpdateItemMusicPlayer(matchingEntry);
-                    }
-                    else
-                    {
-                        EnsureItemMusicPlayer(matchingEntry);
-                    }
-
-                    if (itemMusicMatchStart == DateTime.MinValue)
-                    {
-                        itemMusicMatchStart = DateTime.Now;
-                    }
-                    else if ((DateTime.Now - itemMusicMatchStart).TotalSeconds >= 0.5)
-                    {
-                        if (!itemMusicActive)
-                        {
-                            StartItemMusic(matchingEntry);
-                        }
-                    }
+                    itemMusicMatchStart = DateTime.Now;
+                    _soundManager.UpdateItemMusicPlayer(matchingEntry);
                 }
                 else
                 {
-                    ResetItemMusicTracking();
+                    EnsureItemMusicPlayer(matchingEntry);
+                }
+
+                // Start music after 0.5 second delay
+                if (itemMusicMatchStart == DateTime.MinValue)
+                {
+                    itemMusicMatchStart = DateTime.Now;
+                }
+                else if ((DateTime.Now - itemMusicMatchStart).TotalSeconds >= 0.5)
+                {
+                    if (!itemMusicActive)
+                    {
+                        _soundManager.StartItemMusic(matchingEntry);
+                    }
                 }
             }
             else
             {
-                ResetItemMusicTracking();
+                _soundManager.ResetItemMusicTracking();
+            }
+        }
+
+        /// <summary>
+        /// Detects potential auto-suicide conditions (Punish round or 8 Pages) based on velocity and item state.
+        /// Monitors velocity in specific range when holding coil items and triggers warnings.
+        /// </summary>
+        /// <param name="currentItemText">The current item text from the UI.</param>
+        private void HandleAutoSuicideDetection(string currentItemText)
+        {
+            // Only check during lobby (no active round)
+            if (stateService.CurrentRound != null)
+            {
+                return;
             }
 
-            // パニッシュ・8ページ検出条件の更新
-            if (stateService.CurrentRound == null)
-            {
-                string itemText = currentItemText;
-                bool hasCoil = itemText.IndexOf("Coil", StringComparison.OrdinalIgnoreCase) >= 0;
-                // 既存条件：6～7の範囲
-                bool condition1 = hasCoil && (currentVelocity > 6.4 && currentVelocity < 6.6);
-                // 追加条件：アイテム未所持 または "Emerald Coil" 所持時、6.4～6.6の範囲
-                bool condition2 = ((string.IsNullOrEmpty(itemText)) ||
-                                   (itemText.IndexOf("Emerald Coil", StringComparison.OrdinalIgnoreCase) >= 0))
-                                  && (currentVelocity == 6.5);
-                if (condition1 || condition2)
-                {
-                    if (velocityInRangeStart == DateTime.MinValue)
-                    {
-                        velocityInRangeStart = DateTime.Now;
-                    }
-                    else if ((DateTime.Now - velocityInRangeStart).TotalSeconds >= 0.5)
-                    {
-                        InfoPanel.RoundTypeValue.Text = "パニッシュ or 8ページの可能性あり";
-                        InfoPanel.RoundTypeValue.ForeColor = Color.Red;
-                        UpdateOverlay(OverlaySection.RoundStatus, form => form.SetValue(InfoPanel.RoundTypeValue.Text ?? string.Empty));
-                        if (!punishSoundPlayed)
-                        {
-                            // パニッシュ・8ページ検出時の音声再生
-                            PlayFromStart(punishPlayer);
-                            punishSoundPlayed = true;
-                        }
-                    }
-                }
-                else
-                {
-                    velocityInRangeStart = DateTime.MinValue;
-                    punishSoundPlayed = false;
-                    UpdateOverlay(OverlaySection.RoundStatus, form => form.SetValue(InfoPanel.RoundTypeValue.Text ?? string.Empty));
-                }
-            }
+            // Check for coil-related auto-suicide conditions
+            bool hasCoil = currentItemText.IndexOf("Coil", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool isVelocityInCoilRange = currentVelocity > 6.4 && currentVelocity < 6.6;
+            bool isEmptyOrEmeraldCoil = string.IsNullOrEmpty(currentItemText) ||
+                                        currentItemText.IndexOf("Emerald Coil", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool isVelocityExactMatch = currentVelocity == 6.5;
 
-            if (terrorCountdownActive)
+            bool condition1 = hasCoil && isVelocityInCoilRange;
+            bool condition2 = isEmptyOrEmeraldCoil && isVelocityExactMatch;
+
+            if (condition1 || condition2)
             {
-                UpdateTerrorCountdownDisplay();
+                // Track how long velocity has been in detection range
+                if (velocityInRangeStart == DateTime.MinValue)
+                {
+                    velocityInRangeStart = DateTime.Now;
+                }
+                else if ((DateTime.Now - velocityInRangeStart).TotalSeconds >= 0.5)
+                {
+                    // Trigger auto-suicide warning after 0.5 seconds in range
+                    TriggerAutoSuicideWarning();
+                }
             }
+            else
+            {
+                // Reset tracking when conditions no longer met
+                ResetAutoSuicideDetection();
+            }
+        }
+
+        /// <summary>
+        /// Triggers the auto-suicide warning (Punish/8 Pages detection).
+        /// Updates UI and plays warning sound if not already played.
+        /// </summary>
+        private void TriggerAutoSuicideWarning()
+        {
+            InfoPanel.RoundTypeValue.Text = "パニッシュ or 8ページの可能性あり";
+            InfoPanel.RoundTypeValue.ForeColor = Color.Red;
+            _overlayManager.UpdateRoundStatus(InfoPanel.RoundTypeValue.Text ?? string.Empty);
+
+            if (!punishSoundPlayed)
+            {
+                _soundManager.PlayPunishSound();
+                punishSoundPlayed = true;
+            }
+        }
+
+        /// <summary>
+        /// Resets auto-suicide detection tracking state.
+        /// </summary>
+        private void ResetAutoSuicideDetection()
+        {
+            velocityInRangeStart = DateTime.MinValue;
+            punishSoundPlayed = false;
+            _overlayManager.UpdateRoundStatus(InfoPanel.RoundTypeValue.Text ?? string.Empty);
         }
 
         protected override void OnHandleCreated(EventArgs e)
@@ -2499,19 +2564,12 @@ namespace ToNRoundCounter.UI
             {
                 InfoPanel.NextRoundType.Text = NextRoundPredictionUnavailableMessage;
                 InfoPanel.NextRoundType.ForeColor = Color.White;
-                UpdateOverlay(OverlaySection.NextRound, form => form.SetValue(GetNextRoundOverlayValue()));
-                if (overlayRoundHistory.Count > 0)
-                {
-                    overlayRoundHistory.Clear();
-                }
+                UpdateNextRoundOverlay();
+                _overlayManager.ClearRoundHistory();
                 lastRoundTypeForHistory = string.Empty;
-                RefreshRoundHistoryOverlay();
                 return;
             }
 
-            // stateService.RoundCycle == 0: 次は通常ラウンド
-            // stateService.RoundCycle == 1: 「通常ラウンド or 特殊ラウンド」と表示（50/50の抽選結果によるため不明）
-            // stateService.RoundCycle >= 2: 次は特殊ラウンド
             if (stateService.RoundCycle == 0)
             {
                 InfoPanel.NextRoundType.Text = "通常ラウンド";
@@ -2528,7 +2586,7 @@ namespace ToNRoundCounter.UI
                 InfoPanel.NextRoundType.ForeColor = Color.Red;
             }
 
-            UpdateOverlay(OverlaySection.NextRound, form => form.SetValue(GetNextRoundOverlayValue()));
+            UpdateNextRoundOverlay();
             RecordRoundHistory(historyStatusOverride, roundCycleForHistory);
         }
 
@@ -2543,8 +2601,8 @@ namespace ToNRoundCounter.UI
             ResetTerrorCountdown();
             InfoPanel.DamageValue.Text = "";
             InfoPanel.ItemValue.Text = "";
-            UpdateOverlay(OverlaySection.Damage, form => form.SetValue(GetDamageOverlayText()));
-            UpdateOverlay(OverlaySection.RoundStatus, form => form.SetValue(InfoPanel.RoundTypeValue.Text ?? string.Empty));
+            _overlayManager.UpdateDamage(InfoPanel.DamageValue?.Text ?? "0");
+            _overlayManager.UpdateRoundStatus(InfoPanel.RoundTypeValue.Text ?? string.Empty);
         }
 
         private void UpdateItemDisplay(JObject json)
@@ -2654,7 +2712,7 @@ namespace ToNRoundCounter.UI
                         UpdateRoundTypeLabel();
                         InfoPanel.RoundTypeValue.ForeColor = Color.White;
                         InfoPanel.DamageValue.Text = "0";
-                        UpdateOverlay(OverlaySection.Damage, form => form.SetValue(GetDamageOverlayText()));
+                        _overlayManager.UpdateDamage(InfoPanel.DamageValue?.Text ?? "0");
                     });
                     EvaluateAutoRecording("RoundActiveStarted");
                 }
@@ -2670,19 +2728,19 @@ namespace ToNRoundCounter.UI
                     }
                     if (!autoSuicideService.HasScheduled)
                     {
-                        int action = ShouldAutoSuicide(checkType, terror, out var hasPendingDelayed);
-                        if (issetAllSelfKillMode)
+                        int action = _autoSuicideCoordinator.EvaluateDecision(checkType, terror, out var hasPendingDelayed);
+                        if (_autoSuicideCoordinator.IsAllRoundsModeEnabled)
                         {
-                            ScheduleAutoSuicide(TimeSpan.FromSeconds(13), true, true);
+                            _autoSuicideCoordinator.Schedule(TimeSpan.FromSeconds(DefaultAutoSuicideDelaySeconds), true, true);
                         }
                         else if (action == 1)
                         {
                             var delay = hasPendingDelayed ? TimeSpan.FromSeconds(40) : TimeSpan.FromSeconds(13);
-                            ScheduleAutoSuicide(delay, true);
+                            _autoSuicideCoordinator.Schedule(delay, true);
                         }
                         else if (action == 2)
                         {
-                            ScheduleAutoSuicide(TimeSpan.FromSeconds(40), true);
+                            _autoSuicideCoordinator.Schedule(TimeSpan.FromSeconds(40), true);
                         }
                     }
                 }
@@ -2693,195 +2751,8 @@ namespace ToNRoundCounter.UI
                 {
                     FinalizeCurrentRound(stateService.CurrentRound.IsDeath ? "☠" : "✅");
                 }
-                CancelAutoSuicide();
+                _autoSuicideCoordinator.Cancel();
             }
-        }
-
-        private void PerformAutoSuicide()
-        {
-            _logger.LogEvent("Suicide", "Performing Suside");
-            LaunchSuicideInputIfExists();
-            _logger.LogEvent("Suicide", "finish");
-            allRoundsForcedSchedule = false;
-            UpdateShortcutOverlayState();
-        }
-
-        private void ScheduleAutoSuicide(TimeSpan delay, bool resetStartTime, bool fromAllRoundsMode = false, bool isManualAction = false)
-        {
-            if (!isManualAction && autoSuicideManualCancelRequested)
-            {
-                autoSuicideManualCancelRequested = false;
-                autoSuicideManualDelayUntil = null;
-                UpdateShortcutOverlayState();
-                return;
-            }
-
-            if (resetStartTime)
-            {
-                autoSuicideManualCancelRequested = false;
-                autoSuicideManualDelayUntil = null;
-            }
-
-            if (!isManualAction)
-            {
-                if (autoSuicideManualDelayUntil.HasValue)
-                {
-                    DateTime now = DateTime.UtcNow;
-                    if (autoSuicideManualDelayUntil.Value > now)
-                    {
-                        TimeSpan manualRemaining = autoSuicideManualDelayUntil.Value - now;
-                        if (manualRemaining > delay)
-                        {
-                            delay = manualRemaining;
-                        }
-                    }
-                    else
-                    {
-                        autoSuicideManualDelayUntil = null;
-                    }
-                }
-            }
-            else
-            {
-                if (delay < TimeSpan.Zero)
-                {
-                    delay = TimeSpan.Zero;
-                }
-
-                autoSuicideManualCancelRequested = false;
-                autoSuicideManualDelayUntil = DateTime.UtcNow + delay;
-            }
-
-            if (delay < TimeSpan.Zero)
-            {
-                delay = TimeSpan.Zero;
-            }
-
-            autoSuicideService.Schedule(delay, resetStartTime, PerformAutoSuicide);
-            allRoundsForcedSchedule = fromAllRoundsMode;
-            UpdateShortcutOverlayState();
-        }
-
-        private void CancelAutoSuicide(bool manualOverride = false)
-        {
-            if (autoSuicideService.HasScheduled)
-            {
-                autoSuicideService.Cancel();
-            }
-
-            if (manualOverride)
-            {
-                autoSuicideManualCancelRequested = true;
-            }
-
-            autoSuicideManualDelayUntil = null;
-            allRoundsForcedSchedule = false;
-            UpdateShortcutOverlayState();
-        }
-
-        private TimeSpan? DelayAutoSuicide(bool manualOverride = false)
-        {
-            if (!autoSuicideService.HasScheduled)
-            {
-                UpdateShortcutOverlayState();
-                return null;
-            }
-
-            TimeSpan elapsed = DateTime.UtcNow - autoSuicideService.RoundStartTime;
-            TimeSpan remaining = TimeSpan.FromSeconds(40) - elapsed;
-            if (remaining <= TimeSpan.Zero)
-            {
-                remaining = TimeSpan.FromSeconds(40);
-            }
-
-            if (manualOverride)
-            {
-                autoSuicideManualCancelRequested = false;
-            }
-
-            ScheduleAutoSuicide(remaining, false, allRoundsForcedSchedule, manualOverride);
-            return remaining;
-        }
-
-        private void LoadAutoSuicideRules()
-        {
-            autoSuicideRules = new List<AutoSuicideRule>();
-            var lines = new List<string>();
-            if (!_settings.AutoSuicideUseDetail)
-            {
-                foreach (var round in AllRoundTypes)
-                {
-                    bool enabled = _settings.AutoSuicideRoundTypes.Contains(round);
-                    lines.Add($"{round}::{(enabled ? 1 : 0)}");
-                }
-            }
-            if (_settings.AutoSuicideDetailCustom != null)
-                lines.AddRange(_settings.AutoSuicideDetailCustom);
-            var temp = new List<AutoSuicideRule>();
-            foreach (var line in lines)
-            {
-                if (AutoSuicideRule.TryParse(line, out var r) && r != null)
-                    temp.Add(r);
-            }
-            var cleaned = new List<AutoSuicideRule>();
-            for (int i = temp.Count - 1; i >= 0; i--)
-            {
-                var r = temp[i];
-                bool redundant = cleaned.Any(c => c.Covers(r));
-                if (!redundant)
-                    cleaned.Add(r);
-            }
-            cleaned.Reverse();
-            autoSuicideRules = cleaned;
-            if (_settings.CoordinatedAutoSuicideBrainEnabled)
-            {
-                _moduleHost.NotifyAutoSuicideRulesPrepared(new ModuleAutoSuicideRuleContext(autoSuicideRules, _settings, _moduleHost.CurrentServiceProvider));
-            }
-            UpdateShortcutOverlayState();
-        }
-
-        private int ShouldAutoSuicide(string roundType, string? terrorName, out bool hasPendingDelayed)
-        {
-            hasPendingDelayed = false;
-            if (!_settings.AutoSuicideEnabled) return 0;
-            Func<string, string, bool> comparer;
-            if (_settings.AutoSuicideFuzzyMatch)
-                comparer = (a, b) => MatchWithTypoTolerance(a, b).result;
-            else
-                comparer = (a, b) => a == b;
-
-            if (string.IsNullOrWhiteSpace(terrorName))
-            {
-                terrorName = null;
-                hasPendingDelayed = autoSuicideRules.Any(r =>
-                    r.Value == 2 &&
-                    r.MatchesRound(roundType, comparer) &&
-                    !r.Matches(roundType, null, comparer));
-            }
-
-            int decision = 0;
-            for (int i = autoSuicideRules.Count - 1; i >= 0; i--)
-            {
-                var r = autoSuicideRules[i];
-                if (r.Matches(roundType, terrorName, comparer))
-                {
-                    decision = r.Value;
-                    break;
-                }
-            }
-
-            var decisionContext = new ModuleAutoSuicideDecisionContext(roundType, terrorName, decision, hasPendingDelayed, _moduleHost.CurrentServiceProvider);
-            if (_settings.CoordinatedAutoSuicideBrainEnabled)
-            {
-                _moduleHost.NotifyAutoSuicideDecisionEvaluated(decisionContext);
-            }
-            hasPendingDelayed = decisionContext.HasPendingDelayed;
-            return decisionContext.Decision;
-        }
-
-        private int ShouldAutoSuicide(string roundType, string? terrorName)
-        {
-            return ShouldAutoSuicide(roundType, terrorName, out _);
         }
 
         private void UpdateRoundTypeLabel()
@@ -2898,7 +2769,7 @@ namespace ToNRoundCounter.UI
             if (round == null)
             {
                 InfoPanel.RoundTypeValue.Text = string.Empty;
-                UpdateOverlay(OverlaySection.RoundStatus, form => form.SetValue(InfoPanel.RoundTypeValue.Text ?? string.Empty));
+                _overlayManager.UpdateRoundStatus(InfoPanel.RoundTypeValue.Text ?? string.Empty);
                 return;
             }
 
@@ -2911,7 +2782,7 @@ namespace ToNRoundCounter.UI
                 InfoPanel.RoundTypeValue.Text = round.RoundType;
             }
 
-            UpdateOverlay(OverlaySection.RoundStatus, form => form.SetValue(InfoPanel.RoundTypeValue.Text ?? string.Empty));
+            _overlayManager.UpdateRoundStatus(InfoPanel.RoundTypeValue.Text ?? string.Empty);
         }
 
         private Color ConvertColorFromInt(int colorInt)
@@ -3184,7 +3055,7 @@ namespace ToNRoundCounter.UI
                 InfoPanel.TerrorValue.Text = infoText;
             }
 
-            UpdateOverlay(OverlaySection.Terror, form => form.SetValue(overlayText));
+            _overlayManager.UpdateTerror(overlayText);
         }
 
         private static string CombineBaseAndSuffix(string? baseText, string? suffix)
@@ -3234,7 +3105,8 @@ namespace ToNRoundCounter.UI
 
         private void RefreshTerrorInfoOverlay()
         {
-            UpdateOverlay(OverlaySection.TerrorInfo, form => form.SetValue(BuildTerrorInfoOverlayText()));
+            string terrorInfoText = BuildTerrorInfoOverlayText();
+            _overlayManager.UpdateTerror(InfoPanel?.TerrorValue?.Text ?? string.Empty, terrorInfoText);
         }
 
         private string BuildTerrorInfoOverlayText()
@@ -3286,14 +3158,12 @@ namespace ToNRoundCounter.UI
         {
             try
             {
-                // 実行中のToNSaveManagerプロセスを取得
                 var process = Process.GetProcessesByName("ToNSaveManager").FirstOrDefault();
                 if (process == null)
                 {
                     throw new InvalidOperationException("ToNSaveManager.exe が実行されていません。");
                 }
 
-                // 実行ファイルのパスとディレクトリ取得
                 string exePath;
                 try
                 {
@@ -3310,9 +3180,8 @@ namespace ToNRoundCounter.UI
                     throw new InvalidOperationException("実行ファイルのディレクトリが不正です。");
                 }
 
-                // Scriptsフォルダのパス
                 string scriptsDir = Path.Combine(exeDirectory, "scripts");
-                // フォルダが存在しない場合は作成
+
                 if (!Directory.Exists(scriptsDir))
                 {
                     try
@@ -3325,14 +3194,12 @@ namespace ToNRoundCounter.UI
                     }
                 }
 
-                // コピー元のJSファイルパス
                 string sourceJs = Path.Combine(Environment.CurrentDirectory, "ToNRoundCounter.js");
                 if (!File.Exists(sourceJs))
                 {
                     throw new FileNotFoundException("コピー元のToNRoundCounter.jsが見つかりません。", sourceJs);
                 }
 
-                // コピー先のJSファイルパス
                 string destJs = Path.Combine(scriptsDir, "ToNRoundCounter.js");
                 if (!File.Exists(destJs))
                 {
@@ -3350,7 +3217,6 @@ namespace ToNRoundCounter.UI
                     return;
                 }
 
-                // プロセスの再起動
                 try
                 {
                     process.Kill();
@@ -3377,7 +3243,6 @@ namespace ToNRoundCounter.UI
             }
             catch (Exception ex)
             {
-                // エラー内容を標準出力に表示
                 Console.Error.WriteLine(ex.Message);
                 if (ex.InnerException != null)
                 {
@@ -3391,14 +3256,14 @@ namespace ToNRoundCounter.UI
         {
             if (!_settings.RoundBgmEnabled)
             {
-                ResetRoundBgmTracking();
+                _soundManager.ResetRoundBgmTracking();
                 return;
             }
 
             var currentRound = stateService.CurrentRound;
             if (currentRound == null)
             {
-                ResetRoundBgmTracking();
+                _soundManager.ResetRoundBgmTracking();
                 return;
             }
 
@@ -3408,7 +3273,7 @@ namespace ToNRoundCounter.UI
                 if (!ReferenceEquals(activeRoundBgmEntry, matchingEntry))
                 {
                     roundBgmMatchStart = DateTime.Now;
-                    UpdateRoundBgmPlayer(matchingEntry);
+                    _soundManager.UpdateRoundBgmPlayer(matchingEntry);
                 }
                 else
                 {
@@ -3423,13 +3288,13 @@ namespace ToNRoundCounter.UI
                 {
                     if (!roundBgmActive)
                     {
-                        StartRoundBgm(matchingEntry);
+                        _soundManager.StartRoundBgm(matchingEntry);
                     }
                 }
             }
             else
             {
-                ResetRoundBgmTracking();
+                _soundManager.ResetRoundBgmTracking();
             }
         }
 
@@ -3712,30 +3577,24 @@ namespace ToNRoundCounter.UI
                 switch (message.Event)
                 {
                     case "player.state.updated":
-                        // プレイヤー状態が更新された
                         _logger?.LogEvent("CloudStream", $"Player state updated: {message.Data}", LogEventLevel.Debug);
                         break;
 
                     case "instance.member.joined":
-                        // メンバーが参加した
                         _dispatcher.Invoke(() =>
                         {
                             _logger?.LogEvent("CloudStream", "Instance member joined");
-                            // 次回のupdateで自動的に反映される
                         });
                         break;
 
                     case "instance.member.left":
-                        // メンバーが退出した
                         _dispatcher.Invoke(() =>
                         {
                             _logger?.LogEvent("CloudStream", "Instance member left");
-                            // 次回のupdateで自動的に反映される
                         });
                         break;
 
                     case "threat.announced":
-                        // 脅威がアナウンスされた
                         _logger?.LogEvent("CloudStream", $"Threat announced: {message.Data}", LogEventLevel.Information);
                         break;
 
@@ -3748,6 +3607,218 @@ namespace ToNRoundCounter.UI
             {
                 _logger?.LogEvent("CloudStream", $"Failed to handle stream message: {ex.Message}", LogEventLevel.Warning);
             }
+        }
+
+        /// <summary>
+        /// Updates the shortcut overlay state by delegating to OverlayManager.
+        /// </summary>
+        private void UpdateShortcutOverlayState()
+        {
+            _overlayManager.UpdateShortcutOverlayState(
+                _settings.AutoSuicideEnabled,
+                _autoSuicideCoordinator.IsAllRoundsModeEnabled,
+                _settings.CoordinatedAutoSuicideBrainEnabled,
+                _settings.AfkSoundCancelEnabled,
+                overlayTemporarilyHidden,
+                autoSuicideService.HasScheduled);
+        }
+
+        /// <summary>
+        /// Generic helper to update a connection status label with translation.
+        /// </summary>
+        /// <param name="label">The label control to update.</param>
+        /// <param name="isConnected">Whether the connection is active.</param>
+        /// <param name="prefix">The prefix text (e.g., "WebSocket:", "OSC:").</param>
+        private void UpdateStatusLabel(Label? label, bool isConnected, string prefix)
+        {
+            if (label == null)
+            {
+                return;
+            }
+
+            var statusText = LanguageManager.Translate(isConnected ? "Connected" : "Disconnected");
+            label.Text = $"{prefix} {statusText}";
+            label.ForeColor = isConnected ? Color.Green : Color.Red;
+        }
+
+        /// <summary>
+        /// Starts the cloud client and attempts automatic login if configured.
+        /// Handles all errors internally with appropriate logging.
+        /// </summary>
+        private void StartAndLoginCloudClientAsync()
+        {
+            if (_cloudClient == null)
+            {
+                return;
+            }
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _cloudClient.StartAsync();
+                    _logger?.LogEvent("CloudSync", "Cloud WebSocket client started successfully.");
+
+                    if (!string.IsNullOrWhiteSpace(_settings.CloudPlayerName))
+                    {
+                        try
+                        {
+                            await _cloudClient.LoginAsync(
+                                _settings.CloudPlayerName,
+                                "1.0.0",
+                                System.Threading.CancellationToken.None
+                            );
+                            _logger?.LogEvent("CloudSync", $"Logged in as: {_settings.CloudPlayerName}");
+                        }
+                        catch (Exception loginEx)
+                        {
+                            _logger?.LogEvent("CloudSync", $"Auto-login failed: {loginEx.Message}", LogEventLevel.Warning);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogEvent("CloudSync", $"Failed to start Cloud WebSocket client: {ex.Message}", LogEventLevel.Warning);
+                }
+            });
+        }
+
+        /// <summary>
+        /// Executes a presenter async operation with built-in error handling and logging.
+        /// </summary>
+        /// <param name="operation">The async operation to execute.</param>
+        /// <param name="operationName">The operation name for logging (e.g., "round end", "round start").</param>
+        private void RunPresenterAsyncWithErrorHandling(Func<Task> operation, string operationName)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await operation();
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogEvent("CloudSync", $"Failed to sync {operationName}: {ex.Message}", LogEventLevel.Warning);
+                }
+            });
+        }
+
+        /// <summary>
+        /// Updates the next round overlay by delegating to OverlayManager.
+        /// </summary>
+        private void UpdateNextRoundOverlay()
+        {
+            string nextRoundText = InfoPanel?.NextRoundType?.Text ?? string.Empty;
+            _overlayManager.UpdateNextRound(nextRoundText, hasObservedSpecialRound);
+        }
+
+        /// <summary>
+        /// Records round history by delegating to OverlayManager.
+        /// </summary>
+        private void RecordRoundHistory(string? statusOverride, int? roundCycleForHistory = null)
+        {
+            string label = !string.IsNullOrWhiteSpace(lastRoundTypeForHistory)
+                ? lastRoundTypeForHistory
+                : InfoPanel?.NextRoundType?.Text ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(label) && string.IsNullOrWhiteSpace(statusOverride))
+            {
+                return;
+            }
+
+            string status = statusOverride ?? GetDefaultRoundHistoryStatus(roundCycleForHistory ?? stateService.RoundCycle);
+            _overlayManager.RecordRoundHistory(label, status);
+        }
+
+        /// <summary>
+        /// Gets the default round history status based on round cycle.
+        /// </summary>
+        private static string GetDefaultRoundHistoryStatus(int roundCycle)
+        {
+            if (roundCycle <= 0)
+            {
+                return "クラシック確定";
+            }
+
+            if (roundCycle == 1)
+            {
+                return "50/50";
+            }
+
+            return "特殊確定";
+        }
+
+        /// <summary>
+        /// Handles shortcut button clicks from the overlay manager.
+        /// </summary>
+        private async void OverlayManager_ShortcutButtonClicked(object? sender, ShortcutButtonClickedEventArgs e)
+        {
+            switch (e.Button)
+            {
+                case ShortcutButton.AutoSuicideToggle:
+                    _settings.AutoSuicideEnabled = !_settings.AutoSuicideEnabled;
+                    _autoSuicideCoordinator.LoadRules();
+                    if (!_settings.AutoSuicideEnabled && !_autoSuicideCoordinator.IsAllRoundsModeEnabled)
+                    {
+                        _autoSuicideCoordinator.Cancel();
+                    }
+                    UpdateShortcutOverlayState();
+                    await _settings.SaveAsync();
+                    break;
+
+                case ShortcutButton.AutoSuicideCancel:
+                    bool hadScheduled = autoSuicideService.HasScheduled;
+                    if (hadScheduled)
+                    {
+                        _autoSuicideCoordinator.Cancel(manualOverride: true);
+                    }
+                    else
+                    {
+                        UpdateShortcutOverlayState();
+                    }
+                    break;
+
+                case ShortcutButton.AutoSuicideDelay:
+                    bool canDelay = autoSuicideService.HasScheduled;
+                    if (canDelay)
+                    {
+                        _autoSuicideCoordinator.Delay(manualOverride: true);
+                    }
+                    else
+                    {
+                        UpdateShortcutOverlayState();
+                    }
+                    break;
+
+                case ShortcutButton.ManualSuicide:
+                    _ = Task.Run(_autoSuicideCoordinator.Execute);
+                    break;
+
+                case ShortcutButton.AllRoundsModeToggle:
+                    _autoSuicideCoordinator.ToggleAllRoundsMode();
+                    UpdateShortcutOverlayState();
+                    break;
+
+                case ShortcutButton.CoordinatedBrainToggle:
+                    _settings.CoordinatedAutoSuicideBrainEnabled = !_settings.CoordinatedAutoSuicideBrainEnabled;
+                    UpdateShortcutOverlayState();
+                    await _settings.SaveAsync();
+                    break;
+
+                case ShortcutButton.AfkDetectionToggle:
+                    _settings.AfkSoundCancelEnabled = !_settings.AfkSoundCancelEnabled;
+                    UpdateShortcutOverlayState();
+                    await _settings.SaveAsync();
+                    break;
+
+                case ShortcutButton.HideUntilRoundEnd:
+                    _overlayManager.SetTemporarilyHidden(!overlayTemporarilyHidden);
+                    overlayTemporarilyHidden = !overlayTemporarilyHidden;
+                    UpdateShortcutOverlayState();
+                    break;
+            }
+
+            WindowUtilities.TryFocusProcessWindowIfAltNotPressed("VRChat");
         }
     }
 }

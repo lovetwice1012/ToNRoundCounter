@@ -34,12 +34,10 @@ namespace ToNRoundCounter.UI
             settingsPanel = new SettingsPanel(_settings, _cloudClient);
             settingsPanel.Dock = DockStyle.Fill;
 
-            // 下部にボタン専用のパネルを追加
             Panel buttonPanel = new Panel();
             buttonPanel.Dock = DockStyle.Bottom;
-            buttonPanel.Height = 50; // ボタンパネルの高さ
+            buttonPanel.Height = 50;
 
-            // FlowLayoutPanel を使用して OK と キャンセル ボタンを右寄せに配置
             FlowLayoutPanel flowPanel = new FlowLayoutPanel();
             flowPanel.Dock = DockStyle.Fill;
             flowPanel.FlowDirection = FlowDirection.RightToLeft;
@@ -60,7 +58,6 @@ namespace ToNRoundCounter.UI
             flowPanel.Controls.Add(btnOK);
             buttonPanel.Controls.Add(flowPanel);
 
-            // フォームに設定パネルとボタンパネルを追加
             this.Controls.Add(settingsPanel);
             this.Controls.Add(buttonPanel);
 

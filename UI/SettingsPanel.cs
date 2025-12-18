@@ -25,11 +25,9 @@ namespace ToNRoundCounter.UI
         public ComboBox LanguageComboBox { get; private set; } = null!;
         public NumericUpDown oscPortNumericUpDown { get; private set; } = null!;
         public TextBox webSocketIpTextBox { get; private set; } = null!;
-        // 統計情報表示・デバッグ情報チェック
         public CheckBox ShowStatsCheckBox { get; private set; } = null!;
         public CheckBox DebugInfoCheckBox { get; private set; } = null!;
 
-        // フィルター項目（MAPは削除）
         public CheckBox RoundTypeCheckBox { get; private set; } = null!;
         public CheckBox TerrorCheckBox { get; private set; } = null!;
         public CheckBox AppearanceCountCheckBox { get; private set; } = null!;
@@ -37,7 +35,6 @@ namespace ToNRoundCounter.UI
         public CheckBox DeathCountCheckBox { get; private set; } = null!;
         public CheckBox SurvivalRateCheckBox { get; private set; } = null!;
 
-        // オーバーレイ表示切替
         public CheckBox OverlayVelocityCheckBox { get; private set; } = null!;
         public CheckBox OverlayTerrorCheckBox { get; private set; } = null!;
         public CheckBox OverlayDamageCheckBox { get; private set; } = null!;
@@ -56,10 +53,8 @@ namespace ToNRoundCounter.UI
         public TrackBar OverlayOpacityTrackBar { get; private set; } = null!;
         public Label OverlayOpacityValueLabel { get; private set; } = null!;
 
-        // ラウンドログ表示切替チェックボックス
         public CheckBox ToggleRoundLogCheckBox { get; private set; } = null!;
 
-        // 追加設定項目
         public Label FixedTerrorColorLabel { get; private set; } = null!;
         public Button FixedTerrorColorButton { get; private set; } = null!;
         public Label BackgroundColorLabel { get; private set; } = null!;
@@ -67,7 +62,6 @@ namespace ToNRoundCounter.UI
         public Label RoundTypeStatsLabel { get; private set; } = null!;
         public CheckedListBox RoundTypeStatsListBox { get; private set; } = null!;
 
-        // 個別背景色設定
         public Label InfoPanelBgLabel { get; private set; } = null!;
         public Button InfoPanelBgButton { get; private set; } = null!;
         public Label StatsBgLabel { get; private set; } = null!;
@@ -245,7 +239,7 @@ namespace ToNRoundCounter.UI
 
             GroupBox grpOsc = new GroupBox();
             grpOsc.Text = LanguageManager.Translate("OSC設定");
-            grpOsc.Location = new Point(margin, currentY);  // currentY を適切に調整してください
+            grpOsc.Location = new Point(margin, currentY);
             grpOsc.Size = new Size(columnWidth, 60);
             this.Controls.Add(grpOsc);
 
@@ -270,11 +264,10 @@ namespace ToNRoundCounter.UI
             oscPortNumericUpDown = new NumericUpDown();
             oscPortNumericUpDown.Minimum = 1024;
             oscPortNumericUpDown.Maximum = 65535;
-            oscPortNumericUpDown.Value = _settings.OSCPort;  // _settings.OSCPort の初期値を使用
+            oscPortNumericUpDown.Value = _settings.OSCPort;
             oscPortNumericUpDown.Location = new Point(oscPortLabel.Right + 10, 20);
             grpOsc.Controls.Add(oscPortNumericUpDown);
 
-            // 自動自殺モードグループ（右列）
             GroupBox grpAutoSuicide = new GroupBox();
             grpAutoSuicide.Text = LanguageManager.Translate("自動自殺モード");
             grpAutoSuicide.Location = new Point(margin * 2 + columnWidth, rightColumnY);
@@ -288,7 +281,6 @@ namespace ToNRoundCounter.UI
             autoSuicideCheckBox.AutoSize = true;
             autoSuicideCheckBox.Location = new Point(innerMargin, autoInnerY);
             autoSuicideCheckBox.Checked = _settings.AutoSuicideEnabled;
-            //autoSuicideCheckBox.Enabled = false;
             grpAutoSuicide.Controls.Add(autoSuicideCheckBox);
 
             autoSuicideUseDetailCheckBox = new CheckBox();
@@ -349,7 +341,6 @@ namespace ToNRoundCounter.UI
                 string item = autoSuicideRoundListBox.Items[i].ToString();
                 autoSuicideRoundListBox.SetItemChecked(i, _settings.AutoSuicideRoundTypes.Contains(item));
             }
-            //autoSuicideRoundListBox.Enabled = false;
             grpAutoSuicide.Controls.Add(autoSuicideRoundListBox);
             autoSuicideRoundListBox.ItemCheck += (s, e) =>
             {
@@ -738,7 +729,7 @@ namespace ToNRoundCounter.UI
                     }
                 }
 
-                var complexRoundRules = rulesCheck.Where(r => r.Round != null && r.TerrorExpression != null && r.Terror == null && !r.RoundNegate)
+                var complexRoundRules = rulesCheck.Where(IsComplexRoundRule)
                                                    .GroupBy(r => r.Round);
                 foreach (var cg in complexRoundRules)
                 {
@@ -1331,7 +1322,6 @@ namespace ToNRoundCounter.UI
 
             currentY = currentY + grpOsc.Bottom + margin;
 
-            // 表示設定グループ
             GroupBox grpDisplay = new GroupBox();
             grpDisplay.Text = LanguageManager.Translate("表示設定");
             grpDisplay.Location = new Point(margin, currentY);
@@ -1358,7 +1348,6 @@ namespace ToNRoundCounter.UI
 
             currentY += grpDisplay.Height + margin;
 
-            // フィルター設定グループ
             GroupBox grpFilter = new GroupBox();
             grpFilter.Text = LanguageManager.Translate("フィルター設定");
             grpFilter.Location = new Point(margin, currentY);
@@ -1622,7 +1611,6 @@ namespace ToNRoundCounter.UI
 
             rightColumnY += grpItemMusic.Height + margin;
 
-
             GroupBox grpRoundBgm = new GroupBox();
             grpRoundBgm.Text = LanguageManager.Translate("ラウンド/テラーBGM設定");
             grpRoundBgm.Location = new Point(margin * 2 + columnWidth, rightColumnY);
@@ -1755,9 +1743,6 @@ namespace ToNRoundCounter.UI
 
             rightColumnY += grpRoundBgm.Height + margin;
 
-
-
-            // 追加設定グループ
             GroupBox grpAdditional = new GroupBox();
             grpAdditional.Text = LanguageManager.Translate("追加設定");
             grpAdditional.Location = new Point(margin, currentY);
@@ -1786,7 +1771,6 @@ namespace ToNRoundCounter.UI
                 }
             };
             grpAdditional.Controls.Add(FixedTerrorColorButton);
-
 
             innerY += FixedTerrorColorButton.Height + 10;
             RoundTypeStatsLabel = new Label();
@@ -1822,7 +1806,6 @@ namespace ToNRoundCounter.UI
 
             currentY += grpAdditional.Height + margin;
 
-            // 背景色設定グループ（個別設定）
             GroupBox grpBg = new GroupBox();
             grpBg.Text = LanguageManager.Translate("背景色設定");
             grpBg.Location = new Point(margin, currentY);
@@ -1903,23 +1886,22 @@ namespace ToNRoundCounter.UI
 
             currentY += grpBg.Height + margin;
 
-            int innerMargin2 = 10; // ToNRoundCounter-Cloudの設定用の内側のマージン
-            int apiInnerY = 20; // ToNRoundCounter-Cloudの設定用の初期Y座標
-            //apiキー設定
+            int innerMargin2 = 10;
+            int apiInnerY = 20;
             GroupBox grpApiKey = new GroupBox();
             grpApiKey.Text = LanguageManager.Translate("ToNRoundCounter-Cloudの設定");
             grpApiKey.Location = new Point(margin, currentY);
             grpApiKey.Size = new Size(columnWidth, 300);
             this.Controls.Add(grpApiKey);
-            //説明
+
             Label apiKeyDescription = new Label();
             apiKeyDescription.Text = LanguageManager.Translate("ToNRoundCounter-Cloudはセーブコードの複数端末間での全自動同期などの機能を持つクラウドサービスです。\n利用にはAPIキーが必要です。\nAPIキーはwebサイトから取得してください。");
-            apiKeyDescription.Size = new Size(grpApiKey.Width - innerMargin2 * 2, 60); // 説明文の幅をグループボックスの幅に合わせる
+            apiKeyDescription.Size = new Size(grpApiKey.Width - innerMargin2 * 2, 60);
             apiKeyDescription.Location = new Point(innerMargin2, apiInnerY);
             grpApiKey.Controls.Add(apiKeyDescription);
-            apiInnerY += apiKeyDescription.Height + 10; // 説明文の下にスペースを確保
-            grpApiKey.Height = apiInnerY + 50; // グループボックスの高さを調整
-            //ToNRoundCounter-Cloudを開くを追加(https://toncloud.sprink.cloud)
+            apiInnerY += apiKeyDescription.Height + 10;
+            grpApiKey.Height = apiInnerY + 50;
+
             Button openCloudButton = new Button();
             openCloudButton.Text = LanguageManager.Translate("ToNRoundCounter-Cloudを開く");
             openCloudButton.AutoSize = true;
@@ -1984,7 +1966,7 @@ namespace ToNRoundCounter.UI
                 }
             };
             grpApiKey.Controls.Add(openCloudButton);
-            apiInnerY += openCloudButton.Height + 10; // ボタンの下にスペースを確保
+            apiInnerY += openCloudButton.Height + 10;
 
             CloudSyncEnabledCheckBox = new CheckBox();
             CloudSyncEnabledCheckBox.Text = LanguageManager.Translate("クラウド同期を有効化");
@@ -2022,7 +2004,6 @@ namespace ToNRoundCounter.UI
             grpApiKey.Controls.Add(CloudWebSocketUrlTextBox);
             apiInnerY += CloudWebSocketUrlTextBox.Height + 10;
 
-            // APIキー入力欄
             apiKeyLabel = new Label();
             apiKeyLabel.Text = LanguageManager.Translate("APIキー:");
             apiKeyLabel.AutoSize = true;
@@ -2031,7 +2012,7 @@ namespace ToNRoundCounter.UI
 
             apiKeyTextBox = new TextBox();
             apiKeyTextBox.Name = "ApiKeyTextBox";
-            apiKeyTextBox.Text = _settings.apikey; // _settings.apikey の初期値を使用
+            apiKeyTextBox.Text = _settings.ApiKey;
             apiKeyTextBox.Location = new Point(apiKeyLabel.Right + 10, apiInnerY);
             apiKeyTextBox.Width = 300; // テキストボックスの幅を調整
             apiKeyTextBox.ReadOnly = true; // 読み取り専用に設定
@@ -2230,13 +2211,29 @@ namespace ToNRoundCounter.UI
                 this.Height = Math.Max(Math.Max(currentY, rightColumnY), Math.Max(thirdColumnY, ModuleExtensionsPanel.Bottom)) + moduleMargin;
             };
 
-            // 最後に、パネルの高さを調整
             this.Width = totalWidth;
             this.Height = Math.Max(Math.Max(currentY, rightColumnY), thirdColumnY) + margin;
 
         }
 
         private async void RoundLogExportButton_Click(object? sender, EventArgs e)
+        {
+            try
+            {
+                await RoundLogExportButton_ClickAsync();
+            }
+            catch (Exception ex)
+            {
+                Log.Logger?.Error(ex, "Unhandled error in round log export.");
+                MessageBox.Show(
+                    $"エクスポート中に予期しないエラーが発生しました: {ex.Message}",
+                    "エラー",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
+        private async Task RoundLogExportButton_ClickAsync()
         {
             using SaveFileDialog saveDialog = new SaveFileDialog();
             saveDialog.Filter = "JSON Files|*.json|All Files|*.*";
@@ -3616,7 +3613,7 @@ namespace ToNRoundCounter.UI
             foreach (var r in rules)
             {
                 string line = r.ToString();
-                if (!r.RoundNegate && !r.TerrorNegate && r.Terror == null && r.Round != null && autoSuicideRoundListBox.Items.Contains(r.Round))
+                if (IsSimpleAutoSuicideRule(r))
                 {
                     autoLines.Add(line);
                 }
@@ -3626,6 +3623,23 @@ namespace ToNRoundCounter.UI
                 }
             }
             return (autoLines, customLines);
+        }
+
+        private bool IsSimpleAutoSuicideRule(AutoSuicideRule rule)
+        {
+            return !rule.RoundNegate &&
+                   !rule.TerrorNegate &&
+                   rule.Terror == null &&
+                   rule.Round != null &&
+                   autoSuicideRoundListBox.Items.Contains(rule.Round);
+        }
+
+        private static bool IsComplexRoundRule(AutoSuicideRule rule)
+        {
+            return rule.Round != null &&
+                   rule.TerrorExpression != null &&
+                   rule.Terror == null &&
+                   !rule.RoundNegate;
         }
 
         public List<string> GetCustomAutoSuicideLines()
@@ -3677,14 +3691,8 @@ namespace ToNRoundCounter.UI
 
         private void AutoSuicideUseDetailCheckBox_CheckedChanged(object? sender, EventArgs e)
         {
-            // Use the sender if available, otherwise fall back to the field. This
-            // avoids a potential NullReferenceException when the handler is
-            // invoked before the checkbox is initialised (e.g. during form
-            // construction) or externally with a null sender.
             var checkBox = sender as CheckBox ?? autoSuicideUseDetailCheckBox;
 
-            // If the checkbox or related controls haven't been created yet, just
-            // exit early instead of throwing.
             if (checkBox == null ||
                 autoSuicideRoundListBox == null ||
                 autoSuicideRoundLabel == null ||
