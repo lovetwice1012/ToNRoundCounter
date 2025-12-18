@@ -43,17 +43,17 @@ export class MonitoringService {
             [
                 statusId,
                 userId,
-                instanceId,
+                instanceId ?? null,
                 statusData.application_status,
-                statusData.application_version,
+                statusData.application_version ?? null,
                 statusData.uptime,
                 statusData.memory_usage,
                 statusData.cpu_usage,
-                statusData.osc_status,
-                statusData.osc_latency,
-                statusData.vrchat_status,
-                statusData.vrchat_world_id,
-                statusData.vrchat_instance_id,
+                statusData.osc_status ?? null,
+                statusData.osc_latency ?? null,
+                statusData.vrchat_status ?? null,
+                statusData.vrchat_world_id ?? null,
+                statusData.vrchat_instance_id ?? null,
             ]
         );
 
@@ -118,11 +118,11 @@ export class MonitoringService {
              VALUES (?, ?, ?, ?, ?, ?, ?)`,
             [
                 errorId,
-                userId,
-                instanceId,
+                userId ?? null,
+                instanceId ?? null,
                 severity,
                 message,
-                stack,
+                stack ?? null,
                 context ? JSON.stringify(context) : null,
             ]
         );

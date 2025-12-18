@@ -22,6 +22,7 @@ import { MonitoringService } from '../services/MonitoringService';
 import { AnalyticsService } from '../services/AnalyticsService';
 import { BackupService } from '../services/BackupService';
 import { ThreatService } from '../services/ThreatService';
+import { RoundService } from '../services/RoundService';
 
 interface ExtendedWebSocket extends WebSocket {
     isAlive?: boolean;
@@ -48,6 +49,7 @@ export class WebSocketHandler {
     private analyticsService: AnalyticsService;
     private backupService: BackupService;
     private threatService: ThreatService;
+    private roundService: RoundService;
 
     constructor(server: HttpServer) {
         this.wss = new WebSocketServer({ server, path: '/ws' });
@@ -65,6 +67,7 @@ export class WebSocketHandler {
         this.analyticsService = new AnalyticsService();
         this.backupService = new BackupService();
         this.threatService = new ThreatService(this);
+        this.roundService = new RoundService();
 
         this.setupWebSocketServer();
         this.startHeartbeat();
@@ -86,6 +89,10 @@ export class WebSocketHandler {
 
             ws.on('pong', () => {
                 ws.isAlive = true;
+                logger.debug({ 
+                    sessionId: ws.sessionId, 
+                    playerId: ws.playerId 
+                }, 'Received pong from client');
             });
 
             ws.on('message', async (data: Buffer) => {
@@ -98,8 +105,25 @@ export class WebSocketHandler {
                 }
             });
 
-            ws.on('close', () => {
-                logger.info({ clientId, sessionId: ws.sessionId }, 'WebSocket client disconnected');
+            ws.on('close', async () => {
+                logger.info({ clientId, sessionId: ws.sessionId, playerId: ws.playerId }, 'WebSocket client disconnected');
+                
+                // Auto-leave from all instances when disconnected
+                if (ws.playerId) {
+                    try {
+                        const instances = await this.instanceService.getInstancesForPlayer(ws.playerId);
+                        for (const instance of instances) {
+                            await this.instanceService.leaveInstance(instance.instance_id, ws.playerId);
+                            logger.info({ 
+                                instanceId: instance.instance_id, 
+                                playerId: ws.playerId 
+                            }, 'Auto-left instance on disconnect');
+                        }
+                    } catch (error: any) {
+                        logger.error({ error, playerId: ws.playerId }, 'Error auto-leaving instances on disconnect');
+                    }
+                }
+                
                 this.clients.delete(clientId);
                 
                 // Remove from instance clients
@@ -120,16 +144,23 @@ export class WebSocketHandler {
     }
 
     private startHeartbeat(): void {
+        // Send ping every 60 seconds (increased from 30 seconds)
+        // Client has 60 seconds to respond before being disconnected
         setInterval(() => {
             this.wss.clients.forEach((ws: WebSocket) => {
                 const extWs = ws as ExtendedWebSocket;
                 if (extWs.isAlive === false) {
+                    logger.warn({ 
+                        sessionId: extWs.sessionId, 
+                        playerId: extWs.playerId,
+                        userId: extWs.userId 
+                    }, 'Client failed to respond to ping within 60 seconds, terminating connection');
                     return extWs.terminate();
                 }
                 extWs.isAlive = false;
                 extWs.ping();
             });
-        }, 30000);
+        }, 60000); // Increased from 30000 to 60000ms
     }
 
     private async handleMessage(ws: ExtendedWebSocket, message: WebSocketMessage, clientId: string): Promise<void> {
@@ -147,8 +178,20 @@ export class WebSocketHandler {
 
             switch (rpc) {
                 // Auth methods
+                case 'auth.register':
+                    result = await this.handleAuthRegister(params);
+                    break;
                 case 'auth.login':
                     result = await this.handleAuthLogin(ws, params, clientId);
+                    break;
+                case 'auth.loginWithApiKey':
+                    result = await this.handleAuthLoginWithApiKey(ws, params, clientId);
+                    break;
+                case 'auth.generateOneTimeToken':
+                    result = await this.handleAuthGenerateOneTimeToken(params);
+                    break;
+                case 'auth.loginWithOneTimeToken':
+                    result = await this.handleAuthLoginWithOneTimeToken(ws, params, clientId);
                     break;
                 case 'auth.logout':
                     result = await this.handleAuthLogout(ws);
@@ -156,18 +199,24 @@ export class WebSocketHandler {
                 case 'auth.refresh':
                     result = await this.handleAuthRefresh(ws);
                     break;
+                case 'auth.validateSession':
+                    result = await this.handleAuthValidateSession(ws, params, clientId);
+                    break;
 
                 // Instance methods
                 case 'instance.create':
                     result = await this.handleInstanceCreate(ws, params);
                     break;
-                // instance.join and instance.leave - REMOVED (VRChat constraint violation)
-                // VRChat does not allow external applications to control world joining
-                // Players must manually join worlds through VRChat client
+                // Instance methods
+                // Note: C# client communication is trusted
+                // VRChat does not allow programmatic world joining, but we track
+                // instance membership for analytics and state management
                 case 'instance.join':
+                    result = await this.handleInstanceJoin(ws, params);
+                    break;
                 case 'instance.leave':
-                    this.sendError(ws, ErrorCodes.INVALID_PARAMS, 'Remote instance join/leave is not supported due to VRChat platform constraints');
-                    return;
+                    result = await this.handleInstanceLeave(ws, params);
+                    break;
                 case 'instance.list':
                     result = await this.handleInstanceList(params);
                     break;
@@ -181,6 +230,20 @@ export class WebSocketHandler {
                 // Player state methods
                 case 'player.state.update':
                     result = await this.handlePlayerStateUpdate(ws, params);
+                    break;
+                case 'player.states.get':
+                    result = await this.handlePlayerStatesGet(ws, params);
+                    break;
+                case 'player.instance.get':
+                    result = await this.handlePlayerInstanceGet(ws, params);
+                    break;
+
+                // Round methods
+                case 'round.report':
+                    result = await this.handleRoundReport(ws, params);
+                    break;
+                case 'round.list':
+                    result = await this.handleRoundList(ws, params);
                     break;
 
                 // Threat methods
@@ -205,6 +268,9 @@ export class WebSocketHandler {
                     break;
                 case 'wished.terrors.get':
                     result = await this.handleWishedTerrorsGet(ws, params);
+                    break;
+                case 'wished.terrors.findDesirePlayers':
+                    result = await this.handleWishedTerrorsFindDesirePlayers(ws, params);
                     break;
 
                 // Profile methods
@@ -232,6 +298,11 @@ export class WebSocketHandler {
                     break;
                 case 'monitoring.errors':
                     result = await this.handleMonitoringErrors(ws, params);
+                    break;
+
+                // Client status methods
+                case 'client.status.get':
+                    result = await this.handleClientStatusGet(ws, params);
                     break;
 
                 // Remote control methods - REMOVED FOR SECURITY
@@ -272,7 +343,9 @@ export class WebSocketHandler {
                     return;
             }
 
+            logger.info({ rpc, id, resultKeys: result ? Object.keys(result) : [] }, 'Sending response');
             this.sendResponse(ws, rpc, result, id);
+            logger.info({ rpc, id }, 'Response sent');
         } catch (error: any) {
             logger.error({ error, rpc, params }, 'Error executing RPC');
             this.sendError(ws, ErrorCodes.INTERNAL_ERROR, error.message, id);
@@ -280,14 +353,125 @@ export class WebSocketHandler {
     }
 
     // Auth handlers
-    private async handleAuthLogin(ws: ExtendedWebSocket, params: any, clientId: string): Promise<any> {
+    private async handleAuthRegister(params: any): Promise<any> {
         const { player_id, client_version } = params;
 
         if (!player_id || !client_version) {
             throw new Error('player_id and client_version are required');
         }
 
-        const session = await this.authService.createSession(player_id, client_version);
+        const result = await this.authService.registerUser(player_id, client_version);
+
+        return {
+            user_id: result.user_id,
+            api_key: result.api_key,
+            is_new: result.is_new,
+            message: result.is_new 
+                ? 'User registered successfully. Please save your API key securely!'
+                : 'API key regenerated successfully. Your previous API key is now invalid.',
+        };
+    }
+
+    private async handleAuthLoginWithApiKey(ws: ExtendedWebSocket, params: any, clientId: string): Promise<any> {
+        const { player_id, api_key, client_version } = params;
+
+        logger.info({ player_id, hasApiKey: !!api_key, client_version }, 'Auth.loginWithApiKey called');
+
+        if (!player_id || !api_key || !client_version) {
+            throw new Error('player_id, api_key, and client_version are required');
+        }
+
+        const ipAddress = (ws as any)._socket?.remoteAddress || undefined;
+        const userAgent = (ws as any).upgradeReq?.headers['user-agent'] || undefined;
+
+        const session = await this.authService.createSessionWithApiKey(
+            player_id,
+            api_key,
+            client_version,
+            ipAddress,
+            userAgent
+        );
+
+        ws.sessionId = session.session_id;
+        ws.userId = session.user_id;
+        ws.playerId = session.player_id;
+
+        logger.info({ 
+            sessionId: ws.sessionId, 
+            userId: ws.userId, 
+            playerId: ws.playerId 
+        }, 'Auth.loginWithApiKey successful - credentials set');
+
+        return {
+            session_token: session.session_token,
+            player_id: session.player_id,
+            expires_at: session.expires_at.toISOString(),
+        };
+    }
+
+    private async handleAuthGenerateOneTimeToken(params: any): Promise<any> {
+        const { player_id, api_key } = params;
+
+        if (!player_id || !api_key) {
+            throw new Error('player_id and api_key are required');
+        }
+
+        const token = await this.authService.generateOneTimeToken(player_id, api_key);
+
+        return {
+            token,
+            expires_in: 300, // 5 minutes in seconds
+            login_url: `http://localhost:8080/login?token=${token}`,
+        };
+    }
+
+    private async handleAuthLoginWithOneTimeToken(ws: ExtendedWebSocket, params: any, clientId: string): Promise<any> {
+        const { token, client_version } = params;
+
+        if (!token || !client_version) {
+            throw new Error('token and client_version are required');
+        }
+
+        const ipAddress = (ws as any)._socket?.remoteAddress || undefined;
+        const userAgent = (ws as any).upgradeReq?.headers['user-agent'] || undefined;
+
+        const session = await this.authService.loginWithOneTimeToken(
+            token,
+            client_version,
+            ipAddress,
+            userAgent
+        );
+
+        ws.sessionId = session.session_id;
+        ws.userId = session.user_id;
+        ws.playerId = session.player_id;
+
+        return {
+            session_token: session.session_token,
+            player_id: session.player_id,
+            expires_at: session.expires_at.toISOString(),
+        };
+    }
+
+    private async handleAuthLogin(ws: ExtendedWebSocket, params: any, clientId: string): Promise<any> {
+        const { player_id, client_version, access_key } = params;
+
+        if (!player_id || !client_version) {
+            throw new Error('player_id and client_version are required');
+        }
+
+        // Get IP address and user agent from WebSocket request
+        // Note: These may not be available in all environments
+        const ipAddress = (ws as any)._socket?.remoteAddress || undefined;
+        const userAgent = (ws as any).upgradeReq?.headers['user-agent'] || undefined;
+
+        const session = await this.authService.createSession(
+            player_id, 
+            client_version,
+            ipAddress,
+            userAgent,
+            access_key
+        );
         
         ws.sessionId = session.session_id;
         ws.userId = session.user_id;
@@ -319,6 +503,33 @@ export class WebSocketHandler {
         };
     }
 
+    private async handleAuthValidateSession(ws: ExtendedWebSocket, params: any, clientId: string): Promise<any> {
+        const { session_token, player_id } = params;
+
+        if (!session_token || !player_id) {
+            throw new Error('session_token and player_id are required');
+        }
+
+        // Validate session token with AuthService
+        const session = await this.authService.validateSession(session_token);
+        
+        if (!session) {
+            throw new Error('Invalid session token');
+        }
+        
+        // Set WebSocket authentication
+        ws.sessionId = session.session_id;
+        ws.userId = session.user_id;
+        ws.playerId = player_id;
+
+        return {
+            session_token: session.session_token,
+            player_id,
+            user_id: session.user_id,
+            expires_at: session.expires_at.toISOString(),
+        };
+    }
+
     // Instance handlers
     private async handleInstanceCreate(ws: ExtendedWebSocket, params: any): Promise<any> {
         this.requireAuth(ws);
@@ -340,9 +551,60 @@ export class WebSocketHandler {
         };
     }
 
-    // Instance handlers - handleInstanceJoin and handleInstanceLeave REMOVED
-    // VRChat platform does not allow external control of world joining/leaving
-    // These operations must be performed manually by users through VRChat client
+    private async handleInstanceJoin(ws: ExtendedWebSocket, params: any): Promise<any> {
+        this.requireAuth(ws);
+
+        const { instance_id, player_id, player_name } = params;
+
+        if (!instance_id) {
+            throw new Error('instance_id is required');
+        }
+
+        // Use authenticated player_id if not provided
+        const actualPlayerId = player_id || ws.playerId;
+        const actualPlayerName = player_name || ws.playerId;
+
+        if (!actualPlayerId) {
+            throw new Error('player_id is required');
+        }
+
+        const result = await this.instanceService.joinInstance(
+            instance_id,
+            actualPlayerId,
+            actualPlayerName
+        );
+
+        logger.info({ instance_id, player_id: actualPlayerId }, 'Player joined instance');
+
+        return result;
+    }
+
+    private async handleInstanceLeave(ws: ExtendedWebSocket, params: any): Promise<any> {
+        this.requireAuth(ws);
+
+        const { instance_id, player_id } = params;
+
+        if (!instance_id) {
+            throw new Error('instance_id is required');
+        }
+
+        // Use authenticated player_id if not provided
+        const actualPlayerId = player_id || ws.playerId;
+
+        if (!actualPlayerId) {
+            throw new Error('player_id is required');
+        }
+
+        await this.instanceService.leaveInstance(instance_id, actualPlayerId);
+
+        logger.info({ instance_id, player_id: actualPlayerId }, 'Player left instance');
+
+        return {
+            success: true,
+            instance_id,
+            player_id: actualPlayerId,
+        };
+    }
 
     private async handleInstanceList(params: any): Promise<any> {
         const { filter = 'available', limit = 20, offset = 0 } = params;
@@ -395,22 +657,119 @@ export class WebSocketHandler {
             throw new Error('instance_id and player_state are required');
         }
 
-        await this.playerStateService.updatePlayerState(instance_id, player_state);
-
-        // Broadcast to all clients in instance
-        this.broadcastToInstance(instance_id, {
-            stream: 'player.state.updated',
-            data: {
+        // インスタンスが存在しない場合は自動作成
+        let instanceCreated = false;
+        try {
+            const instance = await this.instanceService.getInstance(instance_id);
+            if (!instance) {
+                // インスタンスを作成
+                await this.instanceService.createInstance(
+                    instance_id,
+                    ws.userId!,
+                    21, // デフォルト最大プレイヤー数
+                    {} as any // デフォルト設定
+                );
+                instanceCreated = true;
+                logger.info({ instance_id, user_id: ws.userId }, 'Auto-created instance for player state update');
+            }
+        } catch (error) {
+            // インスタンスが見つからない場合は作成
+            await this.instanceService.createInstance(
                 instance_id,
-                player_state,
-            },
-            timestamp: new Date().toISOString(),
-        });
+                ws.userId!,
+                21, // デフォルト最大プレイヤー数
+                {} as any // デフォルト設定
+            );
+            instanceCreated = true;
+            logger.info({ instance_id, user_id: ws.userId }, 'Auto-created instance for player state update');
+        }
+
+        // インスタンスを作成した場合、またはメンバーでない場合は自動参加
+        if (instanceCreated || ws.playerId) {
+            try {
+                const isMember = await this.instanceService.isMemberInInstance(instance_id, ws.playerId!);
+                if (!isMember) {
+                    // プレイヤーをメンバーとして追加
+                    await this.instanceService.joinInstance(instance_id, ws.playerId!, ws.playerId!);
+                    logger.info({ instance_id, player_id: ws.playerId }, 'Auto-joined instance for player state update');
+                }
+            } catch (error) {
+                logger.warn({ instance_id, player_id: ws.playerId, error }, 'Failed to auto-join instance');
+            }
+        }
+
+        const stateChanged = await this.playerStateService.updatePlayerState(instance_id, player_state);
+
+        // Only broadcast if state actually changed
+        if (stateChanged) {
+            this.broadcastToInstance(instance_id, {
+                stream: 'player.state.updated',
+                data: {
+                    instance_id,
+                    player_state,
+                },
+                timestamp: new Date().toISOString(),
+            });
+        }
 
         return {
             success: true,
             timestamp: new Date().toISOString(),
         };
+    }
+
+    private async handlePlayerStatesGet(ws: ExtendedWebSocket, params: any): Promise<any> {
+        this.requireAuth(ws);
+
+        const { instanceId } = params;
+
+        if (!instanceId) {
+            throw new Error('instanceId is required');
+        }
+
+        const playerStates = await this.playerStateService.getAllPlayerStates(instanceId);
+
+        return {
+            player_states: playerStates,
+            instance_id: instanceId,
+            count: playerStates.length,
+            timestamp: new Date().toISOString(),
+        };
+    }
+
+    private async handlePlayerInstanceGet(ws: ExtendedWebSocket, params: any): Promise<any> {
+        this.requireAuth(ws);
+
+        const playerId = params?.player_id || ws.playerId;
+
+        if (!playerId) {
+            throw new Error('player_id is required');
+        }
+
+        // プレイヤーが参加しているインスタンスを取得
+        const instances = await this.instanceService.getInstancesForPlayer(playerId);
+
+        // 最新のインスタンスを取得（通常は1つのみ）
+        if (instances.length > 0) {
+            const currentInstance = instances[0];
+            const members = await this.instanceService.getInstanceMembers(currentInstance.instance_id);
+            
+            return {
+                instance_id: currentInstance.instance_id,
+                member_count: currentInstance.member_count,
+                max_players: currentInstance.max_players,
+                current_player_count: currentInstance.member_count,
+                status: currentInstance.status,
+                created_at: currentInstance.created_at.toISOString(),
+                members: members.map((m: any) => ({
+                    player_id: m.player_id,
+                    player_name: m.player_name,
+                    joined_at: m.joined_at.toISOString(),
+                })),
+            };
+        }
+
+        return null;
     }
 
     // Threat handlers
@@ -520,6 +879,24 @@ export class WebSocketHandler {
         return { wished_terrors: wishedTerrors };
     }
 
+    private async handleWishedTerrorsFindDesirePlayers(ws: ExtendedWebSocket, params: any): Promise<any> {
+        this.requireAuth(ws);
+
+        const { instance_id, terror_name, round_key } = params;
+
+        logger.info({ instance_id, terror_name, round_key }, 'Finding desire players for terror');
+
+        const desirePlayers = await this.wishedTerrorService.findDesirePlayersForTerror(
+            instance_id,
+            terror_name,
+            round_key || ''
+        );
+
+        logger.info({ desirePlayers, count: desirePlayers.length }, 'Found desire players');
+
+        return { desire_players: desirePlayers };
+    }
+
     // Profile handlers
     private async handleProfileGet(ws: ExtendedWebSocket, params: any): Promise<any> {
         const { player_id } = params;
@@ -536,22 +913,36 @@ export class WebSocketHandler {
     // Helper methods
     private requireAuth(ws: ExtendedWebSocket): void {
         if (!ws.sessionId || !ws.userId) {
+            logger.warn({ 
+                hasSessionId: !!ws.sessionId, 
+                hasUserId: !!ws.userId,
+                hasPlayerId: !!ws.playerId 
+            }, 'Authentication required - missing credentials');
             throw new Error('Authentication required');
         }
     }
 
     private send(ws: WebSocket, message: any): void {
+        logger.info({ readyState: ws.readyState, isOpen: ws.readyState === WebSocket.OPEN }, 'send() called - checking WebSocket state');
         if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify(message));
+            const messageStr = JSON.stringify(message);
+            logger.info({ messageLength: messageStr.length, messagePreview: messageStr.substring(0, 200) }, 'Sending WebSocket message');
+            ws.send(messageStr);
+            logger.info('WebSocket message sent successfully');
+        } else {
+            logger.error({ readyState: ws.readyState, readyStateNames: ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'] }, 'WebSocket not open, cannot send message');
         }
     }
 
     private sendResponse(ws: WebSocket, rpc: string, result: any, id?: string): void {
-        this.send(ws, {
+        logger.info({ rpc, id, hasResult: !!result }, 'sendResponse called');
+        const response = {
             id,
             rpc,
             result,
-        });
+        };
+        logger.debug({ response }, 'Response object created');
+        this.send(ws, response);
     }
 
     private sendError(ws: WebSocket, code: string, message: string, id?: string): void {
@@ -565,17 +956,25 @@ export class WebSocketHandler {
     }
 
     public broadcastToInstance(instanceId: string, message: any): void {
+        // インスタンスに登録されているクライアントにブロードキャスト
         const clientIds = this.instanceClients.get(instanceId);
-        if (!clientIds) {
-            return;
+        if (clientIds && clientIds.size > 0) {
+            clientIds.forEach(clientId => {
+                const ws = this.clients.get(clientId);
+                if (ws) {
+                    this.send(ws, message);
+                }
+            });
+        } else {
+            // インスタンスクライアントマップが空の場合、全ての認証済みクライアントにブロードキャスト
+            // （ダッシュボードなど、明示的に参加していないクライアント向け）
+            logger.debug({ instanceId, totalClients: this.clients.size }, 'Broadcasting to all authenticated clients (no instance subscribers)');
+            this.clients.forEach((ws, clientId) => {
+                if (ws.sessionId && ws.userId) {
+                    this.send(ws, message);
+                }
+            });
         }
-
-        clientIds.forEach(clientId => {
-            const ws = this.clients.get(clientId);
-            if (ws) {
-                this.send(ws, message);
-            }
-        });
     }
 
     public getWss(): WebSocketServer {
@@ -633,6 +1032,55 @@ export class WebSocketHandler {
             severity,
             limit
         );
+    }
+
+    // Client status handlers
+    private async handleClientStatusGet(ws: ExtendedWebSocket, params: any): Promise<any> {
+        this.requireAuth(ws);
+        const { player_id } = params;
+
+        // プレイヤーIDが指定されていない場合は自分のステータスを返す
+        const targetPlayerId = player_id || ws.playerId;
+
+        if (!targetPlayerId) {
+            throw new Error('player_id is required');
+        }
+
+        // 接続中のクライアントを検索
+        const clients = this.clients.values();
+        let csharpClient = null;
+        let webClient = null;
+
+        for (const client of clients) {
+            if (client.playerId === targetPlayerId) {
+                // C#クライアントかWebクライアントかを判定
+                // C#クライアントはmonitoringステータスを送信している
+                const isMonitoring = client.userId && client.sessionId;
+                
+                if (isMonitoring) {
+                    csharpClient = {
+                        connected: true,
+                        player_id: client.playerId,
+                        user_id: client.userId,
+                        session_id: client.sessionId,
+                    };
+                } else {
+                    webClient = {
+                        connected: true,
+                        player_id: client.playerId,
+                        user_id: client.userId,
+                        session_id: client.sessionId,
+                    };
+                }
+            }
+        }
+
+        return {
+            player_id: targetPlayerId,
+            csharp_client: csharpClient || { connected: false },
+            web_client: webClient || { connected: false },
+            timestamp: new Date().toISOString(),
+        };
     }
 
     // Remote control handlers
@@ -718,5 +1166,18 @@ export class WebSocketHandler {
         this.requireAuth(ws);
         const { user_id } = params;
         return await this.backupService.listBackups(user_id || ws.userId!);
+    }
+
+    // Round handlers
+    private async handleRoundReport(ws: ExtendedWebSocket, params: any): Promise<any> {
+        this.requireAuth(ws);
+        await this.roundService.reportRound(params);
+        return { success: true };
+    }
+
+    private async handleRoundList(ws: ExtendedWebSocket, params: any): Promise<any> {
+        this.requireAuth(ws);
+        const { instance_id, limit = 100 } = params;
+        return await this.roundService.getRounds(instance_id, limit);
     }
 }

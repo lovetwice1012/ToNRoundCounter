@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS player_states (
     id INT AUTO_INCREMENT PRIMARY KEY,
     instance_id VARCHAR(255) NOT NULL,
     player_id VARCHAR(255) NOT NULL,
+    player_name VARCHAR(255) NOT NULL,
     velocity FLOAT NOT NULL DEFAULT 0,
     afk_duration INT NOT NULL DEFAULT 0,
     items JSON NOT NULL,
@@ -89,6 +90,7 @@ CREATE TABLE IF NOT EXISTS player_states (
     INDEX idx_player_states_instance (instance_id),
     INDEX idx_player_states_player (player_id),
     INDEX idx_player_states_timestamp (timestamp),
+    UNIQUE KEY unique_player_state (instance_id, player_id),
     FOREIGN KEY (instance_id) REFERENCES instances(instance_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

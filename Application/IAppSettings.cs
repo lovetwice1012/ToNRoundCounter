@@ -36,6 +36,7 @@ namespace ToNRoundCounter.Application
         bool OverlayShowAngle { get; set; }
         bool OverlayShowClock { get; set; }
         bool OverlayShowInstanceTimer { get; set; }
+        bool OverlayShowInstanceMembers { get; set; }
         bool OverlayShowUnboundTerrorDetails { get; set; }
         double OverlayOpacity { get; set; }
         int OverlayRoundHistoryLength { get; set; }
@@ -57,6 +58,7 @@ namespace ToNRoundCounter.Application
         string CloudWebSocketUrl { get; set; }
         bool CloudSyncEnabled { get; set; }
         string CloudPlayerName { get; set; }
+        string CloudApiKey { get; set; }
         bool AutoLaunchEnabled { get; set; }
         List<AutoLaunchEntry> AutoLaunchEntries { get; set; }
         string AutoLaunchExecutablePath { get; set; }

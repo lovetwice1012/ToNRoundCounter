@@ -35,10 +35,16 @@ export interface Instance {
 
 export interface PlayerState {
     player_id: string;
-    state: string;
+    player_name?: string;
+    velocity?: number;
+    afk_duration?: number;
+    items?: string[];
+    damage?: number;
+    is_alive?: boolean;
+    state?: string;
     position?: { x: number; y: number; z: number };
     health?: number;
-    timestamp: string;
+    timestamp?: string;
 }
 
 export type StreamCallback = (data: any) => void;
@@ -121,16 +127,48 @@ export class ToNRoundCloudClient {
     }
 
     /**
+     * Set session token manually (for reconnection)
+     */
+    setSessionToken(token: string, playerId: string): void {
+        this.sessionToken = token;
+        this.playerId = playerId;
+        console.log('[ToNRoundCloud] Session token manually set:', !!this.sessionToken, 'Player ID:', this.playerId);
+    }
+
+    /**
      * Login to the service
      */
-    async login(playerId: string, clientVersion: string): Promise<Session> {
-        const result = await this.call('auth.login', {
+    async login(playerId: string, clientVersion: string, accessKey?: string): Promise<Session> {
+        const params: any = {
             player_id: playerId,
+            client_version: clientVersion,
+        };
+
+        if (accessKey) {
+            params.access_key = accessKey;
+        }
+
+        const result = await this.call('auth.login', params);
+
+        this.sessionToken = result.session_token;
+        this.playerId = result.player_id;
+
+        return result;
+    }
+
+    /**
+     * Login with one-time token
+     */
+    async loginWithOneTimeToken(token: string, clientVersion: string): Promise<Session> {
+        const result = await this.call('auth.loginWithOneTimeToken', {
+            token,
             client_version: clientVersion,
         });
 
         this.sessionToken = result.session_token;
         this.playerId = result.player_id;
+
+        console.log('[ToNRoundCloud] Session token set after login:', !!this.sessionToken, 'Player ID:', this.playerId);
 
         return result;
     }
@@ -153,6 +191,23 @@ export class ToNRoundCloudClient {
         return result;
     }
 
+    /**
+     * Validate existing session (for reconnection)
+     */
+    async validateSession(sessionToken: string, playerId: string): Promise<Session> {
+        const result = await this.call('auth.validateSession', {
+            session_token: sessionToken,
+            player_id: playerId,
+        });
+
+        this.sessionToken = result.session_token;
+        this.playerId = result.player_id;
+
+        console.log('[ToNRoundCloud] Session validated:', !!this.sessionToken, 'Player ID:', this.playerId);
+
+        return result;
+    }
+
     // Instance Management
     async createInstance(maxPlayers: number = 6, settings: any = {}): Promise<Instance> {
         return await this.call('instance.create', { max_players: maxPlayers, settings });
@@ -167,7 +222,9 @@ export class ToNRoundCloudClient {
     }
 
     async listInstances(): Promise<Instance[]> {
-        return await this.call('instance.list', {});
+        const result = await this.call('instance.list', {});
+        // APIは { instances: [...], total, limit, offset } を返すので、instancesだけ抽出
+        return result.instances || [];
     }
 
     async updateInstance(instanceId: string, updates: { max_players?: number; settings?: any }): Promise<void> {
@@ -202,8 +259,12 @@ export class ToNRoundCloudClient {
     }
 
     async getAllPlayerStates(instanceId: string): Promise<PlayerState[]> {
-        const result = await this.call('player.state.getAll', { instance_id: instanceId });
-        return result.states;
+        const result = await this.call('player.states.get', { instanceId });
+        return result.player_states || [];
+    }
+
+    async getCurrentInstance(playerId?: string): Promise<any> {
+        return await this.call('player.instance.get', { player_id: playerId });
     }
 
     // Threat/Terror
@@ -401,6 +462,16 @@ export class ToNRoundCloudClient {
         return await this.call('backup.list', { user_id: userId });
     }
 
+    // Client Status
+    async getClientStatus(playerId?: string): Promise<{
+        player_id: string;
+        csharp_client: { connected: boolean; player_id?: string; user_id?: string; session_id?: string; };
+        web_client: { connected: boolean; player_id?: string; user_id?: string; session_id?: string; };
+        timestamp: string;
+    }> {
+        return await this.call('client.status.get', { player_id: playerId });
+    }
+
     // Stream Subscriptions
     onPlayerStateUpdate(callback: StreamCallback): () => void {
         return this.subscribe('player.state.updated', callback);
@@ -449,7 +520,16 @@ export class ToNRoundCloudClient {
         }
 
         const id = `${++this.messageId}`;
-        const message: WebSocketMessage = { id, rpc, params };
+        
+        // セッショントークンがある場合はparamsに追加
+        const enhancedParams = this.sessionToken 
+            ? { ...params, session_token: this.sessionToken }
+            : params;
+        
+        const message: WebSocketMessage = { id, rpc, params: enhancedParams };
+
+        // デバッグログ
+        console.log('[ToNRoundCloud] Sending RPC:', rpc, 'with session token:', !!this.sessionToken);
 
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {

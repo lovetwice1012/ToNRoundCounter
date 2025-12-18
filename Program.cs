@@ -135,12 +135,18 @@ namespace ToNRoundCounter
             
             // Cloud WebSocket Client for ToNRoundCounter Cloud integration
             var cloudWsUrl = string.IsNullOrWhiteSpace(bootstrap.CloudWebSocketUrl) ? "ws://localhost:8080" : bootstrap.CloudWebSocketUrl;
+            var cloudApiKey = bootstrap.CloudApiKey;
+            var cloudPlayerName = bootstrap.CloudPlayerName;
             eventLogger.LogEvent("Bootstrap", $"Cloud WebSocket endpoint: {cloudWsUrl}");
+            eventLogger.LogEvent("Bootstrap", $"Cloud API Key configured: {!string.IsNullOrWhiteSpace(cloudApiKey)}");
+            eventLogger.LogEvent("Bootstrap", $"Cloud Player Name: {cloudPlayerName}");
             services.AddSingleton(sp => new CloudWebSocketClient(
                 cloudWsUrl,
                 sp.GetRequiredService<IEventBus>(),
                 sp.GetRequiredService<ICancellationProvider>(),
-                sp.GetRequiredService<IEventLogger>()));
+                sp.GetRequiredService<IEventLogger>(),
+                cloudApiKey,      // Pass API key from bootstrap settings
+                cloudPlayerName)); // Pass player name as userId
             
             services.AddSingleton(sp => new AutoSuicideService(sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<StateService>();

@@ -22,8 +22,8 @@ services:
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./backend/Dockerfile
     ports:
       - "3000:3000"
     environment:
@@ -35,6 +35,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-tonround}
       DB_NAME: ${DB_NAME:-tonround_cloud}
       JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
+      ACCESS_KEY: ${ACCESS_KEY:-}
     volumes:
       - ./backend/logs:/app/logs
       - ./backend/backups:/app/backups
@@ -45,8 +46,8 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./frontend/Dockerfile
     ports:
       - "8080:80"
     environment:

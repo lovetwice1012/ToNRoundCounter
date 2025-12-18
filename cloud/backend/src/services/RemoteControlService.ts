@@ -80,7 +80,7 @@ export class RemoteControlService {
             [
                 commandId,
                 userId,
-                instanceId,
+                instanceId ?? null,
                 commandType,
                 action,
                 JSON.stringify(parameters),

@@ -2,51 +2,99 @@
  * Connection Status Component
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 
 export const ConnectionStatus: React.FC = () => {
-    const { connectionState, playerId } = useAppStore();
+    const { connectionState, playerId, restClient } = useAppStore();
+    const [apiConnected, setApiConnected] = useState<boolean>(false);
 
-    const getStatusColor = () => {
+    useEffect(() => {
+        // REST APIの接続状態をチェック
+        const checkApiConnection = async () => {
+            if (restClient) {
+                try {
+                    await restClient.healthCheck();
+                    setApiConnected(true);
+                } catch (error) {
+                    setApiConnected(false);
+                }
+            } else {
+                setApiConnected(false);
+            }
+        };
+
+        checkApiConnection();
+        const interval = setInterval(checkApiConnection, 10000); // 10秒ごとにチェック
+
+        return () => clearInterval(interval);
+    }, [restClient]);
+
+    const getStatusColor = (connected: boolean) => {
+        return connected ? '#4caf50' : '#f44336';
+    };
+
+    const getWebSocketStatusText = () => {
         switch (connectionState) {
             case 'connected':
-                return '#4caf50';
+                return 'WebSocket接続中';
             case 'reconnecting':
-                return '#ff9800';
+                return 'WebSocket再接続中...';
             case 'disconnected':
-                return '#f44336';
+                return 'WebSocket未接続';
             default:
-                return '#999';
+                return 'WebSocket不明';
         }
     };
 
-    const getStatusText = () => {
-        switch (connectionState) {
-            case 'connected':
-                return '接続中';
-            case 'reconnecting':
-                return '再接続中...';
-            case 'disconnected':
-                return '未接続';
-            default:
-                return '不明';
-        }
-    };
+    const wsConnected = connectionState === 'connected';
 
     return (
-        <div className="connection-status" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div
-                className="status-indicator"
-                style={{
-                    width: '12px',
-                    height: '12px',
-                    borderRadius: '50%',
-                    backgroundColor: getStatusColor(),
-                }}
-            />
-            <span className="status-text">{getStatusText()}</span>
-            {playerId && <span className="player-id">プレイヤー: {playerId}</span>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+            {/* WebSocket接続状態 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div
+                    style={{
+                        width: '10px',
+                        height: '10px',
+                        borderRadius: '50%',
+                        backgroundColor: getStatusColor(wsConnected),
+                        boxShadow: `0 0 8px ${getStatusColor(wsConnected)}`,
+                    }}
+                />
+                <span style={{ color: '#666', fontSize: '14px', fontWeight: 500 }}>
+                    {getWebSocketStatusText()}
+                </span>
+            </div>
+
+            {/* バックエンドAPI接続状態 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div
+                    style={{
+                        width: '10px',
+                        height: '10px',
+                        borderRadius: '50%',
+                        backgroundColor: getStatusColor(apiConnected),
+                        boxShadow: `0 0 8px ${getStatusColor(apiConnected)}`,
+                    }}
+                />
+                <span style={{ color: '#666', fontSize: '14px', fontWeight: 500 }}>
+                    {apiConnected ? 'API接続中' : 'API未接続'}
+                </span>
+            </div>
+
+            {playerId && (
+                <span style={{ 
+                    color: '#333', 
+                    fontSize: '14px',
+                    padding: '4px 12px',
+                    backgroundColor: '#f0f0f0',
+                    borderRadius: '12px',
+                    fontWeight: 500
+                }}>
+                    {playerId}
+                </span>
+            )}
         </div>
     );
 };

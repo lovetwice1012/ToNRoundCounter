@@ -198,6 +198,17 @@ export class InstanceRepository {
         return (row?.count || 0) > 0;
     }
 
+    async getInstancesForPlayer(playerId: string): Promise<Instance[]> {
+        const rows = await this.db.all<any>(
+            `SELECT DISTINCT i.* FROM instances i
+             INNER JOIN instance_members im ON i.instance_id = im.instance_id
+             WHERE im.player_id = ? AND im.status = 'ACTIVE'`,
+            [playerId]
+        );
+
+        return rows.map(row => this.mapRowToInstance(row));
+    }
+
     private mapRowToInstance(row: any): Instance {
         return {
             instance_id: row.instance_id,

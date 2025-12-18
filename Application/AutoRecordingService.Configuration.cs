@@ -19,7 +19,7 @@ namespace ToNRoundCounter.Application
                 return SupportedExtensions[0];
             }
 
-            var trimmed = extension!.Trim().TrimStart('.');
+            var trimmed = extension.Trim().TrimStart('.');
             foreach (var candidate in SupportedExtensions)
             {
                 if (trimmed.Equals(candidate, StringComparison.OrdinalIgnoreCase))

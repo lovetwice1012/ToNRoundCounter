@@ -547,30 +547,41 @@ export class ToNRoundCounterCloudServer {
     this.rpcRouter.register('player.state.update', async (req) => {
       const params = req.message.params as any;
       const instanceId = params.instance_id || req.session.sessionId;
+      
+      // Extract player_state from params (it may be nested)
+      const playerState = params.player_state || params;
+      
       const state = {
-        player_id: params.player_id || req.session.userId,
-        state: params.state,
-        ...params,
+        player_id: playerState.player_id || params.player_id || req.session.userId,
+        player_name: playerState.player_name || playerState.player_id || params.player_id || req.session.userId,
+        velocity: Number(playerState.velocity) || 0,
+        afk_duration: Math.floor(Number(playerState.afk_duration) || 0), // Convert to integer
+        items: Array.isArray(playerState.items) ? playerState.items : [],
+        damage: Math.floor(Number(playerState.damage) || 0), // Convert to integer
+        is_alive: playerState.is_alive !== false,
       };
-      await this.playerStateService.updatePlayerState(instanceId, state);
       
-      // Broadcast state update to all instance members
-      this.wsHandler.broadcastToInstance(instanceId, {
-        type: 'stream',
-        event: 'player.state.updated',
-        data: {
-          instance_id: instanceId,
-          player_id: state.player_id,
-          velocity: state.velocity || 0,
-          afk_duration: state.afk_duration || 0,
-          items: state.items || [],
-          damage: state.damage || 0,
-          is_alive: state.is_alive !== false,
-        },
-        timestamp: new Date().toISOString(),
-      });
+      const stateChanged = await this.playerStateService.updatePlayerState(instanceId, state);
       
-      return { success: true };
+      // Only broadcast if state actually changed
+      if (stateChanged) {
+        this.wsHandler.broadcastToInstance(instanceId, {
+          type: 'stream',
+          event: 'player.state.updated',
+          data: {
+            instance_id: instanceId,
+            player_id: state.player_id,
+            velocity: state.velocity,
+            afk_duration: state.afk_duration,
+            items: state.items,
+            damage: state.damage,
+            is_alive: state.is_alive,
+          },
+          timestamp: new Date().toISOString(),
+        });
+      }
+      
+      return { success: true, state_changed: stateChanged };
     });
 
     this.rpcRouter.register('player.state.get', async (req) => {

@@ -19,8 +19,16 @@ namespace ToNRoundCounter.Infrastructure
         public string player_id { get; set; } = string.Empty;
         public string player_name { get; set; } = string.Empty;
         public double damage { get; set; }
-        public string current_item { get; set; } = "None";
-        public bool is_dead { get; set; }
+        public List<string> items { get; set; } = new List<string>();
+        
+        // Helper property to get first item or empty string
+        public string current_item => items != null && items.Count > 0 ? items[0] : "";
+        
+        public bool is_alive { get; set; } = true;
+        
+        // Helper property for compatibility
+        public bool is_dead => !is_alive;
+        
         public double velocity { get; set; }
         public double afk_duration { get; set; }
     }
@@ -71,6 +79,9 @@ namespace ToNRoundCounter.Infrastructure
         
         [System.Text.Json.Serialization.JsonPropertyName("timestamp")]
         public string? Timestamp { get; set; } = DateTime.UtcNow.ToString("O");
+        
+        [System.Text.Json.Serialization.JsonPropertyName("session_id")]
+        public string? SessionId { get; set; }
     }
 
     public class ErrorInfo
@@ -109,6 +120,7 @@ namespace ToNRoundCounter.Infrastructure
             new Dictionary<string, TaskCompletionSource<CloudMessage>>();
         private string _sessionId = DEFAULT_SESSION_ID;
         private string? _userId;
+        private string? _apiKey;  // Stored API key for authentication
 
         public event EventHandler<CloudMessage>? MessageReceived;
         public event EventHandler? Connected;
@@ -117,6 +129,7 @@ namespace ToNRoundCounter.Infrastructure
 
         public string SessionId => _sessionId;
         public string? UserId => _userId;
+        public string? ApiKey => _apiKey;
         public bool IsConnected => _socket?.State == WebSocketState.Open;
 
         /// <summary>
@@ -132,17 +145,25 @@ namespace ToNRoundCounter.Infrastructure
             string url,
             IEventBus bus,
             ICancellationProvider cancellation,
-            IEventLogger logger)
+            IEventLogger logger,
+            string? apiKey = null,
+            string? userId = null)
         {
             _uri = new Uri(url);
             _bus = bus;
             _cancellationProvider = cancellation;
             _logger = logger;
+            _apiKey = apiKey;
+            _userId = userId;
             _messageChannel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
             {
                 SingleReader = true,
                 SingleWriter = true
             });
+            
+            // Log initialization parameters for debugging
+            _logger.LogEvent("CloudWebSocket", 
+                $"Initialized with URL: {url}, HasApiKey: {!string.IsNullOrWhiteSpace(apiKey)}, HasUserId: {!string.IsNullOrWhiteSpace(userId)}");
         }
 
         public async Task StartAsync()
@@ -164,6 +185,10 @@ namespace ToNRoundCounter.Infrastructure
                 {
                     EnsureProcessingTask(token);
                     _socket = new ClientWebSocket();
+                    
+                    // Configure WebSocket options for stability
+                    // KeepAlive every 30 seconds (server pings every 60 seconds)
+                    _socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(30);
 
                     try
                     {
@@ -173,18 +198,41 @@ namespace ToNRoundCounter.Infrastructure
                         await _socket.ConnectAsync(_uri, token).ConfigureAwait(false);
                         _logger.LogEvent("CloudWebSocket", "Connection established.");
 
-                        // Authenticate
-                        await AuthenticateAsync(token).ConfigureAwait(false);
+                        // Start receive loop in background
+                        // The receive loop must be running before we can send/receive messages
+                        var receiveTask = Task.Run(() => ReceiveLoopAsync(token), token);
 
+                        // Auto-authenticate if API key is available
+                        if (!string.IsNullOrWhiteSpace(_apiKey) && !string.IsNullOrWhiteSpace(_userId))
+                        {
+                            try
+                            {
+                                _logger.LogEvent("CloudWebSocket", $"Auto-authenticating user: {_userId}, HasApiKey: {!string.IsNullOrWhiteSpace(_apiKey)}");
+                                // Null-forgiving operators because we just checked above
+                                var sessionToken = await LoginWithApiKeyAsync(_userId!, _apiKey!, "1.0.0", token).ConfigureAwait(false);
+                                _logger.LogEvent("CloudWebSocket", $"Auto-authentication successful. SessionToken: {sessionToken}");
+                            }
+                            catch (Exception authEx)
+                            {
+                                _logger.LogEvent("CloudWebSocket", $"Auto-authentication failed: {authEx.GetType().Name} - {authEx.Message}\nStackTrace: {authEx.StackTrace}", Serilog.Events.LogEventLevel.Error);
+                            }
+                        }
+                        else
+                        {
+                            _logger.LogEvent("CloudWebSocket", $"Skipping auto-authentication. HasApiKey: {!string.IsNullOrWhiteSpace(_apiKey)}, HasUserId: {!string.IsNullOrWhiteSpace(_userId)}", Serilog.Events.LogEventLevel.Warning);
+                        }
+                        
                         Connected?.Invoke(this, EventArgs.Empty);
-                        await ReceiveLoopAsync(token).ConfigureAwait(false);
+                        
+                        _logger.LogEvent("CloudWebSocket", "Waiting for ReceiveLoopAsync to complete", Serilog.Events.LogEventLevel.Debug);
+                        await receiveTask.ConfigureAwait(false);
 
                         _logger.LogEvent("CloudWebSocket", "Receive loop completed.");
                         Disconnected?.Invoke(this, EventArgs.Empty);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogEvent("CloudWebSocket", () => ex.Message, Serilog.Events.LogEventLevel.Error);
+                        _logger.LogEvent("CloudWebSocket", () => $"Connection error (Attempt {_connectionAttempts}): {ex.GetType().Name} - {ex.Message}", Serilog.Events.LogEventLevel.Error);
                         ErrorOccurred?.Invoke(this, ex);
 
                         if (!token.IsCancellationRequested)
@@ -375,6 +423,21 @@ namespace ToNRoundCounter.Infrastructure
                 throw new InvalidOperationException("WebSocket is not connected");
             }
 
+            // Add session_id to request if available and not an auth request
+            if (!string.IsNullOrEmpty(_sessionId) && 
+                _sessionId != DEFAULT_SESSION_ID &&
+                request.Method != "auth.register" && 
+                request.Method != "auth.loginWithApiKey" &&
+                request.Method != "auth.loginWithOneTimeToken")
+            {
+                request.SessionId = _sessionId;
+                _logger.LogEvent("CloudWebSocket", $"Adding session_id to request: {request.Method}, SessionId: {_sessionId}", Serilog.Events.LogEventLevel.Debug);
+            }
+            else
+            {
+                _logger.LogEvent("CloudWebSocket", $"NOT adding session_id - Method: {request.Method}, SessionId: {_sessionId}, DEFAULT: {DEFAULT_SESSION_ID}", Serilog.Events.LogEventLevel.Debug);
+            }
+
             var tcs = new TaskCompletionSource<CloudMessage>();
             _pendingRequests[request.Id] = tcs;
 
@@ -388,12 +451,16 @@ namespace ToNRoundCounter.Infrastructure
                 var json = JsonSerializer.Serialize(request, options);
                 var bytes = Encoding.UTF8.GetBytes(json);
 
+                _logger.LogEvent("CloudWebSocket", $"Sending request - Id: {request.Id}, Method: {request.Method}, SocketState: {_socket.State}", Serilog.Events.LogEventLevel.Debug);
+                
                 await _socket.SendAsync(
                     new ArraySegment<byte>(bytes),
                     WebSocketMessageType.Text,
                     true,
                     cancellationToken
                 ).ConfigureAwait(false);
+                
+                _logger.LogEvent("CloudWebSocket", $"Request sent successfully - Id: {request.Id}", Serilog.Events.LogEventLevel.Debug);
 
                 // Set timeout
                 using (var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
@@ -405,6 +472,133 @@ namespace ToNRoundCounter.Infrastructure
             finally
             {
                 _pendingRequests.Remove(request.Id);
+            }
+        }
+
+        /// <summary>
+        /// Register a new user and get API key
+        /// </summary>
+        public async Task<(string userId, string apiKey)> RegisterUserAsync(
+            string playerId,
+            string clientVersion = "1.0.0",
+            CancellationToken cancellationToken = default)
+        {
+            var request = new CloudMessage
+            {
+                Id = Guid.NewGuid().ToString(),
+                Type = "request",
+                Method = "auth.register",
+                Params = new
+                {
+                    player_id = playerId,
+                    client_version = clientVersion
+                }
+            };
+
+            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (response.Status == "error")
+            {
+                throw new InvalidOperationException($"Failed to register user: {response.Error?.Message}");
+            }
+
+            var resultJson = JsonSerializer.Serialize(response.Result);
+            using (var doc = JsonDocument.Parse(resultJson))
+            {
+                var userId = doc.RootElement.GetProperty("user_id").GetString() 
+                    ?? throw new InvalidOperationException("No user_id in response");
+                var apiKey = doc.RootElement.GetProperty("api_key").GetString()
+                    ?? throw new InvalidOperationException("No api_key in response");
+
+                _apiKey = apiKey;
+                _userId = userId;
+
+                _logger.LogEvent("CloudWebSocket", $"User registered: {userId}");
+                return (userId, apiKey);
+            }
+        }
+
+        /// <summary>
+        /// Login with API key
+        /// </summary>
+        public async Task<string> LoginWithApiKeyAsync(
+            string playerId,
+            string apiKey,
+            string clientVersion = "1.0.0",
+            CancellationToken cancellationToken = default)
+        {
+            var request = new CloudMessage
+            {
+                Id = Guid.NewGuid().ToString(),
+                Type = "request",
+                Method = "auth.loginWithApiKey",
+                Params = new
+                {
+                    player_id = playerId,
+                    api_key = apiKey,
+                    client_version = clientVersion
+                }
+            };
+
+            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (response.Status == "error")
+            {
+                throw new InvalidOperationException($"Failed to login: {response.Error?.Message}");
+            }
+
+            var resultJson = JsonSerializer.Serialize(response.Result);
+            using (var doc = JsonDocument.Parse(resultJson))
+            {
+                var sessionToken = doc.RootElement.GetProperty("session_token").GetString()
+                    ?? throw new InvalidOperationException("No session_token in response");
+
+                _apiKey = apiKey;
+                _userId = playerId;
+                _sessionId = sessionToken; // Store session ID for future requests
+
+                _logger.LogEvent("CloudWebSocket", $"Logged in with API key: {playerId}, SessionId: {sessionToken}");
+                return sessionToken;
+            }
+        }
+
+        /// <summary>
+        /// Generate one-time login token
+        /// </summary>
+        public async Task<(string token, string loginUrl)> GenerateOneTimeTokenAsync(
+            string playerId,
+            string apiKey,
+            CancellationToken cancellationToken = default)
+        {
+            var request = new CloudMessage
+            {
+                Id = Guid.NewGuid().ToString(),
+                Type = "request",
+                Method = "auth.generateOneTimeToken",
+                Params = new
+                {
+                    player_id = playerId,
+                    api_key = apiKey
+                }
+            };
+
+            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (response.Status == "error")
+            {
+                throw new InvalidOperationException($"Failed to generate token: {response.Error?.Message}");
+            }
+
+            var resultJson = JsonSerializer.Serialize(response.Result);
+            using (var doc = JsonDocument.Parse(resultJson))
+            {
+                var token = doc.RootElement.GetProperty("token").GetString()
+                    ?? throw new InvalidOperationException("No token in response");
+                var loginUrl = doc.RootElement.GetProperty("login_url").GetString()
+                    ?? throw new InvalidOperationException("No login_url in response");
+
+                _logger.LogEvent("CloudWebSocket", $"One-time token generated for: {playerId}");
+                return (token, loginUrl);
             }
         }
 
@@ -783,6 +977,61 @@ namespace ToNRoundCounter.Infrastructure
         }
 
         /// <summary>
+        /// Join an instance
+        /// </summary>
+        public async Task JoinInstanceAsync(string instanceId, string playerId, CancellationToken cancellationToken = default)
+        {
+            var request = new CloudMessage
+            {
+                Id = Guid.NewGuid().ToString(),
+                Type = "request",
+                Method = "instance.join",
+                Params = new
+                {
+                    instance_id = instanceId,
+                    player_id = playerId,
+                    player_name = playerId
+                }
+            };
+
+            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (response.Status == "error")
+            {
+                throw new InvalidOperationException($"Failed to join instance: {response.Error?.Message}");
+            }
+
+            _logger.LogEvent("CloudWebSocket", $"Joined instance: {instanceId}");
+        }
+
+        /// <summary>
+        /// Leave an instance
+        /// </summary>
+        public async Task LeaveInstanceAsync(string instanceId, string playerId, CancellationToken cancellationToken = default)
+        {
+            var request = new CloudMessage
+            {
+                Id = Guid.NewGuid().ToString(),
+                Type = "request",
+                Method = "instance.leave",
+                Params = new
+                {
+                    instance_id = instanceId,
+                    player_id = playerId
+                }
+            };
+
+            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (response.Status == "error")
+            {
+                throw new InvalidOperationException($"Failed to leave instance: {response.Error?.Message}");
+            }
+
+            _logger.LogEvent("CloudWebSocket", $"Left instance: {instanceId}");
+        }
+
+        /// <summary>
         /// Find desire players for a terror in an instance
         /// </summary>
         public async Task<List<DesirePlayerInfo>> FindDesirePlayersAsync(string instanceId, string terrorName, string roundKey, CancellationToken cancellationToken = default)
@@ -826,6 +1075,7 @@ namespace ToNRoundCounter.Infrastructure
             List<string>? items = null, 
             double damage = 0, 
             bool isAlive = true,
+            string? playerName = null,
             CancellationToken cancellationToken = default)
         {
             var request = new CloudMessage
@@ -839,6 +1089,7 @@ namespace ToNRoundCounter.Infrastructure
                     player_state = new
                     {
                         player_id = playerId,
+                        player_name = playerName ?? playerId,  // プレイヤー名を追加
                         velocity,
                         afk_duration = afkDuration,
                         items = items ?? new List<string>(),
@@ -853,6 +1104,48 @@ namespace ToNRoundCounter.Infrastructure
             if (response.Status == "error")
             {
                 throw new InvalidOperationException($"Failed to update player state: {response.Error?.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Report round completion
+        /// </summary>
+        public async Task ReportRoundAsync(
+            string instanceId,
+            string roundType,
+            string? terrorName = null,
+            string? terrorKey = null,
+            DateTime? startTime = null,
+            DateTime? endTime = null,
+            int? initialPlayerCount = null,
+            int? survivorCount = null,
+            string status = "COMPLETED",
+            CancellationToken cancellationToken = default)
+        {
+            var request = new CloudMessage
+            {
+                Id = Guid.NewGuid().ToString(),
+                Type = "request",
+                Method = "round.report",
+                Params = new
+                {
+                    instance_id = instanceId,
+                    round_type = roundType,
+                    terror_name = terrorName,
+                    terror_key = terrorKey,
+                    start_time = (startTime ?? DateTime.Now).ToUniversalTime().ToString("o"),
+                    end_time = (endTime ?? DateTime.Now).ToUniversalTime().ToString("o"),
+                    initial_player_count = initialPlayerCount ?? 0,
+                    survivor_count = survivorCount ?? 0,
+                    status
+                }
+            };
+
+            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (response.Status == "error")
+            {
+                throw new InvalidOperationException($"Failed to report round: {response.Error?.Message}");
             }
         }
 
@@ -2093,8 +2386,11 @@ namespace ToNRoundCounter.Infrastructure
             var socket = _socket;
             if (socket == null)
             {
+                _logger.LogEvent("CloudWebSocket", "ReceiveLoopAsync: socket is null, exiting", Serilog.Events.LogEventLevel.Warning);
                 return;
             }
+
+            _logger.LogEvent("CloudWebSocket", $"ReceiveLoopAsync started - SocketState: {socket.State}", Serilog.Events.LogEventLevel.Debug);
 
             var receiveBuffer = new byte[ReceiveBufferSize];
             byte[]? messageBuffer = null;
@@ -2102,6 +2398,7 @@ namespace ToNRoundCounter.Infrastructure
 
             try
             {
+                _logger.LogEvent("CloudWebSocket", "ReceiveLoopAsync: entering receive loop", Serilog.Events.LogEventLevel.Debug);
                 while (socket.State == WebSocketState.Open && !token.IsCancellationRequested)
                 {
                     var segment = new ArraySegment<byte>(receiveBuffer);
@@ -2110,6 +2407,7 @@ namespace ToNRoundCounter.Infrastructure
                     try
                     {
                         result = await socket.ReceiveAsync(segment, token).ConfigureAwait(false);
+                        _logger.LogEvent("CloudWebSocket", $"Received {result.Count} bytes, MessageType: {result.MessageType}, EndOfMessage: {result.EndOfMessage}", Serilog.Events.LogEventLevel.Debug);
                     }
                     catch (OperationCanceledException)
                     {
@@ -2123,9 +2421,20 @@ namespace ToNRoundCounter.Infrastructure
                         break;
                     }
 
+                    // Handle Ping frames - automatically respond with Pong
+                    // This is critical for keeping the connection alive
+                    if (result.MessageType == WebSocketMessageType.Binary && result.Count == 0)
+                    {
+                        // Some servers send ping as empty binary frames
+                        // ClientWebSocket automatically handles ping/pong, but log it for debugging
+                        _logger.LogEvent("CloudWebSocket", "Received ping (auto-pong sent)", Serilog.Events.LogEventLevel.Debug);
+                        continue;
+                    }
+
                     if (result.EndOfMessage && messageOffset == 0)
                     {
                         var message = Encoding.UTF8.GetString(receiveBuffer, 0, result.Count);
+                        _logger.LogEvent("CloudWebSocket", $"Dispatching single-frame message: {message.Substring(0, Math.Min(100, message.Length))}...", Serilog.Events.LogEventLevel.Debug);
                         await DispatchMessageAsync(message, token).ConfigureAwait(false);
                         continue;
                     }
@@ -2139,6 +2448,7 @@ namespace ToNRoundCounter.Infrastructure
                     {
                         var message = Encoding.UTF8.GetString(messageBuffer, 0, messageOffset);
                         messageOffset = 0;
+                        _logger.LogEvent("CloudWebSocket", $"Dispatching multi-frame message: {message.Substring(0, Math.Min(100, message.Length))}...", Serilog.Events.LogEventLevel.Debug);
                         await DispatchMessageAsync(message, token).ConfigureAwait(false);
                     }
                 }
@@ -2191,8 +2501,16 @@ namespace ToNRoundCounter.Infrastructure
                 {
                     try
                     {
+                        // デバッグ: 生のメッセージをログ出力
+                        _logger.LogEvent("CloudWebSocket", $"Raw message received: {rawMsg}", Serilog.Events.LogEventLevel.Debug);
+                        
                         var msg = JsonSerializer.Deserialize<CloudMessage>(rawMsg, options);
                         if (msg == null) continue;
+
+                        // デバッグ: デシリアライズ後の内容をログ出力
+                        _logger.LogEvent("CloudWebSocket", 
+                            $"Deserialized - Id: {msg.Id}, Method: {msg.Method}, Result: {msg.Result != null}, Error: {msg.Error != null}", 
+                            Serilog.Events.LogEventLevel.Debug);
 
                         // Determine message type based on content
                         // Backend sends: { id, rpc, result } for responses
@@ -2226,10 +2544,23 @@ namespace ToNRoundCounter.Infrastructure
                             msg.Type = "response";
                             msg.Status = "success";
                             
+                            _logger.LogEvent("CloudWebSocket", 
+                                $"Response message detected - Id: {msg.Id}, Method: {msg.Method}, Pending requests: {_pendingRequests.Count}", 
+                                Serilog.Events.LogEventLevel.Debug);
+                            
                             if (_pendingRequests.TryGetValue(msg.Id, out var tcs))
                             {
+                                _logger.LogEvent("CloudWebSocket", 
+                                    $"Completing pending request {msg.Id}", 
+                                    Serilog.Events.LogEventLevel.Debug);
                                 _pendingRequests.Remove(msg.Id);
                                 tcs.SetResult(msg);
+                            }
+                            else
+                            {
+                                _logger.LogEvent("CloudWebSocket", 
+                                    $"No pending request found for Id: {msg.Id}", 
+                                    Serilog.Events.LogEventLevel.Warning);
                             }
                         }
 

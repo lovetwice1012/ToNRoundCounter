@@ -29,11 +29,11 @@ export const StatisticsPanel: React.FC = () => {
 
             // Load terror statistics
             const terrorData = await client.getTerrorAnalytics();
-            setTerrorStats(terrorData);
+            setTerrorStats(Array.isArray(terrorData) ? terrorData : []);
 
             // Load trends
             const trendsData = await client.getAnalyticsTrends('day', 30);
-            setTrends(trendsData);
+            setTrends(Array.isArray(trendsData) ? trendsData : []);
         } catch (error) {
             console.error('Failed to load statistics:', error);
             setError('統計データの読み込みに失敗しました');

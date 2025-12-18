@@ -41,6 +41,16 @@ CREATE TABLE IF NOT EXISTS sessions (
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- One-Time Tokens Table (for secure web login from desktop app)
+CREATE TABLE IF NOT EXISTS one_time_tokens (
+    token VARCHAR(255) PRIMARY KEY,
+    player_id VARCHAR(255) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_one_time_tokens_player (player_id),
+    INDEX idx_one_time_tokens_expires (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Instances Table
 CREATE TABLE IF NOT EXISTS instances (
     instance_id VARCHAR(255) PRIMARY KEY,
@@ -77,6 +87,7 @@ CREATE TABLE IF NOT EXISTS player_states (
     id INT AUTO_INCREMENT PRIMARY KEY,
     instance_id VARCHAR(255) NOT NULL,
     player_id VARCHAR(255) NOT NULL,
+    player_name VARCHAR(255) NOT NULL,
     velocity FLOAT NOT NULL DEFAULT 0,
     afk_duration INT NOT NULL DEFAULT 0,
     items JSON NOT NULL,
@@ -86,6 +97,7 @@ CREATE TABLE IF NOT EXISTS player_states (
     INDEX idx_player_states_instance (instance_id),
     INDEX idx_player_states_player (player_id),
     INDEX idx_player_states_timestamp (timestamp),
+    UNIQUE KEY unique_player_state (instance_id, player_id),
     FOREIGN KEY (instance_id) REFERENCES instances(instance_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

@@ -66,6 +66,7 @@ export interface PlayerState {
     id: number;
     instance_id: string;
     player_id: string;
+    player_name?: string;  // プレイヤー名（オプション）
     velocity: number;
     afk_duration: number;
     items: string[];

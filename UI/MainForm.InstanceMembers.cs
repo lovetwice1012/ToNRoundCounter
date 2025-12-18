@@ -11,54 +11,125 @@ namespace ToNRoundCounter.UI
     {
         private async void InstanceMemberUpdateTimer_Tick(object? sender, EventArgs e)
         {
-            if (!_settings.CloudSyncEnabled || _cloudClient == null || !_cloudClient.IsConnected)
+            // Prevent concurrent execution
+            lock (instanceTimerSync)
             {
-                return;
-            }
-
-            if (string.IsNullOrEmpty(currentInstanceId))
-            {
-                // Clear overlay if no instance
-                if (currentInstanceMembers.Count > 0)
+                if (isInstanceMemberUpdateRunning)
                 {
-                    currentInstanceMembers.Clear();
-                    currentDesirePlayers.Clear();
-                    UpdateInstanceMembersOverlay();
+                    return; // Previous update still running, skip this tick
                 }
-                return;
+                isInstanceMemberUpdateRunning = true;
             }
 
             try
             {
-                // Get player states from cloud
-                var playerStates = await _cloudClient.GetPlayerStatesAsync(currentInstanceId);
-                
-                // Convert to InstanceMemberInfo
-                var members = new List<InstanceMemberInfo>();
-                foreach (var state in playerStates)
+                if (!_settings.CloudSyncEnabled || _cloudClient == null)
                 {
-                    var member = new InstanceMemberInfo
-                    {
-                        PlayerId = state.player_id,
-                        PlayerName = state.player_name,
-                        Damage = (int)state.damage,
-                        CurrentItem = state.current_item,
-                        IsDead = state.is_dead,
-                    };
-                    members.Add(member);
+                    return;
                 }
 
-                currentInstanceMembers = members;
-                UpdateInstanceMembersOverlay();
+                // Don't clear overlay just because connection is temporarily down
+                if (!_cloudClient.IsConnected)
+                {
+                    // Just skip this update, keep showing last known state
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(currentInstanceId))
+                {
+                    // Clear overlay if no instance
+                    if (currentInstanceMembers.Count > 0)
+                    {
+                        currentInstanceMembers.Clear();
+                        currentDesirePlayers.Clear();
+                        UpdateInstanceMembersOverlay();
+                    }
+                    return;
+                }
+
+                try
+                {
+                    // 自分のプレイヤー状態をクラウドに送信 (間隔制限)
+                    var now = DateTime.Now;
+                    if ((now - lastCloudStateUpdate).TotalSeconds >= CloudStateUpdateIntervalSeconds)
+                    {
+                        await UpdateCloudPlayerState();
+                        lastCloudStateUpdate = now;
+                    }
+                    
+                    // Get player states from cloud
+                    var playerStates = await _cloudClient.GetPlayerStatesAsync(currentInstanceId);
+                    
+                    // Convert to InstanceMemberInfo
+                    var members = new List<InstanceMemberInfo>();
+                    foreach (var state in playerStates)
+                    {
+                        var member = new InstanceMemberInfo
+                        {
+                            PlayerId = state.player_id,
+                            PlayerName = state.player_name,
+                            Damage = (int)state.damage,
+                            CurrentItem = state.current_item,
+                            IsDead = state.is_dead,
+                            Velocity = state.velocity,
+                            AfkDuration = state.afk_duration,
+                        };
+                        members.Add(member);
+                    }
+
+                    currentInstanceMembers = members;
+                    
+                    // 現在のラウンドがあれば生存希望プレイヤーをチェック
+                    var currentRound = stateService.CurrentRound;
+                    
+                    _logger?.LogEvent("RoundCheck", 
+                        $"Current round check: Round={currentRound != null}, " +
+                        $"TerrorKey={(currentRound?.TerrorKey ?? "null")}, " +
+                        $"RoundType={(currentRound?.RoundType ?? "null")}", 
+                        LogEventLevel.Information);
+                    
+                    if (currentRound != null && !string.IsNullOrEmpty(currentRound.TerrorKey))
+                    {
+                        // Wait for desire players check to complete before updating overlay
+                        try
+                        {
+                            await CheckDesirePlayersForRoundAsync(
+                                currentRound.RoundType ?? "Unknown", 
+                                currentRound.TerrorKey
+                            );
+                        }
+                        catch (Exception desireEx)
+                        {
+                            _logger?.LogEvent("DesirePlayers", $"Failed to check desire players in timer: {desireEx.Message}", LogEventLevel.Debug);
+                        }
+                    }
+                    // Don't clear desire players when no round - keep the last known state
+                    // Desire players will be cleared when a new round starts
+                    
+                    UpdateInstanceMembersOverlay();
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogEvent("InstanceMembers", $"Failed to update instance members: {ex.Message}", LogEventLevel.Debug);
+                }
             }
-            catch (Exception ex)
+            finally
             {
-                _logger?.LogEvent("InstanceMembers", $"Failed to update instance members: {ex.Message}", LogEventLevel.Debug);
+                lock (instanceTimerSync)
+                {
+                    isInstanceMemberUpdateRunning = false;
+                }
             }
         }
 
         private void UpdateInstanceMembersOverlay()
         {
+            // Debug log
+            _logger?.LogEvent("OverlayUpdate", 
+                $"Updating overlay: {currentInstanceMembers.Count} members, {currentDesirePlayers.Count} desire players. " +
+                $"Desire IDs: [{string.Join(", ", currentDesirePlayers)}]", 
+                LogEventLevel.Information);
+
             if (overlayForms.TryGetValue(OverlaySection.InstanceMembers, out var form))
             {
                 if (form is OverlayInstanceMembersForm membersForm)
@@ -75,18 +146,29 @@ namespace ToNRoundCounter.UI
         {
             if (!_settings.CloudSyncEnabled || _cloudClient == null || !_cloudClient.IsConnected)
             {
-                currentDesirePlayers.Clear();
+                _logger?.LogEvent("DesirePlayers", 
+                    $"Skipping desire check: CloudSync={_settings.CloudSyncEnabled}, " +
+                    $"HasClient={_cloudClient != null}, Connected={_cloudClient?.IsConnected ?? false}", 
+                    LogEventLevel.Information);
+                // Don't clear - keep last known state
                 return;
             }
 
             if (string.IsNullOrEmpty(currentInstanceId) || string.IsNullOrEmpty(terrorKey))
             {
-                currentDesirePlayers.Clear();
+                _logger?.LogEvent("DesirePlayers", 
+                    $"Skipping desire check: InstanceId={(currentInstanceId ?? "null")}, TerrorKey={(terrorKey ?? "null")}", 
+                    LogEventLevel.Information);
+                // Don't clear - keep last known state
                 return;
             }
 
             try
             {
+                _logger?.LogEvent("DesirePlayers", 
+                    $"Calling FindDesirePlayersAsync: instance={currentInstanceId}, terror={terrorKey}, round={roundType}", 
+                    LogEventLevel.Information);
+                
                 var desirePlayers = await _cloudClient.FindDesirePlayersAsync(
                     currentInstanceId,
                     terrorKey ?? "",
@@ -97,14 +179,16 @@ namespace ToNRoundCounter.UI
                     .Select(p => p.player_id)
                     .ToList();
 
-                UpdateInstanceMembersOverlay();
-
-                _logger?.LogEvent("DesirePlayers", $"Found {currentDesirePlayers.Count} desire players for {terrorKey} in {roundType}");
+                _logger?.LogEvent("DesirePlayers", 
+                    $"Found {currentDesirePlayers.Count} desire players for {terrorKey} in {roundType}. " +
+                    $"IDs: [{string.Join(", ", currentDesirePlayers)}]", 
+                    LogEventLevel.Information);
             }
             catch (Exception ex)
             {
                 _logger?.LogEvent("DesirePlayers", $"Failed to check desire players: {ex.Message}", LogEventLevel.Warning);
-                currentDesirePlayers.Clear();
+                // Don't clear on error - keep last known state
+                // currentDesirePlayers.Clear();
             }
         }
 
@@ -122,7 +206,7 @@ namespace ToNRoundCounter.UI
                 // Show confirmation dialog after brief delay
                 await Task.Delay(100);
                 
-                _dispatcher.Invoke(async () =>
+                _dispatcher.Invoke(() =>
                 {
                     using (var confirmDialog = new AutoSuicideConfirmationOverlay(currentDesirePlayers.Count))
                     {
@@ -164,14 +248,6 @@ namespace ToNRoundCounter.UI
                 return;
             }
 
-            // Throttle updates to every 2 seconds
-            var now = DateTime.Now;
-            if ((now - lastCloudStateUpdate).TotalSeconds < CloudStateUpdateIntervalSeconds)
-            {
-                return;
-            }
-            lastCloudStateUpdate = now;
-
             try
             {
                 var currentRound = stateService.CurrentRound;
@@ -179,10 +255,10 @@ namespace ToNRoundCounter.UI
                 var isDead = currentRound?.IsDeath ?? false;
 
                 // Get current item from InfoPanel
-                string currentItem = "None";
+                string currentItem = "";
                 _dispatcher.Invoke(() =>
                 {
-                    currentItem = InfoPanel?.ItemValue?.Text ?? "None";
+                    currentItem = InfoPanel?.ItemValue?.Text ?? "";
                 });
 
                 // Get player name from settings
@@ -190,14 +266,20 @@ namespace ToNRoundCounter.UI
                     ? Environment.UserName
                     : _settings.CloudPlayerName;
 
+                // Create items list - empty if no item, otherwise single item
+                var items = string.IsNullOrWhiteSpace(currentItem) 
+                    ? new List<string>() 
+                    : new List<string> { currentItem };
+
                 await _cloudClient.UpdatePlayerStateAsync(
                     instanceId: currentInstanceId,
                     playerId: playerName, // Use player name as ID
                     velocity: currentVelocity,
                     afkDuration: lastIdleSeconds,
-                    items: string.IsNullOrEmpty(currentItem) ? new List<string>() : new List<string> { currentItem },
+                    items: items,
                     damage: damage,
-                    isAlive: !isDead
+                    isAlive: !isDead,
+                    playerName: playerName  // プレイヤー名も渡す
                 );
             }
             catch (Exception ex)

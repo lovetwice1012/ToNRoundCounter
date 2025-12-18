@@ -54,6 +54,7 @@ namespace ToNRoundCounter.Infrastructure
         public bool OverlayShowAngle { get; set; } = true;
         public bool OverlayShowClock { get; set; } = true;
         public bool OverlayShowInstanceTimer { get; set; } = true;
+        public bool OverlayShowInstanceMembers { get; set; } = false;
         public bool OverlayShowUnboundTerrorDetails { get; set; } = true;
         public double OverlayOpacity { get; set; } = 0.95d;
         public int OverlayRoundHistoryLength { get; set; } = 3;
@@ -79,6 +80,7 @@ namespace ToNRoundCounter.Infrastructure
         public string CloudWebSocketUrl { get; set; } = string.Empty;
         public bool CloudSyncEnabled { get; set; }
         public string CloudPlayerName { get; set; } = string.Empty;
+        public string CloudApiKey { get; set; } = string.Empty;
         public bool AutoLaunchEnabled { get; set; }
         public List<AutoLaunchEntry> AutoLaunchEntries { get; set; } = new List<AutoLaunchEntry>();
         // Legacy properties retained for migration of single-entry settings
@@ -661,6 +663,10 @@ namespace ToNRoundCounter.Infrastructure
                 Language = LanguageManager.NormalizeCulture(Language),
                 LogFilePath = LogFilePath,
                 WebSocketIp = WebSocketIp,
+                CloudWebSocketUrl = CloudWebSocketUrl,
+                CloudSyncEnabled = CloudSyncEnabled,
+                CloudPlayerName = CloudPlayerName,
+                CloudApiKey = CloudApiKey,
                 AutoLaunchEnabled = AutoLaunchEnabled,
                 AutoLaunchEntries = AutoLaunchEntries,
                 ItemMusicEnabled = ItemMusicEnabled,
@@ -770,6 +776,7 @@ namespace ToNRoundCounter.Infrastructure
         public string CloudWebSocketUrl { get; set; } = string.Empty;
         public bool CloudSyncEnabled { get; set; }
         public string CloudPlayerName { get; set; } = string.Empty;
+        public string CloudApiKey { get; set; } = string.Empty;
         public bool AutoLaunchEnabled { get; set; }
         public List<AutoLaunchEntry> AutoLaunchEntries { get; set; } = new List<AutoLaunchEntry>();
         public bool ItemMusicEnabled { get; set; }

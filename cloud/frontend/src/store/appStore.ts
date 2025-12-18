@@ -3,6 +3,7 @@
  */
 
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { ToNRoundCloudClient } from '../lib/websocket-client';
 import { RestApiClient } from '../lib/rest-client';
 
@@ -57,9 +58,12 @@ export interface AppState {
     setPlayerStats: (stats: any) => void;
     setTerrorStats: (stats: any[]) => void;
     setTrends: (trends: any[]) => void;
+    logout: () => void;
 }
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>()(
+    persist(
+        (set) => ({
     // Initial State
     client: null,
     restClient: null,
@@ -92,9 +96,9 @@ export const useAppStore = create<AppState>((set) => ({
     
     setCurrentInstance: (currentInstance) => set({ currentInstance }),
     
-    setInstances: (instances) => set({ instances }),
+    setInstances: (instances) => set({ instances: Array.isArray(instances) ? instances : [] }),
     
-    setInstanceMembers: (instanceMembers) => set({ instanceMembers }),
+    setInstanceMembers: (instanceMembers) => set({ instanceMembers: Array.isArray(instanceMembers) ? instanceMembers : [] }),
     
     updatePlayerState: (playerId, state) => set((prevState) => {
         const newStates = new Map(prevState.playerStates);
@@ -106,13 +110,37 @@ export const useAppStore = create<AppState>((set) => ({
     
     setSettings: (settings) => set({ settings }),
     
-    setStatusHistory: (statusHistory) => set({ statusHistory }),
+    setStatusHistory: (statusHistory) => set({ statusHistory: Array.isArray(statusHistory) ? statusHistory : [] }),
     
-    setErrors: (errors) => set({ errors }),
+    setErrors: (errors) => set({ errors: Array.isArray(errors) ? errors : [] }),
     
     setPlayerStats: (playerStats) => set({ playerStats }),
     
-    setTerrorStats: (terrorStats) => set({ terrorStats }),
+    setTerrorStats: (terrorStats) => set({ terrorStats: Array.isArray(terrorStats) ? terrorStats : [] }),
     
-    setTrends: (trends) => set({ trends }),
-}));
+    setTrends: (trends) => set({ trends: Array.isArray(trends) ? trends : [] }),
+    
+    logout: () => set({
+        client: null,
+        restClient: null,
+        connected: false,
+        connectionState: 'disconnected',
+        sessionToken: null,
+        playerId: null,
+        currentInstance: null,
+        instances: [],
+        instanceMembers: [],
+        playerStates: new Map(),
+        activeVoting: null,
+        settings: null,
+    }),
+}),
+        {
+            name: 'tonround-cloud-storage',
+            partialize: (state) => ({
+                sessionToken: state.sessionToken,
+                playerId: state.playerId,
+            }),
+        }
+    )
+);

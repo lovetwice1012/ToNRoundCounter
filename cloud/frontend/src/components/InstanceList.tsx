@@ -13,6 +13,23 @@ export const InstanceList: React.FC = () => {
     useEffect(() => {
         if (client) {
             loadInstances();
+            
+            // インスタンス更新イベントの購読
+            const unsubscribeUpdated = client.onInstanceUpdated((data) => {
+                console.log('Instance updated:', data);
+                loadInstances();
+            });
+            
+            // インスタンス削除イベントの購読
+            const unsubscribeDeleted = client.onInstanceDeleted((data) => {
+                console.log('Instance deleted:', data);
+                loadInstances();
+            });
+            
+            return () => {
+                unsubscribeUpdated();
+                unsubscribeDeleted();
+            };
         }
     }, [client]);
 
@@ -22,10 +39,13 @@ export const InstanceList: React.FC = () => {
         setError(null);
         try {
             const list = await client.listInstances();
-            useAppStore.getState().setInstances(list);
+            // 配列であることを保証
+            useAppStore.getState().setInstances(Array.isArray(list) ? list : []);
         } catch (error) {
             console.error('Failed to load instances:', error);
             setError('インスタンスの読み込みに失敗しました');
+            // エラー時は空配列をセット
+            useAppStore.getState().setInstances([]);
         } finally {
             setLoading(false);
         }
@@ -117,9 +137,10 @@ export const InstanceList: React.FC = () => {
         <div className="instance-list">
             <div className="instance-list-header">
                 <h2>インスタンス一覧</h2>
-                <button onClick={handleCreateInstance} className="btn-create" disabled={loading}>
+                {/* VRChat does not allow remote instance creation - disabled for UI */}
+                {/* <button onClick={handleCreateInstance} className="btn-create" disabled={loading}>
                     新規作成
-                </button>
+                </button> */}
             </div>
 
             {error && (
@@ -130,18 +151,19 @@ export const InstanceList: React.FC = () => {
             )}
 
             <div className="instance-grid">
-                {instances.length === 0 ? (
+                {!Array.isArray(instances) || instances.length === 0 ? (
                     <p>インスタンスがありません</p>
                 ) : (
                     instances.map((instance: any) => (
                         <div key={instance.instance_id} className="instance-card">
-                            <h3>インスタンス {instance.instance_id.substring(0, 8)}</h3>
+                            <h3>インスタンス {instance.instance_id.substring(0, 20)}...</h3>
                             <div className="instance-info">
-                                <p>プレイヤー: {instance.current_player_count}/{instance.max_players}</p>
-                                <p>ステータス: {instance.status}</p>
+                                <p>プレイヤー: {instance.member_count}/{instance.max_players}</p>
                                 <p>作成日時: {new Date(instance.created_at).toLocaleString()}</p>
                             </div>
-                            <div className="instance-actions">
+                            {/* Instance join/leave/update/delete disabled for web UI */}
+                            {/* VRChat instances are controlled by the desktop app */}
+                            {/* <div className="instance-actions">
                                 {currentInstance?.instance_id === instance.instance_id ? (
                                     <>
                                         <button
@@ -167,12 +189,12 @@ export const InstanceList: React.FC = () => {
                                     <button
                                         onClick={() => handleJoinInstance(instance.instance_id)}
                                         className="btn-join"
-                                        disabled={instance.current_player_count >= instance.max_players}
+                                        disabled={instance.member_count >= instance.max_players}
                                     >
                                         参加
                                     </button>
                                 )}
-                            </div>
+                            </div> */}
                         </div>
                     ))
                 )}

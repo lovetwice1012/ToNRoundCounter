@@ -2,32 +2,54 @@
  * Login Page Component
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/appStore';
 import { ToNRoundCloudClient } from '../lib/websocket-client';
+import { createRestClient } from '../lib/rest-client';
 
 export const Login: React.FC = () => {
     const navigate = useNavigate();
-    const { setClient, setSession, setConnected, setConnectionState } = useAppStore();
-    const [playerId, setPlayerIdInput] = useState('');
+    const { setClient, setRestClient, setSession, setConnected, setConnectionState, sessionToken, playerId } = useAppStore();
     const [serverUrl, setServerUrl] = useState('ws://localhost:3000/ws');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [autoReconnecting, setAutoReconnecting] = useState(false);
+    const [waitingForToken, setWaitingForToken] = useState(false);
 
-    const handleLogin = async (e: React.FormEvent) => {
-        e.preventDefault();
+    // ワンタイムトークンでのログインをチェック
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get('token');
         
-        if (!playerId.trim()) {
-            setError('プレイヤーIDを入力してください');
+        if (token) {
+            setWaitingForToken(false);
+            loginWithOneTimeToken(token);
             return;
         }
 
-        setLoading(true);
-        setError(null);
+        // 既存のセッションで自動再接続を試みる
+        if (sessionToken && playerId && !autoReconnecting) {
+            setAutoReconnecting(true);
+            reconnectWithExistingSession();
+            return;
+        }
 
+        // トークンもセッションもない場合は待機状態
+        setWaitingForToken(true);
+    }, []);
+
+    const loginWithOneTimeToken = async (token: string) => {
         try {
-            // Create client
+            setLoading(true);
+            setError(null);
+
+            // Create REST client
+            const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+            const restClient = createRestClient(apiUrl);
+            setRestClient(restClient);
+
+            // Create WebSocket client
             const client = new ToNRoundCloudClient(serverUrl);
             
             // Connection state callback
@@ -39,18 +61,73 @@ export const Login: React.FC = () => {
             // Connect
             await client.connect();
             
-            // Login
-            const session = await client.login(playerId, '1.0.0');
+            // Login with one-time token
+            const session = await client.loginWithOneTimeToken(token, '1.0.0');
+            
+            // Update REST client with session token
+            restClient.setSessionToken(session.session_token);
             
             // Save to store
             setClient(client);
             setSession(session.session_token, session.player_id);
             
+            // Clear URL parameters
+            window.history.replaceState({}, document.title, '/login');
+            
             // Navigate to dashboard
             navigate('/dashboard');
         } catch (err: any) {
-            console.error('Login failed:', err);
-            setError(err.message || 'ログインに失敗しました');
+            console.error('One-time token login failed:', err);
+            setError(err.message || 'ワンタイムトークンログインに失敗しました');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // 既存のセッションで自動再接続を試みる
+    useEffect(() => {
+        if (sessionToken && playerId && !autoReconnecting) {
+            setAutoReconnecting(true);
+            reconnectWithExistingSession();
+        }
+    }, []);
+
+    const reconnectWithExistingSession = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+
+            // Create REST client
+            const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+            const restClient = createRestClient(apiUrl, sessionToken || undefined);
+            setRestClient(restClient);
+
+            // Create WebSocket client
+            const client = new ToNRoundCloudClient(serverUrl);
+            
+            // セッショントークンを設定
+            if (sessionToken && playerId) {
+                client.setSessionToken(sessionToken, playerId);
+            }
+            
+            // Connection state callback
+            client.onConnectionStateChange((state) => {
+                setConnectionState(state);
+                setConnected(state === 'connected');
+            });
+
+            // Connect
+            await client.connect();
+            
+            // セッショントークンが有効かチェック (ここでは単純にクライアントを保存)
+            setClient(client);
+            
+            // Navigate to dashboard
+            navigate('/dashboard');
+        } catch (err: any) {
+            console.error('Auto-reconnect failed:', err);
+            // 失敗した場合はログイン画面を表示
+            setAutoReconnecting(false);
         } finally {
             setLoading(false);
         }
@@ -60,48 +137,53 @@ export const Login: React.FC = () => {
         <div className="login-page">
             <div className="login-container">
                 <h1>ToNRoundCounter Cloud</h1>
-                <p className="subtitle">クラウドダッシュボードにログイン</p>
+                <p className="subtitle">クラウドダッシュボード</p>
 
-                <form onSubmit={handleLogin} className="login-form">
-                    <div className="form-group">
-                        <label htmlFor="server-url">サーバーURL</label>
-                        <input
-                            id="server-url"
-                            type="text"
-                            value={serverUrl}
-                            onChange={(e) => setServerUrl(e.target.value)}
-                            placeholder="ws://localhost:3000/ws"
-                            disabled={loading}
-                        />
-                    </div>
-
-                    <div className="form-group">
-                        <label htmlFor="player-id">プレイヤーID</label>
-                        <input
-                            id="player-id"
-                            type="text"
-                            value={playerId}
-                            onChange={(e) => setPlayerIdInput(e.target.value)}
-                            placeholder="your_player_id"
-                            disabled={loading}
-                            autoFocus
-                        />
-                    </div>
-
-                    {error && (
-                        <div className="error-message">
-                            {error}
+                {waitingForToken && !loading && !error && (
+                    <div className="waiting-for-login">
+                        <div className="waiting-icon">
+                            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <circle cx="12" cy="12" r="10" stroke="#667eea" strokeWidth="2" opacity="0.2"/>
+                                <path d="M12 2 A10 10 0 0 1 22 12" stroke="#667eea" strokeWidth="2" strokeLinecap="round">
+                                    <animateTransform
+                                        attributeName="transform"
+                                        type="rotate"
+                                        from="0 12 12"
+                                        to="360 12 12"
+                                        dur="1s"
+                                        repeatCount="indefinite"
+                                    />
+                                </path>
+                            </svg>
                         </div>
-                    )}
+                        <h2>アプリからログインしてください</h2>
+                        <p className="instruction">
+                            ToNRoundCounterアプリを起動し、<br/>
+                            クラウド設定からダッシュボードにログインしてください。
+                        </p>
+                        <div className="instruction-steps">
+                            <ol>
+                                <li>ToNRoundCounterアプリを起動</li>
+                                <li>設定画面を開く</li>
+                                <li>「クラウドダッシュボードを開く」をクリック</li>
+                            </ol>
+                        </div>
+                    </div>
+                )}
 
-                    <button
-                        type="submit"
-                        className="btn-login"
-                        disabled={loading}
-                    >
-                        {loading ? '接続中...' : 'ログイン'}
-                    </button>
-                </form>
+                {(loading || autoReconnecting) && (
+                    <div className="loading-state">
+                        <div className="spinner"></div>
+                        <p>{autoReconnecting ? '自動再接続中...' : '接続中...'}</p>
+                    </div>
+                )}
+
+                {error && (
+                    <div className="error-message">
+                        {error}
+                        <button onClick={() => setError(null)} className="btn-dismiss">×</button>
+                    </div>
+                )}
 
                 <div className="login-info">
                     <h3>機能一覧</h3>

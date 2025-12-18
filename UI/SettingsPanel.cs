@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Drawing;
 using System.Windows.Forms;
+using System.Threading.Tasks;
 using ToNRoundCounter.Application;
 using ToNRoundCounter.Infrastructure;
 using ToNRoundCounter.Domain;
@@ -18,7 +19,7 @@ namespace ToNRoundCounter.UI
     public class SettingsPanel : UserControl
     {
         private readonly IAppSettings _settings;
-
+        private readonly CloudWebSocketClient? _cloudClient;
 
         private Label languageLabel = null!;
         public ComboBox LanguageComboBox { get; private set; } = null!;
@@ -50,6 +51,7 @@ namespace ToNRoundCounter.UI
         public CheckBox OverlayShortcutsCheckBox { get; private set; } = null!;
         public CheckBox OverlayClockCheckBox { get; private set; } = null!;
         public CheckBox OverlayInstanceTimerCheckBox { get; private set; } = null!;
+        public CheckBox OverlayInstanceMembersCheckBox { get; private set; } = null!;
         public CheckBox OverlayUnboundTerrorDetailsCheckBox { get; private set; } = null!;
         public TrackBar OverlayOpacityTrackBar { get; private set; } = null!;
         public Label OverlayOpacityValueLabel { get; private set; } = null!;
@@ -194,9 +196,10 @@ namespace ToNRoundCounter.UI
         };
 
 
-        public SettingsPanel(IAppSettings settings)
+        public SettingsPanel(IAppSettings settings, CloudWebSocketClient? cloudClient = null)
         {
             _settings = settings;
+            _cloudClient = cloudClient;
             this.BorderStyle = BorderStyle.FixedSingle;
 
             int margin = 10;
@@ -947,7 +950,17 @@ namespace ToNRoundCounter.UI
             OverlayInstanceTimerCheckBox.Location = new Point(overlayInnerMargin, overlayInnerY);
             grpOverlay.Controls.Add(OverlayInstanceTimerCheckBox);
 
-            overlayInnerY = OverlayInstanceTimerCheckBox.Bottom + 12;
+            overlayInnerY = OverlayInstanceTimerCheckBox.Bottom + 8;
+
+            OverlayInstanceMembersCheckBox = new CheckBox();
+            OverlayInstanceMembersCheckBox.Text = LanguageManager.Translate("インスタンスメンバーを表示");
+            OverlayInstanceMembersCheckBox.AutoSize = true;
+            OverlayInstanceMembersCheckBox.Location = new Point(overlayInnerMargin, overlayInnerY);
+            OverlayInstanceMembersCheckBox.Checked = false;
+            OverlayInstanceMembersCheckBox.Enabled = false;
+            grpOverlay.Controls.Add(OverlayInstanceMembersCheckBox);
+
+            overlayInnerY = OverlayInstanceMembersCheckBox.Bottom + 12;
 
             var overlayOpacityLabel = new Label();
             overlayOpacityLabel.Text = LanguageManager.Translate("透明度");
@@ -995,8 +1008,8 @@ namespace ToNRoundCounter.UI
             roundLogExportGroup.Controls.Add(roundLogExportDescriptionLabel);
 
             roundLogExportButton = new Button();
-            roundLogExportButton.Text = LanguageManager.Translate("ラウンドログをエクスポート(開発中)");
-            roundLogExportButton.Enabled = false;
+            roundLogExportButton.Text = LanguageManager.Translate("ラウンドログをエクスポート");
+            //roundLogExportButton.Enabled = false;
             roundLogExportButton.AutoSize = true;
             roundLogExportButton.Location = new Point(exportInnerMargin, roundLogExportDescriptionLabel.Bottom + 12);
             roundLogExportButton.Click += RoundLogExportButton_Click;
@@ -1911,9 +1924,64 @@ namespace ToNRoundCounter.UI
             openCloudButton.Text = LanguageManager.Translate("ToNRoundCounter-Cloudを開く");
             openCloudButton.AutoSize = true;
             openCloudButton.Location = new Point(innerMargin2, apiInnerY);
-            openCloudButton.Click += (s, e) =>
+            openCloudButton.Click += async (s, e) =>
             {
-                System.Diagnostics.Process.Start("https://toncloud.sprink.cloud");
+                try
+                {
+                    if (string.IsNullOrEmpty(_settings.CloudPlayerName))
+                    {
+                        MessageBox.Show(
+                            LanguageManager.Translate("クラウドプレイヤー名を設定してください。"),
+                            LanguageManager.Translate("エラー"),
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning
+                        );
+                        return;
+                    }
+
+                    if (string.IsNullOrEmpty(_settings.apikey))
+                    {
+                        MessageBox.Show(
+                            LanguageManager.Translate("APIキーを設定してください。"),
+                            LanguageManager.Translate("エラー"),
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning
+                        );
+                        return;
+                    }
+
+                    // CloudWebSocketClientが利用可能か確認
+                    if (_cloudClient == null)
+                    {
+                        MessageBox.Show(
+                            LanguageManager.Translate("CloudWebSocketクライアントが利用できません。"),
+                            LanguageManager.Translate("エラー"),
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Error
+                        );
+                        return;
+                    }
+
+                    // ワンタイムトークンを生成
+                    var (token, loginUrl) = await _cloudClient.GenerateOneTimeTokenAsync(
+                        _settings.CloudPlayerName,
+                        _settings.apikey
+                    );
+
+                    // ダッシュボードを開く（ローカルフロントエンド用のURLに変更）
+                    string dashboardUrl = $"http://localhost:8080/login?token={token}";
+                    var psi = new ProcessStartInfo(dashboardUrl) { UseShellExecute = true };
+                    Process.Start(psi);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(
+                        LanguageManager.Translate("ダッシュボードを開く際にエラーが発生しました: ") + ex.Message,
+                        LanguageManager.Translate("エラー"),
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error
+                    );
+                }
             };
             grpApiKey.Controls.Add(openCloudButton);
             apiInnerY += openCloudButton.Height + 10; // ボタンの下にスペースを確保
@@ -1949,7 +2017,7 @@ namespace ToNRoundCounter.UI
             CloudWebSocketUrlTextBox.Width = 400;
             CloudWebSocketUrlTextBox.Location = new Point(cloudUrlLabel.Right + 10, apiInnerY - 3);
             CloudWebSocketUrlTextBox.Text = string.IsNullOrWhiteSpace(_settings.CloudWebSocketUrl)
-                ? "ws://toncloud.sprink.cloud"
+                ? "ws://localhost:3000/ws"
                 : _settings.CloudWebSocketUrl;
             grpApiKey.Controls.Add(CloudWebSocketUrlTextBox);
             apiInnerY += CloudWebSocketUrlTextBox.Height + 10;
@@ -1960,14 +2028,152 @@ namespace ToNRoundCounter.UI
             apiKeyLabel.AutoSize = true;
             apiKeyLabel.Location = new Point(innerMargin2, apiInnerY);
             grpApiKey.Controls.Add(apiKeyLabel);
+
             apiKeyTextBox = new TextBox();
             apiKeyTextBox.Name = "ApiKeyTextBox";
             apiKeyTextBox.Text = _settings.apikey; // _settings.apikey の初期値を使用
             apiKeyTextBox.Location = new Point(apiKeyLabel.Right + 10, apiInnerY);
-            apiKeyTextBox.Width = 400; // テキストボックスの幅を設定
+            apiKeyTextBox.Width = 300; // テキストボックスの幅を調整
+            apiKeyTextBox.ReadOnly = true; // 読み取り専用に設定
+            apiKeyTextBox.BackColor = SystemColors.Control;
             grpApiKey.Controls.Add(apiKeyTextBox);
+
+            // APIキー生成/再生成ボタン
+            Button generateApiKeyButton = new Button();
+            generateApiKeyButton.Text = string.IsNullOrEmpty(_settings.apikey)
+                ? LanguageManager.Translate("APIキーを生成")
+                : LanguageManager.Translate("APIキーを再生成");
+            generateApiKeyButton.AutoSize = true;
+            generateApiKeyButton.Location = new Point(apiKeyTextBox.Right + 10, apiInnerY - 2);
+            generateApiKeyButton.Click += async (s, e) =>
+            {
+                try
+                {
+                    if (string.IsNullOrEmpty(CloudPlayerNameTextBox.Text))
+                    {
+                        MessageBox.Show(
+                            LanguageManager.Translate("クラウドプレイヤー名を先に設定してください。"),
+                            LanguageManager.Translate("エラー"),
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning
+                        );
+                        return;
+                    }
+
+                    if (_cloudClient == null)
+                    {
+                        MessageBox.Show(
+                            LanguageManager.Translate("クラウド機能が利用できません。\n\nアプリを再起動してクラウド同期を有効にしてください。"),
+                            LanguageManager.Translate("エラー"),
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning
+                        );
+                        return;
+                    }
+
+                    var confirmResult = MessageBox.Show(
+                        string.IsNullOrEmpty(_settings.apikey)
+                            ? LanguageManager.Translate("新しいAPIキーを生成しますか?")
+                            : LanguageManager.Translate("APIキーを再生成すると、古いAPIキーは無効になります。続行しますか?"),
+                        LanguageManager.Translate("確認"),
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Question
+                    );
+
+                    if (confirmResult != DialogResult.Yes)
+                        return;
+
+                    try
+                    {
+                        // 既存のCloudWebSocketClientを使用してAPIキー生成
+                        var registerTask = _cloudClient.RegisterUserAsync(
+                            CloudPlayerNameTextBox.Text,
+                            System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0.0"
+                        );
+
+                        var registerTimeout = Task.Delay(15000); // 15秒のタイムアウト
+                        var completedRegisterTask = await Task.WhenAny(registerTask, registerTimeout);
+
+                        if (completedRegisterTask == registerTimeout)
+                        {
+                            throw new TimeoutException("APIキー生成リクエストがタイムアウトしました。\n\n" +
+                                "レスポンスが返ってきません。\n" +
+                                "アプリを再起動してから、もう一度お試しください。");
+                        }
+
+                        var (userId, apiKey) = await registerTask;
+
+                        // UIスレッドで更新（読み取り専用でも表示を確実に更新）
+                        if (apiKeyTextBox.InvokeRequired)
+                        {
+                            apiKeyTextBox.Invoke(new Action(() =>
+                            {
+                                apiKeyTextBox.ReadOnly = false;
+                                apiKeyTextBox.Text = apiKey;
+                                apiKeyTextBox.ReadOnly = true;
+                                apiKeyTextBox.Refresh();
+                            }));
+                        }
+                        else
+                        {
+                            apiKeyTextBox.ReadOnly = false;
+                            apiKeyTextBox.Text = apiKey;
+                            apiKeyTextBox.ReadOnly = true;
+                            apiKeyTextBox.Refresh();
+                        }
+
+                        _settings.apikey = apiKey;
+                        _settings.CloudPlayerName = CloudPlayerNameTextBox.Text.Trim();
+
+                        // 設定を永続化
+                        await _settings.SaveAsync();
+
+                        MessageBox.Show(
+                            LanguageManager.Translate("APIキーが生成されました。このキーは安全に保管してください。"),
+                            LanguageManager.Translate("成功"),
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information
+                        );
+
+                        if (generateApiKeyButton.InvokeRequired)
+                        {
+                            generateApiKeyButton.Invoke(new Action(() =>
+                            {
+                                generateApiKeyButton.Text = LanguageManager.Translate("APIキーを再生成");
+                            }));
+                        }
+                        else
+                        {
+                            generateApiKeyButton.Text = LanguageManager.Translate("APIキーを再生成");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        var errorMessage = $"APIキーの生成に失敗しました:\n\n" +
+                                         $"エラー: {ex.Message}\n\n" +
+                                         $"詳細:\n{ex.ToString()}";
+
+                        MessageBox.Show(
+                            errorMessage,
+                            LanguageManager.Translate("エラー"),
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Error
+                        );
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(
+                        LanguageManager.Translate("予期しないエラーが発生しました: ") + ex.Message,
+                        LanguageManager.Translate("エラー"),
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error
+                    );
+                }
+            };
+            grpApiKey.Controls.Add(generateApiKeyButton);
+
             apiInnerY += apiKeyTextBox.Height + 10; // テキストボックスの下にスペースを確保
-            // APIキーの保存ボタンはいらない
             grpApiKey.Height = apiInnerY + 20; // グループボックスの高さを調整
 
             currentY += grpApiKey.Height + margin;

@@ -87,6 +87,25 @@ export class InstanceService {
         });
 
         logger.info({ instanceId, playerId }, 'Player left instance');
+
+        // Auto-delete instance if no members remain
+        const updatedInstance = await InstanceRepository.getInstance(instanceId);
+        if (updatedInstance && updatedInstance.member_count === 0) {
+            await this.deleteInstance(instanceId);
+            logger.info({ instanceId }, 'Auto-deleted empty instance');
+        }
+    }
+
+    async isMemberInInstance(instanceId: string, playerId: string): Promise<boolean> {
+        return await InstanceRepository.isMemberInInstance(instanceId, playerId);
+    }
+
+    async getInstancesForPlayer(playerId: string): Promise<Instance[]> {
+        return await InstanceRepository.getInstancesForPlayer(playerId);
+    }
+
+    async getInstanceMembers(instanceId: string): Promise<any[]> {
+        return await InstanceRepository.getMembers(instanceId);
     }
 
     async listInstances(filter: 'available' | 'active' | 'all', limit: number, offset: number): Promise<any> {

@@ -364,3 +364,7 @@ FodyWeavers.xsd
 
 # builded modules
 *.dll
+Modules/*.dll
+Modules/AfkSoundCancelModule.dll
+Modules/OscRepeaterDisablerModule.dll
+Modules/AfkJumpModule.dll

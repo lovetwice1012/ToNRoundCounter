@@ -227,8 +227,9 @@ export const WishedTerrorPanel: React.FC = () => {
     const [wishedTerrors, setWishedTerrors] = useState<WishedTerror[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [newTerrorName, setNewTerrorName] = useState('');
+    const [selectedTerrors, setSelectedTerrors] = useState<string[]>([]);
     const [newRoundKey, setNewRoundKey] = useState('');
+    const [searchQuery, setSearchQuery] = useState('');
 
     useEffect(() => {
         if (client && playerId) {
@@ -254,30 +255,55 @@ export const WishedTerrorPanel: React.FC = () => {
 
     const handleAdd = async () => {
         if (!client || !playerId) return;
-        if (!newTerrorName) {
-            setError('テラー名を選択してください');
+        if (selectedTerrors.length === 0) {
+            setError('テラーを1つ以上選択してください');
             return;
         }
 
         setError(null);
         try {
-            const newList = [
-                ...wishedTerrors,
-                {
-                    id: crypto.randomUUID(),
-                    terror_name: newTerrorName,
-                    round_key: newRoundKey,
-                },
-            ];
+            const newItems = selectedTerrors.map(terrorName => ({
+                id: crypto.randomUUID(),
+                terror_name: terrorName,
+                round_key: newRoundKey,
+            }));
+
+            const newList = [...wishedTerrors, ...newItems];
 
             await client.updateWishedTerrors(playerId, newList as any);
             setWishedTerrors(newList);
-            setNewTerrorName('');
+            setSelectedTerrors([]);
             setNewRoundKey('');
         } catch (error) {
             console.error('Failed to add wished terror:', error);
             setError('追加に失敗しました');
         }
+    };
+
+    const handleToggleTerror = (terrorName: string) => {
+        setSelectedTerrors(prev => {
+            if (prev.includes(terrorName)) {
+                return prev.filter(t => t !== terrorName);
+            } else {
+                return [...prev, terrorName];
+            }
+        });
+    };
+
+    const handleSelectAll = () => {
+        const filteredTerrors = getFilteredTerrors();
+        if (selectedTerrors.length === filteredTerrors.length) {
+            setSelectedTerrors([]);
+        } else {
+            setSelectedTerrors(filteredTerrors);
+        }
+    };
+
+    const getFilteredTerrors = () => {
+        if (!searchQuery) return TERROR_NAMES;
+        return TERROR_NAMES.filter(name => 
+            name.toLowerCase().includes(searchQuery.toLowerCase())
+        );
     };
 
     const handleRemove = async (id: string) => {
@@ -315,16 +341,13 @@ export const WishedTerrorPanel: React.FC = () => {
             <div className="add-section">
                 <h3>新規追加</h3>
                 <div className="add-form">
-                    <select
-                        value={newTerrorName}
-                        onChange={(e) => setNewTerrorName(e.target.value)}
-                        className="input-terror-name"
-                    >
-                        <option value="">テラーを選択...</option>
-                        {TERROR_NAMES.map(name => (
-                            <option key={name} value={name}>{name}</option>
-                        ))}
-                    </select>
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="テラー名で検索..."
+                        className="input-search"
+                    />
 
                     <input
                         type="text"
@@ -333,9 +356,43 @@ export const WishedTerrorPanel: React.FC = () => {
                         placeholder="ラウンド名 (空白=全ラウンド)"
                         className="input-round-key"
                     />
+                </div>
 
-                    <button onClick={handleAdd} className="btn-add" disabled={loading || !newTerrorName}>
-                        追加
+                <div className="terror-selection">
+                    <div className="selection-header">
+                        <button 
+                            onClick={handleSelectAll} 
+                            className="btn-select-all"
+                            type="button"
+                        >
+                            {selectedTerrors.length === getFilteredTerrors().length && getFilteredTerrors().length > 0
+                                ? 'すべて解除'
+                                : 'すべて選択'}
+                        </button>
+                        <span className="selection-count">
+                            {selectedTerrors.length}件選択中
+                        </span>
+                    </div>
+
+                    <div className="terror-checkbox-list">
+                        {getFilteredTerrors().map(name => (
+                            <label key={name} className="terror-checkbox-item">
+                                <input
+                                    type="checkbox"
+                                    checked={selectedTerrors.includes(name)}
+                                    onChange={() => handleToggleTerror(name)}
+                                />
+                                <span className="terror-name">{name}</span>
+                            </label>
+                        ))}
+                    </div>
+
+                    <button 
+                        onClick={handleAdd} 
+                        className="btn-add-selected" 
+                        disabled={loading || selectedTerrors.length === 0}
+                    >
+                        選択した{selectedTerrors.length}件を追加
                     </button>
                 </div>
             </div>

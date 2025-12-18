@@ -10,15 +10,17 @@ namespace ToNRoundCounter.UI
     public class SettingsForm : Form
     {
         private readonly IAppSettings _settings;
+        private readonly CloudWebSocketClient? _cloudClient;
         private SettingsPanel settingsPanel = null!;
         private Button btnOK = null!;
         private Button btnCancel = null!;
 
         public SettingsPanel SettingsPanel { get { return settingsPanel; } }
 
-        public SettingsForm(IAppSettings settings)
+        public SettingsForm(IAppSettings settings, CloudWebSocketClient? cloudClient = null)
         {
             _settings = settings;
+            _cloudClient = cloudClient;
 
             this.Text = LanguageManager.Translate("設定");
             this.Size = new Size(1850, 1000);
@@ -29,7 +31,7 @@ namespace ToNRoundCounter.UI
         private void InitializeComponent()
         {
             // 設定パネルをフォーム全体に配置（下部にボタン用のスペースを確保するため Fill を使用）
-            settingsPanel = new SettingsPanel(_settings);
+            settingsPanel = new SettingsPanel(_settings, _cloudClient);
             settingsPanel.Dock = DockStyle.Fill;
 
             // 下部にボタン専用のパネルを追加

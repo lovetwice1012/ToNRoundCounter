@@ -1,18 +1,30 @@
 # Frontend Dockerfile
-FROM node:18-alpine as builder
+FROM node:18-alpine AS builder
 
 WORKDIR /app
 
-COPY package*.json ./
+# Copy shared package
+COPY shared ./shared
+
+# Build shared package
+WORKDIR /app/shared
+RUN npm ci && npm run build
+
+# Setup frontend
+WORKDIR /app
+COPY frontend ./frontend
+
+# Install frontend dependencies (shared is already built in /app/shared)
+WORKDIR /app/frontend
 RUN npm ci
 
-COPY . .
+# Build frontend
 RUN npm run build
 
 FROM nginx:alpine
 
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/frontend/dist /usr/share/nginx/html
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 

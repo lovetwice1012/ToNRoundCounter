@@ -117,7 +117,7 @@ namespace ToNRoundCounter.UI
 
         private string _lastSaveCode = string.Empty;
 
-        private string version = "1.14.1";
+        private string version = "1.15.0";
 
         private readonly AutoSuicideService autoSuicideService;
 
@@ -148,21 +148,22 @@ namespace ToNRoundCounter.UI
         private string terrorCountdownTargetName = string.Empty;
         private double terrorCountdownLastDisplayedValue = double.NaN;
         private readonly object instanceTimerSync = new();
+        private bool isInstanceMemberUpdateRunning = false;
         private string currentInstanceId = string.Empty;
         private DateTimeOffset currentInstanceEnteredAt = DateTimeOffset.Now;
         private List<InstanceMemberInfo> currentInstanceMembers = new List<InstanceMemberInfo>();
         private List<string> currentDesirePlayers = new List<string>();
         private System.Windows.Forms.Timer? instanceMemberUpdateTimer;
-        
+
         // Cloud state update tracking
         private DateTime lastCloudStateUpdate = DateTime.MinValue;
-        private const double CloudStateUpdateIntervalSeconds = 2.0;
+        private const double CloudStateUpdateIntervalSeconds = 0.2;
         private List<string> currentPlayerItems = new List<string>();
-        
+
         // Cloud monitoring status tracking
         private DateTime lastMonitoringStatusUpdate = DateTime.MinValue;
         private const double MonitoringStatusUpdateIntervalSeconds = 30.0; // Every 30 seconds
-        
+
         private static readonly CultureInfo JapaneseCulture = CultureInfo.GetCultureInfo("ja-JP");
         private const string NextRoundPredictionUnavailableMessage = "次のラウンドの予測は特殊ラウンドを一回発生させることで利用可能です";
         private bool hasObservedSpecialRound;
@@ -333,22 +334,28 @@ namespace ToNRoundCounter.UI
                     {
                         await _cloudClient.StartAsync();
                         _logger?.LogEvent("CloudSync", "Cloud WebSocket client started successfully.");
-                        
-                        // Auto-login after connection
-                        if (!string.IsNullOrWhiteSpace(_settings.CloudPlayerName))
+
+                        // 起動時に認証を実行
+                        if (!string.IsNullOrWhiteSpace(_settings.apikey))
                         {
+                            string playerIdForAuth = !string.IsNullOrWhiteSpace(_settings.CloudPlayerName)
+                                ? _settings.CloudPlayerName
+                                : Environment.UserName;
+
                             try
                             {
-                                var loginResult = await _cloudClient.LoginAsync(
-                                    _settings.CloudPlayerName,
+                                _logger?.LogEvent("CloudAuth", $"Authenticating on startup: {playerIdForAuth}");
+                                await _cloudClient.LoginWithApiKeyAsync(
+                                    playerIdForAuth,
+                                    _settings.apikey,
                                     "1.0.0",
                                     System.Threading.CancellationToken.None
                                 );
-                                _logger?.LogEvent("CloudSync", $"Logged in as: {_settings.CloudPlayerName}");
+                                _logger?.LogEvent("CloudAuth", "Startup authentication successful");
                             }
-                            catch (Exception loginEx)
+                            catch (Exception authEx)
                             {
-                                _logger?.LogEvent("CloudSync", $"Auto-login failed: {loginEx.Message}", LogEventLevel.Warning);
+                                _logger?.LogEvent("CloudAuth", $"Startup authentication failed: {authEx.Message}", LogEventLevel.Warning);
                             }
                         }
                     }
@@ -372,7 +379,7 @@ namespace ToNRoundCounter.UI
 
             // Initialize instance member update timer
             instanceMemberUpdateTimer = new System.Windows.Forms.Timer();
-            instanceMemberUpdateTimer.Interval = 2000; // Update every 2 seconds
+            instanceMemberUpdateTimer.Interval = 200; // Update every 0.2 seconds (matches player state update rate)
             instanceMemberUpdateTimer.Tick += InstanceMemberUpdateTimer_Tick;
             instanceMemberUpdateTimer.Start();
 
@@ -644,7 +651,7 @@ namespace ToNRoundCounter.UI
         private async void BtnSettings_Click(object sender, EventArgs e)
         {
             LogUi("Settings dialog requested by user.");
-            using (SettingsForm settingsForm = new SettingsForm(_settings))
+            using (SettingsForm settingsForm = new SettingsForm(_settings, _cloudClient))
             {
                 var buildContext = new ModuleSettingsViewBuildContext(settingsForm, settingsForm.SettingsPanel, _settings, _moduleHost.CurrentServiceProvider);
                 _moduleHost.NotifySettingsViewBuilding(buildContext);
@@ -674,6 +681,7 @@ namespace ToNRoundCounter.UI
                 settingsForm.SettingsPanel.OverlayShortcutsCheckBox.Checked = _settings.OverlayShowShortcuts;
                 settingsForm.SettingsPanel.OverlayClockCheckBox.Checked = _settings.OverlayShowClock;
                 settingsForm.SettingsPanel.OverlayInstanceTimerCheckBox.Checked = _settings.OverlayShowInstanceTimer;
+                settingsForm.SettingsPanel.OverlayInstanceMembersCheckBox.Checked = _settings.OverlayShowInstanceMembers;
                 settingsForm.SettingsPanel.SetOverlayOpacity(_settings.OverlayOpacity);
                 int historyLength = _settings.OverlayRoundHistoryLength <= 0 ? 3 : _settings.OverlayRoundHistoryLength;
                 historyLength = Math.Max((int)settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Minimum, Math.Min((int)settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Maximum, historyLength));
@@ -751,6 +759,7 @@ namespace ToNRoundCounter.UI
                     _settings.OverlayShowShortcuts = settingsForm.SettingsPanel.OverlayShortcutsCheckBox.Checked;
                     _settings.OverlayShowClock = settingsForm.SettingsPanel.OverlayClockCheckBox.Checked;
                     _settings.OverlayShowInstanceTimer = settingsForm.SettingsPanel.OverlayInstanceTimerCheckBox.Checked;
+                    _settings.OverlayShowInstanceMembers = settingsForm.SettingsPanel.OverlayInstanceMembersCheckBox.Checked;
                     _settings.OverlayOpacity = settingsForm.SettingsPanel.GetOverlayOpacity();
                     _settings.OverlayRoundHistoryLength = (int)settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Value;
                     _settings.BackgroundColor_InfoPanel = settingsForm.SettingsPanel.InfoPanelBgLabel.BackColor;
@@ -889,24 +898,7 @@ namespace ToNRoundCounter.UI
 
                                     await _cloudClient.StartAsync();
                                     _logger?.LogEvent("CloudSync", "Cloud client restarted successfully.");
-
-                                    // Auto-login after restart
-                                    if (!string.IsNullOrWhiteSpace(_settings.CloudPlayerName))
-                                    {
-                                        try
-                                        {
-                                            await _cloudClient.LoginAsync(
-                                                _settings.CloudPlayerName,
-                                                "1.0.0",
-                                                System.Threading.CancellationToken.None
-                                            );
-                                            _logger?.LogEvent("CloudSync", $"Logged in as: {_settings.CloudPlayerName}");
-                                        }
-                                        catch (Exception loginEx)
-                                        {
-                                            _logger?.LogEvent("CloudSync", $"Failed to login after restart: {loginEx.Message}", LogEventLevel.Warning);
-                                        }
-                                    }
+                                    // 認証はVRChatのCONNECTEDイベントで行う
                                 }
                             }
                             catch (Exception ex)
@@ -1276,6 +1268,31 @@ namespace ToNRoundCounter.UI
             {
                 try
                 {
+                    // 現在のラウンドがあればレポート
+                    var currentRound = stateService.CurrentRound;
+                    if (!string.IsNullOrEmpty(currentInstanceId) && currentRound != null)
+                    {
+                        try
+                        {
+                            await _cloudClient.ReportRoundAsync(
+                                instanceId: currentInstanceId,
+                                roundType: currentRound.RoundType ?? "Unknown",
+                                terrorName: currentRound.TerrorKey,
+                                terrorKey: currentRound.TerrorKey,
+                                startTime: null, // 開始時刻は記録していない
+                                endTime: DateTime.Now,
+                                initialPlayerCount: currentRound.InstancePlayersCount,
+                                survivorCount: currentRound.InstancePlayersCount - (currentRound.IsDeath ? 1 : 0),
+                                status: "COMPLETED"
+                            );
+                            LogUi("Round data reported to cloud.", LogEventLevel.Debug);
+                        }
+                        catch (Exception roundEx)
+                        {
+                            LogUi($"Failed to report round data: {roundEx.Message}", LogEventLevel.Debug);
+                        }
+                    }
+
                     // NOTE: InstanceLeaveAsync removed due to VRChat platform constraints
                     // Simply disconnect from cloud sync server
                     await _cloudClient.StopAsync();
@@ -1431,6 +1448,80 @@ namespace ToNRoundCounter.UI
                 if (eventType == "CONNECTED")
                 {
                     stateService.PlayerDisplayName = json.Value<string>("DisplayName") ?? "";
+
+                    // Cloud認証: CloudPlayerNameまたはVRChatプレイヤー名を使用
+                    if (_settings.CloudSyncEnabled && _cloudClient != null)
+                    {
+                        // CloudPlayerNameが設定されていない場合はVRChatプレイヤー名を使用
+                        string playerIdForCloud = !string.IsNullOrWhiteSpace(_settings.CloudPlayerName)
+                            ? _settings.CloudPlayerName
+                            : stateService.PlayerDisplayName;
+
+                        if (!string.IsNullOrWhiteSpace(playerIdForCloud))
+                        {
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    // APIキーが保存されているか確認
+                                    if (string.IsNullOrWhiteSpace(_settings.apikey))
+                                    {
+                                        // 初回登録
+                                        _logger?.LogEvent("CloudAuth", $"Registering new user: {playerIdForCloud}");
+                                        var (userId, apiKey) = await _cloudClient.RegisterUserAsync(
+                                            playerIdForCloud,
+                                            "1.0.0",
+                                        System.Threading.CancellationToken.None
+                                    );
+
+                                        // APIキーを保存
+                                        _settings.apikey = apiKey;
+                                        await _settings.SaveAsync();
+                                        _logger?.LogEvent("CloudAuth", $"User registered successfully. UserId: {userId}");
+                                    }
+                                    else
+                                    {
+                                        // APIキーでログイン
+                                        _logger?.LogEvent("CloudAuth", $"Logging in with API key: {playerIdForCloud}");
+                                        var sessionToken = await _cloudClient.LoginWithApiKeyAsync(
+                                            playerIdForCloud,
+                                            _settings.apikey,
+                                            "1.0.0",
+                                            System.Threading.CancellationToken.None
+                                        );
+                                        _logger?.LogEvent("CloudAuth", $"Logged in successfully. Session token: {sessionToken.Substring(0, 8)}...");
+                                    }
+                                }
+                                catch (Exception authEx)
+                                {
+                                    _logger?.LogEvent("CloudAuth", $"Authentication failed: {authEx.Message}", LogEventLevel.Warning);
+
+                                    // APIキーが無効な場合は再登録を試みる
+                                    if (authEx.Message.Contains("Invalid") || authEx.Message.Contains("not found"))
+                                    {
+                                        try
+                                        {
+                                            _logger?.LogEvent("CloudAuth", "Attempting re-registration...");
+                                            var (userId, apiKey) = await _cloudClient.RegisterUserAsync(
+                                                playerIdForCloud,
+                                                "1.0.0",
+                                                System.Threading.CancellationToken.None
+                                            );
+
+                                            _settings.apikey = apiKey;
+                                            await _settings.SaveAsync();
+                                            _logger?.LogEvent("CloudAuth", $"Re-registered successfully. UserId: {userId}");
+                                        }
+                                        catch (Exception reregEx)
+                                        {
+                                            _logger?.LogEvent("CloudAuth", $"Re-registration failed: {reregEx.Message}", LogEventLevel.Error);
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                    }
+
                     if (isRestarted == false)
                     {
                         UpdateAndRestart();
@@ -1451,6 +1542,12 @@ namespace ToNRoundCounter.UI
                     currentRound.IsDeath = false;
                     currentRound.TerrorKey = string.Empty;
                     currentRound.RoundColor = displayColorInt;
+
+                    // Don't clear desire players here - let the timer update when TerrorKey is available
+                    // The desire players list should only change when we have new terror information
+                    // currentDesirePlayers.Clear();
+                    // UpdateInstanceMembersOverlay();
+
                     string mapName = string.Empty;
                     string itemName = string.Empty;
                     _dispatcher.Invoke(() =>
@@ -1641,8 +1738,22 @@ namespace ToNRoundCounter.UI
                     if (activeRoundForNames != null && namesForLogic != null && namesForLogic.Count > 0)
                     {
                         string joinedNames = string.Join(" & ", namesForLogic);
+
+                        // Check if TerrorKey has changed
+                        bool terrorKeyChanged = activeRoundForNames.TerrorKey != joinedNames;
+
                         activeRoundForNames.TerrorKey = joinedNames;
                         EvaluateAutoRecording("TerrorUpdated");
+
+                        // If TerrorKey changed, clear desire players and trigger refresh
+                        if (terrorKeyChanged)
+                        {
+                            lock (instanceTimerSync)
+                            {
+                                currentDesirePlayers.Clear();
+                            }
+                            _logger?.LogEvent("TerrorKey", $"TerrorKey changed to: {joinedNames}, cleared desire players", LogEventLevel.Information);
+                        }
                     }
 
                     _dispatcher.Invoke(() => { UpdateTerrorDisplay(displayName, color, terrors); });
@@ -1740,7 +1851,7 @@ namespace ToNRoundCounter.UI
                                 UpdateOverlay(OverlaySection.Damage, form => form.SetValue(GetDamageOverlayText()));
                             }
                         });
-                        
+
                         // Send damage update to Cloud
                         _ = Task.Run(async () => await UpdateCloudPlayerState());
                     }
@@ -1892,6 +2003,30 @@ namespace ToNRoundCounter.UI
                         if (instanceChanged)
                         {
                             UpdateInstanceTimerOverlay();
+
+                            // Cloud instance join
+                            if (_settings.CloudSyncEnabled && _cloudClient != null && _cloudClient.IsConnected)
+                            {
+                                string playerIdForCloud = !string.IsNullOrWhiteSpace(_settings.CloudPlayerName)
+                                    ? _settings.CloudPlayerName
+                                    : stateService.PlayerDisplayName;
+
+                                if (!string.IsNullOrWhiteSpace(playerIdForCloud))
+                                {
+                                    _ = Task.Run(async () =>
+                                    {
+                                        try
+                                        {
+                                            await _cloudClient.JoinInstanceAsync(instanceValue, playerIdForCloud, System.Threading.CancellationToken.None);
+                                            _logger?.LogEvent("CloudInstance", $"Joined instance: {instanceValue}");
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            _logger?.LogEvent("CloudInstance", $"Failed to join instance: {ex.Message}", LogEventLevel.Debug);
+                                        }
+                                    });
+                                }
+                            }
                         }
 
                         _ = Task.Run(() => ConnectToInstance(instanceValue));
@@ -1913,9 +2048,30 @@ namespace ToNRoundCounter.UI
                         if (hadInstance)
                         {
                             UpdateInstanceTimerOverlay();
-                            
-                            // NOTE: Cloud instance leave removed due to VRChat platform constraints
-                            // Instance tracking is now handled server-side based on active connections
+
+                            // Cloud instance leave
+                            if (_settings.CloudSyncEnabled && _cloudClient != null && _cloudClient.IsConnected)
+                            {
+                                string playerIdForCloud = !string.IsNullOrWhiteSpace(_settings.CloudPlayerName)
+                                    ? _settings.CloudPlayerName
+                                    : stateService.PlayerDisplayName;
+
+                                if (!string.IsNullOrWhiteSpace(playerIdForCloud) && !string.IsNullOrWhiteSpace(previousInstanceId))
+                                {
+                                    _ = Task.Run(async () =>
+                                    {
+                                        try
+                                        {
+                                            await _cloudClient.LeaveInstanceAsync(previousInstanceId, playerIdForCloud, System.Threading.CancellationToken.None);
+                                            _logger?.LogEvent("CloudInstance", $"Left instance: {previousInstanceId}");
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            _logger?.LogEvent("CloudInstance", $"Failed to leave instance: {ex.Message}", LogEventLevel.Debug);
+                                        }
+                                    });
+                                }
+                            }
                         }
                     }
                     followAutoSelfKill = false;
