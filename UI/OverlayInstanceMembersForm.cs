@@ -17,11 +17,44 @@ namespace ToNRoundCounter.UI
         private List<string> desirePlayers = new List<string>();
         private Dictionary<string, RichTextBox> memberControls = new Dictionary<string, RichTextBox>();
         private bool needsFullRebuild = true;
-        private HashSet<string> lastDesirePlayerSet = new HashSet<string>();
+        private HashSet<string> lastDesirePlayerSet = new HashSet<string>(StringComparer.Ordinal);
+        private HashSet<string> lastMemberPlayerIdSet = new HashSet<string>(StringComparer.Ordinal);
 
-        public OverlayInstanceMembersForm(string title) : base(title, null!)
+        public OverlayInstanceMembersForm(string title) : base(title, BuildContentPanel(out var panel))
         {
-            contentPanel = new TableLayoutPanel
+            contentPanel = panel;
+            ShowEmptyMessage("インスタンスメンバーなし");
+        }
+
+        private void ShowEmptyMessage(string message)
+        {
+            contentPanel.SuspendLayout();
+            contentPanel.Controls.Clear();
+            contentPanel.RowStyles.Clear();
+            memberControls.Clear();
+            lastMemberPlayerIdSet = new HashSet<string>(StringComparer.Ordinal);
+            lastDesirePlayerSet = new HashSet<string>(StringComparer.Ordinal);
+            currentDesireSet = new HashSet<string>(StringComparer.Ordinal);
+            needsFullRebuild = true;
+
+            var emptyLabel = new Label
+            {
+                Text = message,
+                ForeColor = Color.Gray,
+                Font = new Font(Font.FontFamily, 12f, FontStyle.Regular),
+                AutoSize = true,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0, 2, 0, 2),
+            };
+            contentPanel.Controls.Add(emptyLabel);
+            contentPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            contentPanel.ResumeLayout();
+            AdjustSizeToContent();
+        }
+
+        private static TableLayoutPanel BuildContentPanel(out TableLayoutPanel panel)
+        {
+            panel = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 AutoSize = true,
@@ -31,67 +64,83 @@ namespace ToNRoundCounter.UI
                 Padding = new Padding(0),
                 Margin = new Padding(0),
             };
-
-            // Remove default content and add our custom panel
-            ContentControl.Controls.Clear();
-            ContentControl.Controls.Add(contentPanel);
+            return panel;
         }
+
+        private HashSet<string> currentDesireSet = new HashSet<string>();
 
         public void UpdateMembers(List<InstanceMemberInfo> newMembers, List<string> desirePlayerIds)
         {
             members = newMembers ?? new List<InstanceMemberInfo>();
             desirePlayers = desirePlayerIds ?? new List<string>();
-            
-            // Debug log with timestamp
-            var timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
-            System.Diagnostics.Debug.WriteLine($"[{timestamp}] UpdateMembers called: {members.Count} members, {desirePlayers.Count} desire players");
-            if (desirePlayers.Count > 0)
+
+            // Build desire set once for O(1) lookups in this refresh
+            currentDesireSet = new HashSet<string>(desirePlayers, StringComparer.Ordinal);
+
+            // Build current member ID set
+            var currentMemberIdSet = new HashSet<string>(members.Select(m => m.PlayerId), StringComparer.Ordinal);
+
+            // Check if member set (IDs) changed
+            bool memberSetChanged = !currentMemberIdSet.SetEquals(lastMemberPlayerIdSet);
+
+            // Check if desire set changed
+            bool desireSetChanged = !currentDesireSet.SetEquals(lastDesirePlayerSet);
+
+            // Full rebuild needed if either set changed
+            needsFullRebuild = memberSetChanged || desireSetChanged;
+
+            // Update last known state
+            if (memberSetChanged)
             {
-                System.Diagnostics.Debug.WriteLine($"[{timestamp}] Desire players: {string.Join(", ", desirePlayers)}");
+                lastMemberPlayerIdSet = currentMemberIdSet;
             }
-            
-            // Check if we need full rebuild
-            var newMemberIds = new HashSet<string>(members.Select(m => m.PlayerId));
-            var oldMemberIds = new HashSet<string>(memberControls.Keys);
-            var newDesireSet = new HashSet<string>(desirePlayers);
-            
-            // Rebuild if: member list changed OR desire player list changed
-            needsFullRebuild = !newMemberIds.SetEquals(oldMemberIds) || !newDesireSet.SetEquals(lastDesirePlayerSet);
-            
-            if (needsFullRebuild)
+            if (desireSetChanged)
             {
-                lastDesirePlayerSet = new HashSet<string>(desirePlayers);
-                System.Diagnostics.Debug.WriteLine("Full rebuild triggered");
+                lastDesirePlayerSet = currentDesireSet;
             }
-            
+
             RefreshDisplay();
+        }
+
+        /// <summary>
+        /// Sets members from a simple list of names. This is a fallback for when only names are available.
+        /// </summary>
+        public void SetMembers(IReadOnlyList<string> memberNames)
+        {
+            // Convert string list to InstanceMemberInfo with minimal data
+            var newMembers = new List<InstanceMemberInfo>();
+            if (memberNames != null)
+            {
+                foreach (var name in memberNames)
+                {
+                    newMembers.Add(new InstanceMemberInfo
+                    {
+                        PlayerId = name,
+                        PlayerName = name,
+                        Damage = 0,
+                        CurrentItem = string.Empty,
+                        IsDead = false,
+                        Velocity = 0,
+                        AfkDuration = 0
+                    });
+                }
+            }
+
+            // Update without desire players
+            UpdateMembers(newMembers, new List<string>());
         }
 
         private void RefreshDisplay()
         {
             if (members.Count == 0)
             {
-                if (memberControls.Count > 0 || contentPanel.Controls.Count > 0)
-                {
-                    contentPanel.SuspendLayout();
-                    contentPanel.Controls.Clear();
-                    contentPanel.RowStyles.Clear();
-                    memberControls.Clear();
-                    
-                    var emptyLabel = new Label
-                    {
-                        Text = "インスタンスメンバーなし",
-                        ForeColor = Color.Gray,
-                        Font = new Font(Font.FontFamily, 12f, FontStyle.Regular),
-                        AutoSize = true,
-                        BackColor = Color.Transparent,
-                        Margin = new Padding(0, 2, 0, 2),
-                    };
-                    contentPanel.Controls.Add(emptyLabel);
-                    contentPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-                    contentPanel.ResumeLayout();
-                }
+                ShowEmptyMessage("インスタンスメンバーなし");
                 return;
+            }
+
+            if (memberControls.Count == 0)
+            {
+                needsFullRebuild = true;
             }
 
             // If full rebuild needed, clear everything
@@ -109,12 +158,13 @@ namespace ToNRoundCounter.UI
 
         private void RebuildDisplay()
         {
+            SuspendDrawing(this);
+            try
+            {
             contentPanel.SuspendLayout();
             contentPanel.Controls.Clear();
             contentPanel.RowStyles.Clear();
             memberControls.Clear();
-
-            System.Diagnostics.Debug.WriteLine($"RebuildDisplay: {members.Count} members, {desirePlayers.Count} desire players");
 
             if (members.Count == 0)
             {
@@ -130,61 +180,26 @@ namespace ToNRoundCounter.UI
                 contentPanel.Controls.Add(emptyLabel);
                 contentPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
                 contentPanel.ResumeLayout();
+                AdjustSizeToContent();
                 return;
             }
 
-            // Separate members into desire and others
-            List<InstanceMemberInfo> desireMembers;
-            List<InstanceMemberInfo> otherMembers;
-            
-            // Write to file for debugging
-            try
+            // Partition into desire and other members in a single pass (O(N) using HashSet lookup)
+            var desireMembers = new List<InstanceMemberInfo>(currentDesireSet.Count);
+            var otherMembers = new List<InstanceMemberInfo>(Math.Max(0, members.Count - currentDesireSet.Count));
+            foreach (var m in members)
             {
-                var logPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ToNRoundCounter_DesireDebug.log");
-                var logLines = new List<string>
-                {
-                    $"=== {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===",
-                    $"Desire player IDs: [{string.Join(", ", desirePlayers.Select(d => $"\"{d}\""))}]",
-                    $"All member IDs: [{string.Join(", ", members.Select(m => $"\"{m.PlayerId}\""))}]",
-                    $"All member Names: [{string.Join(", ", members.Select(m => $"\"{m.PlayerName}\""))}]"
-                };
-                
-                desireMembers = members.Where(m => desirePlayers.Contains(m.PlayerId)).OrderBy(m => m.PlayerName).ToList();
-                otherMembers = members.Where(m => !desirePlayers.Contains(m.PlayerId)).OrderBy(m => m.PlayerName).ToList();
-                
-                logLines.Add($"Matched: {desireMembers.Count} desire members, {otherMembers.Count} other members");
-                
-                if (desireMembers.Count == 0 && desirePlayers.Count > 0)
-                {
-                    logLines.Add("WARNING: desirePlayers is not empty but no members matched!");
-                    foreach (var member in members)
-                    {
-                        foreach (var desireId in desirePlayers)
-                        {
-                            logLines.Add($"  Compare: \"{member.PlayerId}\" == \"{desireId}\" ? {member.PlayerId == desireId}");
-                            logLines.Add($"    PlayerName: \"{member.PlayerName}\"");
-                            if (member.PlayerId != desireId)
-                            {
-                                logLines.Add($"    Length: {member.PlayerId.Length} vs {desireId.Length}");
-                            }
-                        }
-                    }
-                }
-                
-                System.IO.File.AppendAllLines(logPath, logLines);
-                System.Diagnostics.Debug.WriteLine($"Debug log written to: {logPath}");
+                if (currentDesireSet.Contains(m.PlayerId))
+                    desireMembers.Add(m);
+                else
+                    otherMembers.Add(m);
             }
-            catch 
-            {
-                desireMembers = members.Where(m => desirePlayers.Contains(m.PlayerId)).OrderBy(m => m.PlayerName).ToList();
-                otherMembers = members.Where(m => !desirePlayers.Contains(m.PlayerId)).OrderBy(m => m.PlayerName).ToList();
-            }
+            desireMembers.Sort((a, b) => string.Compare(a.PlayerName, b.PlayerName, StringComparison.Ordinal));
+            otherMembers.Sort((a, b) => string.Compare(a.PlayerName, b.PlayerName, StringComparison.Ordinal));
 
             // Show desire members first if any exist
             if (desireMembers.Count > 0)
             {
-                System.Diagnostics.Debug.WriteLine($"Adding {desireMembers.Count} desire members to UI");
-                
                 var desireHeader = new Label
                 {
                     Text = "【生存希望者】",
@@ -199,7 +214,6 @@ namespace ToNRoundCounter.UI
 
                 foreach (var member in desireMembers)
                 {
-                    System.Diagnostics.Debug.WriteLine($"  Adding desire member: {member.PlayerName} ({member.PlayerId})");
                     AddMemberLabel(member);
                 }
 
@@ -245,11 +259,18 @@ namespace ToNRoundCounter.UI
             }
 
             contentPanel.ResumeLayout();
+            AdjustSizeToContent();
+            }
+            finally
+            {
+                ResumeDrawing(this);
+            }
         }
 
         private void UpdateExistingControls()
         {
             // Update each member's display without recreating controls
+            contentPanel.SuspendLayout();
             foreach (var member in members)
             {
                 if (memberControls.TryGetValue(member.PlayerId, out var richLabel))
@@ -257,21 +278,28 @@ namespace ToNRoundCounter.UI
                     UpdateMemberLabel(richLabel, member);
                 }
             }
+            contentPanel.ResumeLayout();
+
+            // Adjust parent form size to content after refreshing display
+            AdjustSizeToContent();
         }
 
         private void AddMemberLabel(InstanceMemberInfo member)
         {
             // Create rich text label for colored damage
+            // Note: RichTextBox does not support BackColor = Transparent;
+            // use the overlay surface color instead to blend with the background.
             var richLabel = new RichTextBox
             {
                 ReadOnly = true,
-                BackColor = Color.Black,
+                BackColor = OverlayTheme.Surface,
                 BorderStyle = BorderStyle.None,
                 ScrollBars = RichTextBoxScrollBars.None,
                 Margin = new Padding(0, 1, 0, 1),
-                Font = new Font(Font.FontFamily, 12f, FontStyle.Regular),
-                Height = 20,
-                Width = 450,
+                Font = new Font(Font.FontFamily, 11f, FontStyle.Regular),
+                AutoSize = false,
+                Dock = DockStyle.Top,
+                WordWrap = false,
             };
 
             UpdateMemberLabel(richLabel, member);
@@ -283,31 +311,50 @@ namespace ToNRoundCounter.UI
 
         private void UpdateMemberLabel(RichTextBox richLabel, InstanceMemberInfo member)
         {
-            richLabel.Clear();
-            
-            // Build display text
+            // Build the full plain text first to check if an update is needed
             string itemText = string.IsNullOrEmpty(member.CurrentItem) ? "" : $"({member.CurrentItem})";
             string displayText = $"{member.PlayerName}{itemText}: ";
-
-            richLabel.SelectionStart = 0;
-            richLabel.SelectionLength = 0;
-            richLabel.SelectionColor = GetPlayerNameColor(member);
-            richLabel.AppendText(displayText);
-
-            // Add damage with appropriate color
-            Color damageColor = GetDamageColor(member);
-            richLabel.SelectionColor = damageColor;
-            richLabel.AppendText($"{member.Damage} dmg");
-
-            // Add velocity
-            richLabel.SelectionColor = Color.LightGray;
-            richLabel.AppendText($" | {member.Velocity:F2} m/s");
-
-            // Add AFK status if applicable (velocity < 1 for >= 3 seconds)
+            string fullText = displayText + $"{member.Damage} dmg | {member.Velocity:F2} m/s";
             if (member.AfkDuration >= 3 && member.Velocity < 1)
+                fullText += $" (AFK: {(int)member.AfkDuration}秒)";
+
+            // Skip update if text hasn't changed
+            if (richLabel.Text == fullText)
+                return;
+
+            SuspendDrawing(richLabel);
+            try
             {
-                richLabel.SelectionColor = Color.Orange;
-                richLabel.AppendText($" (AFK: {(int)member.AfkDuration}秒)");
+                richLabel.Clear();
+
+                richLabel.SelectionStart = 0;
+                richLabel.SelectionLength = 0;
+                richLabel.SelectionColor = GetPlayerNameColor(member);
+                richLabel.AppendText(displayText);
+
+                // Add damage with appropriate color
+                Color damageColor = GetDamageColor(member);
+                richLabel.SelectionColor = damageColor;
+                richLabel.AppendText($"{member.Damage} dmg");
+
+                // Add velocity
+                richLabel.SelectionColor = Color.LightGray;
+                richLabel.AppendText($" | {member.Velocity:F2} m/s");
+
+                // Add AFK status if applicable (velocity < 1 for >= 3 seconds)
+                if (member.AfkDuration >= 3 && member.Velocity < 1)
+                {
+                    richLabel.SelectionColor = Color.Orange;
+                    richLabel.AppendText($" (AFK: {(int)member.AfkDuration}秒)");
+                }
+
+                // Auto-fit height to content
+                var textSize = TextRenderer.MeasureText(fullText, richLabel.Font);
+                richLabel.Height = Math.Max(20, textSize.Height + 4);
+            }
+            finally
+            {
+                ResumeDrawing(richLabel);
             }
         }
 

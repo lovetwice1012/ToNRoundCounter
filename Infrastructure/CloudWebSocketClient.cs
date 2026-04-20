@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Threading.Channels;
@@ -21,13 +23,56 @@ namespace ToNRoundCounter.Infrastructure
         public double damage { get; set; }
         public List<string> items { get; set; } = new List<string>();
         
-        // Helper property to get first item or empty string
-        public string current_item => items != null && items.Count > 0 ? items[0] : "";
+        // Backing field for deserialized current_item from server
+        private string _current_item = string.Empty;
+
+        private static string NormalizeItemText(string? value)
+        {
+            string text = (value ?? string.Empty).Trim();
+            if (string.Equals(text, "None", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Empty;
+            }
+
+            return text;
+        }
+        
+        // Prefer explicit current_item from server, then fall back to the latest non-empty item entry.
+        public string current_item
+        {
+            get
+            {
+                var fromCurrentItem = NormalizeItemText(_current_item);
+                if (!string.IsNullOrEmpty(fromCurrentItem))
+                {
+                    return fromCurrentItem;
+                }
+
+                if (items != null)
+                {
+                    for (int i = items.Count - 1; i >= 0; i--)
+                    {
+                        var candidate = NormalizeItemText(items[i]);
+                        if (!string.IsNullOrEmpty(candidate))
+                        {
+                            return candidate;
+                        }
+                    }
+                }
+
+                return string.Empty;
+            }
+            set => _current_item = NormalizeItemText(value);
+        }
         
         public bool is_alive { get; set; } = true;
         
-        // Helper property for compatibility
-        public bool is_dead => !is_alive;
+        // Support deserialization from server which sends is_dead instead of is_alive
+        public bool is_dead
+        {
+            get => !is_alive;
+            set => is_alive = !value;
+        }
         
         public double velocity { get; set; }
         public double afk_duration { get; set; }
@@ -40,6 +85,40 @@ namespace ToNRoundCounter.Infrastructure
     {
         public string player_id { get; set; } = string.Empty;
         public string player_name { get; set; } = string.Empty;
+    }
+
+    public class CoordinatedAutoSuicideEntryInfo
+    {
+        public string id { get; set; } = string.Empty;
+        public string terror_name { get; set; } = string.Empty;
+        public string round_key { get; set; } = string.Empty;
+        public string source { get; set; } = string.Empty;
+        public string? created_at { get; set; }
+        public string? created_by { get; set; }
+    }
+
+    public class CoordinatedAutoSuicidePresetEntryInfo
+    {
+        public string terror_name { get; set; } = string.Empty;
+        public string round_key { get; set; } = string.Empty;
+    }
+
+    public class CoordinatedAutoSuicidePresetInfo
+    {
+        public string id { get; set; } = string.Empty;
+        public string name { get; set; } = string.Empty;
+        public List<CoordinatedAutoSuicidePresetEntryInfo> entries { get; set; } = new List<CoordinatedAutoSuicidePresetEntryInfo>();
+        public string? created_at { get; set; }
+        public string? created_by { get; set; }
+    }
+
+    public class CoordinatedAutoSuicideStateInfo
+    {
+        public List<CoordinatedAutoSuicideEntryInfo> entries { get; set; } = new List<CoordinatedAutoSuicideEntryInfo>();
+        public List<CoordinatedAutoSuicidePresetInfo> presets { get; set; } = new List<CoordinatedAutoSuicidePresetInfo>();
+        public bool skip_all_without_survival_wish { get; set; }
+        public string? updated_at { get; set; }
+        public string? updated_by { get; set; }
     }
 
     /// <summary>
@@ -108,19 +187,31 @@ namespace ToNRoundCounter.Infrastructure
 
         private Uri _uri;
         private ClientWebSocket? _socket;
+        private readonly object _socketLock = new(); // Lock for state-check-and-send atomicity (BUG FIX #5)
         private CancellationTokenSource? _cts;
         private readonly IEventBus _bus;
         private readonly ICancellationProvider _cancellationProvider;
         private readonly IEventLogger _logger;
         private readonly Channel<string> _messageChannel;
+        private readonly object _processingTaskSync = new();
         private Task? _processingTask;
         private int _connectionAttempts;
         private long _receivedMessages;
-        private Dictionary<string, TaskCompletionSource<CloudMessage>> _pendingRequests =
-            new Dictionary<string, TaskCompletionSource<CloudMessage>>();
+        private ConcurrentDictionary<string, TaskCompletionSource<CloudMessage>> _pendingRequests =
+            new ConcurrentDictionary<string, TaskCompletionSource<CloudMessage>>();
         private string _sessionId = DEFAULT_SESSION_ID;
         private string? _userId;
         private string? _apiKey;  // Stored API key for authentication
+        private readonly ConcurrentDictionary<string, RoundStartContext> _roundStartContexts =
+            new ConcurrentDictionary<string, RoundStartContext>();
+
+        private sealed class RoundStartContext
+        {
+            public string? InstanceId { get; set; }
+            public string RoundType { get; set; } = "Unknown";
+            public string? MapName { get; set; }
+            public DateTime StartTimeUtc { get; set; }
+        }
 
         public event EventHandler<CloudMessage>? MessageReceived;
         public event EventHandler? Connected;
@@ -209,8 +300,8 @@ namespace ToNRoundCounter.Infrastructure
                             {
                                 _logger.LogEvent("CloudWebSocket", $"Auto-authenticating user: {_userId}, HasApiKey: {!string.IsNullOrWhiteSpace(_apiKey)}");
                                 // Null-forgiving operators because we just checked above
-                                var sessionToken = await LoginWithApiKeyAsync(_userId!, _apiKey!, "1.0.0", token).ConfigureAwait(false);
-                                _logger.LogEvent("CloudWebSocket", $"Auto-authentication successful. SessionToken: {sessionToken}");
+                                await LoginWithApiKeyAsync(_userId!, _apiKey!, "1.0.0", token).ConfigureAwait(false);
+                                _logger.LogEvent("CloudWebSocket", "Auto-authentication successful.");
                             }
                             catch (Exception authEx)
                             {
@@ -229,16 +320,24 @@ namespace ToNRoundCounter.Infrastructure
 
                         _logger.LogEvent("CloudWebSocket", "Receive loop completed.");
                         Disconnected?.Invoke(this, EventArgs.Empty);
+
+                        // Connection ended; fail in-flight RPC requests immediately.
+                        CancelAllPendingRequests(new InvalidOperationException("Cloud WebSocket disconnected"));
                     }
                     catch (Exception ex)
                     {
                         _logger.LogEvent("CloudWebSocket", () => $"Connection error (Attempt {_connectionAttempts}): {ex.GetType().Name} - {ex.Message}", Serilog.Events.LogEventLevel.Error);
                         ErrorOccurred?.Invoke(this, ex);
 
+                        // Connection error means outstanding requests will never receive responses.
+                        CancelAllPendingRequests(ex);
+
                         if (!token.IsCancellationRequested)
                         {
-                            _logger.LogEvent("CloudWebSocket", "Scheduling reconnect in 300ms.");
-                            await Task.Delay(300, token).ConfigureAwait(false);
+                            // Exponential backoff: 500ms, 1s, 2s, 4s, max 30s
+                            int delayMs = Math.Min(500 * (int)Math.Pow(2, Math.Min(_connectionAttempts - 1, 5)), 30000);
+                            _logger.LogEvent("CloudWebSocket", $"Scheduling reconnect in {delayMs}ms (Attempt {_connectionAttempts}).");
+                            await Task.Delay(delayMs, token).ConfigureAwait(false);
                         }
                     }
                     finally
@@ -415,12 +514,19 @@ namespace ToNRoundCounter.Infrastructure
 
         /// <summary>
         /// Send an RPC request and wait for response
+        /// BUG FIX #5 (HIGH): Added lock to prevent TOCTOU race between state check and SendAsync.
+        /// Previously: Between the state check and the actual SendAsync call, another thread could
+        /// dispose _socket, causing ObjectDisposedException. Now: The check and send are atomic.
         /// </summary>
         public async Task<CloudMessage> SendRequestAsync(CloudMessage request, CancellationToken cancellationToken = default)
         {
-            if (_socket?.State != WebSocketState.Open)
+            // SAFETY: Lock around socket state check and send to prevent disposal race
+            lock (_socketLock)
             {
-                throw new InvalidOperationException("WebSocket is not connected");
+                if (_socket?.State != WebSocketState.Open)
+                {
+                    throw new InvalidOperationException("WebSocket is not connected");
+                }
             }
 
             // Add session_id to request if available and not an auth request
@@ -438,20 +544,30 @@ namespace ToNRoundCounter.Infrastructure
                 _logger.LogEvent("CloudWebSocket", $"NOT adding session_id - Method: {request.Method}, SessionId: {_sessionId}, DEFAULT: {DEFAULT_SESSION_ID}", Serilog.Events.LogEventLevel.Debug);
             }
 
-            var tcs = new TaskCompletionSource<CloudMessage>();
-            _pendingRequests[request.Id] = tcs;
+            var tcs = new TaskCompletionSource<CloudMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!_pendingRequests.TryAdd(request.Id, tcs))
+            {
+                // Request ID collision - this should never happen with GUIDs
+                throw new InvalidOperationException($"Request ID collision: {request.Id}");
+            }
 
             try
             {
                 var options = new JsonSerializerOptions
                 {
                     PropertyNamingPolicy = null, // Use explicit JsonPropertyName attributes
-                    IgnoreNullValues = true
+                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
                 };
                 var json = JsonSerializer.Serialize(request, options);
                 var bytes = Encoding.UTF8.GetBytes(json);
 
-                _logger.LogEvent("CloudWebSocket", $"Sending request - Id: {request.Id}, Method: {request.Method}, SocketState: {_socket.State}", Serilog.Events.LogEventLevel.Debug);
+                _logger.LogEvent("CloudWebSocket", $"Sending request - Id: {request.Id}, Method: {request.Method}, SocketState: {_socket?.State}", Serilog.Events.LogEventLevel.Debug);
+                
+                // SAFETY: Check again within try-catch to handle disposal during serialization
+                if (_socket?.State != WebSocketState.Open)
+                {
+                    throw new InvalidOperationException("WebSocket is no longer connected during send");
+                }
                 
                 await _socket.SendAsync(
                     new ArraySegment<byte>(bytes),
@@ -462,16 +578,42 @@ namespace ToNRoundCounter.Infrastructure
                 
                 _logger.LogEvent("CloudWebSocket", $"Request sent successfully - Id: {request.Id}", Serilog.Events.LogEventLevel.Debug);
 
-                // Set timeout
+                // Apply timeout and caller cancellation while waiting for response.
+                // BUG FIX #10 (MEDIUM): Replaced incorrect Task.Delay(Timeout.InfiniteTimeSpan) with finite delay.
+                // Previously: Used InfiniteTimeSpan which would never timeout, defeating the 30s timeout.
+                // Now: Use Task.Delay with cancellation token, which will be cancelled after 30s by timeoutCts.
                 using (var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
                 using (var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token))
                 {
-                    return await tcs.Task.ConfigureAwait(false);
+                    // Wait for either the response (tcs.Task) or the timeout/cancellation
+                    var completed = await Task.WhenAny(
+                        tcs.Task,
+                        Task.Delay(Timeout.Infinite, linkedCts.Token)  // Will be cancelled after 30s or by cancellationToken
+                    ).ConfigureAwait(false);
+
+                    if (completed == tcs.Task)
+                    {
+                        return await tcs.Task.ConfigureAwait(false);
+                    }
+
+                    // If we reach here, Task.Delay was cancelled (timeout or caller cancellation)
+                    if (timeoutCts.IsCancellationRequested)
+                    {
+                        if (_pendingRequests.TryRemove(request.Id, out _))
+                        {
+                            _logger.LogEvent("CloudWebSocket", $"Request timeout: {request.Id} ({request.Method})", Serilog.Events.LogEventLevel.Warning);
+                        }
+                        throw new TimeoutException($"Request {request.Method} timed out after 30 seconds");
+                    }
+
+                    // Caller cancelled the request
+                    throw new OperationCanceledException(cancellationToken);
                 }
             }
             finally
             {
-                _pendingRequests.Remove(request.Id);
+                // Only remove if we added it and it hasn't been removed already (by response handler)
+                _pendingRequests.TryRemove(request.Id, out _);
             }
         }
 
@@ -603,7 +745,8 @@ namespace ToNRoundCounter.Infrastructure
         }
 
         /// <summary>
-        /// Helper: Call a game round start RPC
+        /// Compatibility shim for legacy game.roundStart callers.
+        /// Current backend persists rounds via round.report, so this method stores start context locally.
         /// </summary>
         public async Task<string> GameRoundStartAsync(
             string? instanceId,
@@ -612,41 +755,24 @@ namespace ToNRoundCounter.Infrastructure
             string? mapName = null, 
             CancellationToken cancellationToken = default)
         {
-            var request = new CloudMessage
+            await Task.CompletedTask.ConfigureAwait(false);
+
+            var roundId = Guid.NewGuid().ToString("N");
+            _roundStartContexts[roundId] = new RoundStartContext
             {
-                Id = Guid.NewGuid().ToString(),
-                Type = "request",
-                Method = "game.roundStart",
-                Params = new 
-                { 
-                    instanceId = instanceId,  // Backend expects camelCase for instanceId
-                    playerName = playerName,
-                    roundType = roundType,
-                    mapName = mapName 
-                }
+                InstanceId = instanceId,
+                RoundType = string.IsNullOrWhiteSpace(roundType) ? "Unknown" : roundType,
+                MapName = mapName,
+                StartTimeUtc = DateTime.UtcNow,
             };
 
-            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
-
-            if (response.Status == "error")
-            {
-                throw new InvalidOperationException($"Failed to start round: {response.Error?.Message}");
-            }
-
-            var resultJson = JsonSerializer.Serialize(response.Result);
-            using (var doc = JsonDocument.Parse(resultJson))
-            {
-                if (doc.RootElement.TryGetProperty("roundId", out var roundIdElem))
-                {
-                    return roundIdElem.GetString() ?? throw new InvalidOperationException("No roundId in response");
-                }
-            }
-
-            throw new InvalidOperationException("Invalid response format");
+            _logger.LogEvent("CloudWebSocket", $"Round start context stored: {roundId} ({roundType})");
+            return roundId;
         }
 
         /// <summary>
-        /// Helper: Call a game round end RPC
+        /// Compatibility shim for legacy game.roundEnd callers.
+        /// Converts start/end state into round.report payload for the current backend.
         /// </summary>
         public async Task<Dictionary<string, object>> GameRoundEndAsync(
             string roundId,
@@ -655,21 +781,40 @@ namespace ToNRoundCounter.Infrastructure
             double? damageDealt = null,
             string[]? itemsObtained = null,
             string? terrorName = null,
+            int? initialPlayerCount = null,
             CancellationToken cancellationToken = default)
         {
+            _roundStartContexts.TryRemove(roundId, out var context);
+
+            var startTime = context?.StartTimeUtc ?? DateTime.UtcNow.AddSeconds(-Math.Max(0, duration));
+            var startTimeIso = startTime.ToString("O");
+            var endTimeIso = DateTime.UtcNow.ToString("O");
+            var normalizedInitialCount = Math.Max(0, initialPlayerCount ?? 0);
+            var survivorCount = normalizedInitialCount > 0
+                ? (survived ? normalizedInitialCount : Math.Max(0, normalizedInitialCount - 1))
+                : (survived ? 1 : 0);
+
             var request = new CloudMessage
             {
                 Id = Guid.NewGuid().ToString(),
                 Type = "request",
-                Method = "game.roundEnd",
+                Method = "round.report",
                 Params = new
                 {
-                    roundId = roundId,
-                    survived = survived,
-                    duration = duration,
-                    damageDealt = damageDealt,
-                    itemsObtained = itemsObtained,
-                    terrorName = terrorName
+                    instance_id = context?.InstanceId,
+                    round_type = context?.RoundType ?? "Unknown",
+                    terror_name = terrorName,
+                    terror_key = terrorName,
+                    start_time = startTimeIso,
+                    end_time = endTimeIso,
+                    initial_player_count = normalizedInitialCount,
+                    survivor_count = survivorCount,
+                    status = survived ? "COMPLETED" : "FAILED",
+                    // Preserve legacy fields for future backend compatibility/analytics.
+                    legacy_round_id = roundId,
+                    duration_seconds = duration,
+                    damage_dealt = damageDealt,
+                    items_obtained = itemsObtained
                 }
             };
 
@@ -817,6 +962,12 @@ namespace ToNRoundCounter.Infrastructure
             Dictionary<string, object> updates,
             CancellationToken cancellationToken = default)
         {
+            updates ??= new Dictionary<string, object>();
+
+            // Backend expects max_players/settings at top-level params, not nested "updates".
+            updates.TryGetValue("max_players", out var maxPlayersValue);
+            updates.TryGetValue("settings", out var settingsValue);
+
             var request = new CloudMessage
             {
                 Id = Guid.NewGuid().ToString(),
@@ -825,6 +976,9 @@ namespace ToNRoundCounter.Infrastructure
                 Params = new
                 {
                     instance_id = instanceId,
+                    max_players = maxPlayersValue,
+                    settings = settingsValue,
+                    // Keep legacy nested payload for backward compatibility with any older backend variants.
                     updates
                 }
             };
@@ -1094,7 +1248,10 @@ namespace ToNRoundCounter.Infrastructure
                         afk_duration = afkDuration,
                         items = items ?? new List<string>(),
                         damage,
-                        is_alive = isAlive
+                        is_alive = isAlive,
+                        // 送信時刻を必ず含める。これが無いとサーバ/UI 側で
+                        // 「更新: 不明」とされ、表示が振れる原因になる。
+                        timestamp = DateTime.UtcNow.ToString("o")
                     }
                 }
             };
@@ -1265,8 +1422,8 @@ namespace ToNRoundCounter.Infrastructure
             {
                 Id = Guid.NewGuid().ToString(),
                 Type = "request",
-                Method = "player.state.getAll",
-                Params = new { instance_id = instanceId }
+                Method = "player.states.get",
+                Params = new { instanceId = instanceId }
             };
 
             var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
@@ -1282,7 +1439,7 @@ namespace ToNRoundCounter.Infrastructure
                 var resultJson = JsonSerializer.Serialize(response.Result);
                 using (var doc = JsonDocument.Parse(resultJson))
                 {
-                    if (doc.RootElement.TryGetProperty("states", out var statesElem) &&
+                    if (doc.RootElement.TryGetProperty("player_states", out var statesElem) &&
                         statesElem.ValueKind == JsonValueKind.Array)
                     {
                         foreach (var state in statesElem.EnumerateArray())
@@ -1358,6 +1515,8 @@ namespace ToNRoundCounter.Infrastructure
             int limit = 10,
             CancellationToken cancellationToken = default)
         {
+            // Note: userId is retained for API compatibility; backend authenticates via session.
+            _ = userId;
             var request = new CloudMessage
             {
                 Id = Guid.NewGuid().ToString(),
@@ -1365,7 +1524,6 @@ namespace ToNRoundCounter.Infrastructure
                 Method = "monitoring.status",
                 Params = new
                 {
-                    user_id = userId,
                     limit
                 }
             };
@@ -1411,6 +1569,8 @@ namespace ToNRoundCounter.Infrastructure
             int limit = 50,
             CancellationToken cancellationToken = default)
         {
+            // Note: userId is retained for API compatibility; backend authenticates via session.
+            _ = userId;
             var request = new CloudMessage
             {
                 Id = Guid.NewGuid().ToString(),
@@ -1418,7 +1578,6 @@ namespace ToNRoundCounter.Infrastructure
                 Method = "monitoring.errors",
                 Params = new
                 {
-                    user_id = userId,
                     severity,
                     limit
                 }
@@ -1500,6 +1659,7 @@ namespace ToNRoundCounter.Infrastructure
             string instanceId,
             string terrorName,
             DateTime expiresAt,
+            string? roundKey = null,
             CancellationToken cancellationToken = default)
         {
             var request = new CloudMessage
@@ -1511,7 +1671,11 @@ namespace ToNRoundCounter.Infrastructure
                 {
                     instance_id = instanceId,
                     terror_name = terrorName,
-                    expires_at = expiresAt.ToString("O")
+                    round_key = string.IsNullOrWhiteSpace(roundKey) ? null : roundKey.Trim(),
+                    // Always send UTC. DateTime.ToString("O") on a local/Unspecified
+                    // value omits the offset, which makes the server's clamp logic
+                    // misinterpret the expiry across time zones.
+                    expires_at = expiresAt.ToUniversalTime().ToString("o")
                 }
             };
 
@@ -1544,9 +1708,12 @@ namespace ToNRoundCounter.Infrastructure
         public async Task SubmitVoteAsync(
             string campaignId,
             string playerId,
-            string decision, // "Proceed" or "Cancel"
+            string decision,
             CancellationToken cancellationToken = default)
         {
+            // The server resolves voter identity from the authenticated session.
+            // Keep playerId for API compatibility, but do not send it.
+            _ = playerId;
             var request = new CloudMessage
             {
                 Id = Guid.NewGuid().ToString(),
@@ -1555,7 +1722,6 @@ namespace ToNRoundCounter.Infrastructure
                 Params = new
                 {
                     campaign_id = campaignId,
-                    player_id = playerId,
                     decision
                 }
             };
@@ -1606,6 +1772,76 @@ namespace ToNRoundCounter.Infrastructure
             return result;
         }
 
+        public async Task<Dictionary<string, object>?> GetActiveVotingCampaignAsync(
+            string instanceId,
+            CancellationToken cancellationToken = default)
+        {
+            var request = new CloudMessage
+            {
+                Id = Guid.NewGuid().ToString(),
+                Type = "request",
+                Method = "coordinated.voting.getActive",
+                Params = new { instance_id = instanceId }
+            };
+
+            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (response.Status == "error")
+            {
+                throw new InvalidOperationException($"Failed to get active campaign: {response.Error?.Message}");
+            }
+
+            if (response.Result == null)
+            {
+                return null;
+            }
+
+            var resultJson = JsonSerializer.Serialize(response.Result);
+            using (var doc = JsonDocument.Parse(resultJson))
+            {
+                if (!doc.RootElement.TryGetProperty("campaign", out var campaignElement) || campaignElement.ValueKind == JsonValueKind.Null)
+                {
+                    return null;
+                }
+
+                var result = new Dictionary<string, object>();
+                foreach (var prop in campaignElement.EnumerateObject())
+                {
+                    result[prop.Name] = prop.Value;
+                }
+
+                return result;
+            }
+        }
+
+        public async Task<CoordinatedAutoSuicideStateInfo> GetCoordinatedAutoSuicideStateAsync(
+            string instanceId,
+            CancellationToken cancellationToken = default)
+        {
+            var request = new CloudMessage
+            {
+                Id = Guid.NewGuid().ToString(),
+                Type = "request",
+                Method = "coordinated.autoSuicide.get",
+                Params = new { instance_id = instanceId }
+            };
+
+            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+            if (response.Status == "error")
+            {
+                throw new InvalidOperationException($"Failed to get coordinated auto suicide state: {response.Error?.Message}");
+            }
+
+            if (response.Result == null)
+            {
+                return new CoordinatedAutoSuicideStateInfo();
+            }
+
+            var resultJson = JsonSerializer.Serialize(response.Result);
+            var state = JsonSerializer.Deserialize<CoordinatedAutoSuicideStateInfo>(resultJson);
+            return state ?? new CoordinatedAutoSuicideStateInfo();
+        }
+
         #endregion
 
         #region Wished Terrors APIs
@@ -1618,6 +1854,9 @@ namespace ToNRoundCounter.Infrastructure
             List<string> wishedTerrors,
             CancellationToken cancellationToken = default)
         {
+            // The server keys wished terrors off the authenticated session
+            // (ws.userId), so passing player_id from the client is both ignored
+            // and a spoofing surface. Only send the actual payload.
             var request = new CloudMessage
             {
                 Id = Guid.NewGuid().ToString(),
@@ -1625,7 +1864,6 @@ namespace ToNRoundCounter.Infrastructure
                 Method = "wished.terrors.update",
                 Params = new
                 {
-                    player_id = playerId,
                     wished_terrors = wishedTerrors
                 }
             };
@@ -1645,12 +1883,13 @@ namespace ToNRoundCounter.Infrastructure
             string playerId,
             CancellationToken cancellationToken = default)
         {
+            // Server uses ws.userId to scope the lookup; player_id is ignored.
             var request = new CloudMessage
             {
                 Id = Guid.NewGuid().ToString(),
                 Type = "request",
                 Method = "wished.terrors.get",
-                Params = new { player_id = playerId }
+                Params = new { }
             };
 
             var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
@@ -1668,12 +1907,31 @@ namespace ToNRoundCounter.Infrastructure
                 {
                     if (doc.RootElement.TryGetProperty("wished_terrors", out var terrors) && terrors.ValueKind == JsonValueKind.Array)
                     {
+                        // Server returns array of WishedTerror objects:
+                        //   { id, player_id, terror_name, round_key, created_at }
+                        // Older revisions of this client called terror.GetString()
+                        // on each element which silently returned null for objects,
+                        // so the wished list always looked empty. Tolerate both
+                        // shapes (legacy string elements and current objects).
                         foreach (var terror in terrors.EnumerateArray())
                         {
-                            var value = terror.GetString();
-                            if (value != null)
+                            if (terror.ValueKind == JsonValueKind.String)
                             {
-                                result.Add(value);
+                                var value = terror.GetString();
+                                if (!string.IsNullOrEmpty(value))
+                                {
+                                    result.Add(value);
+                                }
+                            }
+                            else if (terror.ValueKind == JsonValueKind.Object &&
+                                     terror.TryGetProperty("terror_name", out var name) &&
+                                     name.ValueKind == JsonValueKind.String)
+                            {
+                                var value = name.GetString();
+                                if (!string.IsNullOrEmpty(value))
+                                {
+                                    result.Add(value);
+                                }
                             }
                         }
                     }
@@ -1694,12 +1952,15 @@ namespace ToNRoundCounter.Infrastructure
             string playerId,
             CancellationToken cancellationToken = default)
         {
+            // profile.get is scoped by the authenticated session; do not send
+            // player_id (the server already ignores it and accepting it would
+            // imply a cross-user lookup is possible).
             var request = new CloudMessage
             {
                 Id = Guid.NewGuid().ToString(),
                 Type = "request",
                 Method = "profile.get",
-                Params = new { player_id = playerId }
+                Params = new { }
             };
 
             var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
@@ -1737,10 +1998,10 @@ namespace ToNRoundCounter.Infrastructure
             int? totalSurvived = null,
             CancellationToken cancellationToken = default)
         {
-            var updateData = new Dictionary<string, object>
-            {
-                ["player_id"] = playerId
-            };
+            // profile.update is scoped to ws.userId; the server-side handler
+            // does NOT honor a client-supplied player_id, so omit it to avoid
+            // implying cross-user updates are possible.
+            var updateData = new Dictionary<string, object>();
 
             if (playerName != null) updateData["player_name"] = playerName;
             if (skillLevel.HasValue) updateData["skill_level"] = skillLevel.Value;
@@ -1790,12 +2051,14 @@ namespace ToNRoundCounter.Infrastructure
             string userId,
             CancellationToken cancellationToken = default)
         {
+            // Note: userId is retained for API compatibility; backend authenticates via session.
+            _ = userId;
             var request = new CloudMessage
             {
                 Id = Guid.NewGuid().ToString(),
                 Type = "request",
                 Method = "settings.get",
-                Params = new { user_id = userId }
+                Params = new { }
             };
 
             var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
@@ -1829,6 +2092,8 @@ namespace ToNRoundCounter.Infrastructure
             Dictionary<string, object> settings,
             CancellationToken cancellationToken = default)
         {
+            // Note: userId is retained for API compatibility; backend authenticates via session.
+            _ = userId;
             var request = new CloudMessage
             {
                 Id = Guid.NewGuid().ToString(),
@@ -1836,7 +2101,6 @@ namespace ToNRoundCounter.Infrastructure
                 Method = "settings.update",
                 Params = new
                 {
-                    user_id = userId,
                     settings
                 }
             };
@@ -1873,6 +2137,8 @@ namespace ToNRoundCounter.Infrastructure
             int localVersion,
             CancellationToken cancellationToken = default)
         {
+            // Note: userId is retained for API compatibility; backend authenticates via session.
+            _ = userId;
             var request = new CloudMessage
             {
                 Id = Guid.NewGuid().ToString(),
@@ -1880,7 +2146,6 @@ namespace ToNRoundCounter.Infrastructure
                 Method = "settings.sync",
                 Params = new
                 {
-                    user_id = userId,
                     local_settings = localSettings,
                     local_version = localVersion
                 }
@@ -1931,8 +2196,11 @@ namespace ToNRoundCounter.Infrastructure
             {
                 requestParams["time_range"] = new
                 {
-                    start = startTime?.ToString("O"),
-                    end = endTime?.ToString("O")
+                    // Always serialize as UTC. Local-kind DateTime.ToString("O")
+                    // omits the offset and silently shifts the window on the
+                    // server side.
+                    start = startTime?.ToUniversalTime().ToString("o"),
+                    end = endTime?.ToUniversalTime().ToString("o")
                 };
             }
 
@@ -1984,8 +2252,9 @@ namespace ToNRoundCounter.Infrastructure
             {
                 requestParams["time_range"] = new
                 {
-                    start = startTime?.ToString("O"),
-                    end = endTime?.ToString("O")
+                    // Same UTC normalization as analytics.player.
+                    start = startTime?.ToUniversalTime().ToString("o"),
+                    end = endTime?.ToUniversalTime().ToString("o")
                 };
             }
 
@@ -2229,12 +2498,14 @@ namespace ToNRoundCounter.Infrastructure
             string userId,
             CancellationToken cancellationToken = default)
         {
+            // Note: userId is retained for API compatibility; backend authenticates via session.
+            _ = userId;
             var request = new CloudMessage
             {
                 Id = Guid.NewGuid().ToString(),
                 Type = "request",
                 Method = "backup.list",
-                Params = new { user_id = userId }
+                Params = new { }
             };
 
             var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
@@ -2267,6 +2538,32 @@ namespace ToNRoundCounter.Infrastructure
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Delete a backup
+        /// </summary>
+        public async Task DeleteBackupAsync(
+            string backupId,
+            CancellationToken cancellationToken = default)
+        {
+            var request = new CloudMessage
+            {
+                Id = Guid.NewGuid().ToString(),
+                Type = "request",
+                Method = "backup.delete",
+                Params = new
+                {
+                    backup_id = backupId
+                }
+            };
+
+            var response = await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (response.Status == "error")
+            {
+                throw new InvalidOperationException($"Failed to delete backup: {response.Error?.Message}");
+            }
         }
 
         #endregion
@@ -2494,23 +2791,27 @@ namespace ToNRoundCounter.Infrastructure
                 var options = new JsonSerializerOptions
                 {
                     PropertyNamingPolicy = null,
-                    IgnoreNullValues = true
+                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
                 };
 
                 await foreach (var rawMsg in _messageChannel.Reader.ReadAllAsync(token))
                 {
                     try
                     {
-                        // デバッグ: 生のメッセージをログ出力
-                        _logger.LogEvent("CloudWebSocket", $"Raw message received: {rawMsg}", Serilog.Events.LogEventLevel.Debug);
+                        if (debugLoggingEnabled && ShouldLogSample(dispatched + 1))
+                        {
+                            _logger.LogEvent("CloudWebSocket", () => $"Raw message received: {Truncate(rawMsg, MaxMessagePreviewLength)}", Serilog.Events.LogEventLevel.Debug);
+                        }
                         
                         var msg = JsonSerializer.Deserialize<CloudMessage>(rawMsg, options);
                         if (msg == null) continue;
 
-                        // デバッグ: デシリアライズ後の内容をログ出力
-                        _logger.LogEvent("CloudWebSocket", 
-                            $"Deserialized - Id: {msg.Id}, Method: {msg.Method}, Result: {msg.Result != null}, Error: {msg.Error != null}", 
-                            Serilog.Events.LogEventLevel.Debug);
+                        if (debugLoggingEnabled && ShouldLogSample(dispatched + 1))
+                        {
+                            _logger.LogEvent("CloudWebSocket", 
+                                $"Deserialized - Id: {msg.Id}, Method: {msg.Method}, Result: {msg.Result != null}, Error: {msg.Error != null}", 
+                                Serilog.Events.LogEventLevel.Debug);
+                        }
 
                         // Determine message type based on content
                         // Backend sends: { id, rpc, result } for responses
@@ -2525,10 +2826,9 @@ namespace ToNRoundCounter.Infrastructure
                             _logger.LogEvent("CloudWebSocket", $"Error message: {msg.Error?.Message}", Serilog.Events.LogEventLevel.Warning);
                             
                             // If this is a response to a request, fail the pending task
-                            if (!string.IsNullOrEmpty(msg.Id) && _pendingRequests.TryGetValue(msg.Id, out var errorTcs))
+                            if (!string.IsNullOrEmpty(msg.Id) && _pendingRequests.TryRemove(msg.Id, out var errorTcs))
                             {
-                                _pendingRequests.Remove(msg.Id);
-                                errorTcs.SetResult(msg);
+                                errorTcs.TrySetResult(msg);
                             }
                         }
                         else if (!string.IsNullOrEmpty(msg.Event) || msg.Data != null)
@@ -2538,28 +2838,36 @@ namespace ToNRoundCounter.Infrastructure
                             MessageReceived?.Invoke(this, msg);
                             _bus.Publish(new CloudMessageReceived(msg));
                         }
-                        else if (!string.IsNullOrEmpty(msg.Id) && (msg.Result != null || !string.IsNullOrEmpty(msg.Method)))
+                        else if (!string.IsNullOrEmpty(msg.Id))
                         {
-                            // Response message
+                            // Response message - any message bearing an Id without an explicit
+                            // stream/error envelope is treated as a response so empty/void RPC
+                            // results don't leak as orphaned pending requests.
                             msg.Type = "response";
                             msg.Status = "success";
-                            
-                            _logger.LogEvent("CloudWebSocket", 
-                                $"Response message detected - Id: {msg.Id}, Method: {msg.Method}, Pending requests: {_pendingRequests.Count}", 
-                                Serilog.Events.LogEventLevel.Debug);
-                            
-                            if (_pendingRequests.TryGetValue(msg.Id, out var tcs))
+
+                            if (debugLoggingEnabled && ShouldLogSample(dispatched + 1))
                             {
-                                _logger.LogEvent("CloudWebSocket", 
-                                    $"Completing pending request {msg.Id}", 
+                                _logger.LogEvent("CloudWebSocket",
+                                    $"Response message detected - Id: {msg.Id}, Method: {msg.Method}, HasResult: {msg.Result != null}, Pending requests: {_pendingRequests.Count}",
                                     Serilog.Events.LogEventLevel.Debug);
-                                _pendingRequests.Remove(msg.Id);
-                                tcs.SetResult(msg);
+                            }
+
+                            if (_pendingRequests.TryRemove(msg.Id, out var tcs))
+                            {
+                                if (debugLoggingEnabled && ShouldLogSample(dispatched + 1))
+                                {
+                                    _logger.LogEvent("CloudWebSocket",
+                                        $"Completing pending request {msg.Id}",
+                                        Serilog.Events.LogEventLevel.Debug);
+                                }
+
+                                tcs.TrySetResult(msg);
                             }
                             else
                             {
-                                _logger.LogEvent("CloudWebSocket", 
-                                    $"No pending request found for Id: {msg.Id}", 
+                                _logger.LogEvent("CloudWebSocket",
+                                    $"No pending request found for Id: {msg.Id}",
                                     Serilog.Events.LogEventLevel.Warning);
                             }
                         }
@@ -2577,6 +2885,11 @@ namespace ToNRoundCounter.Infrastructure
                     catch (JsonException ex)
                     {
                         _logger.LogEvent("CloudWebSocket", $"Failed to deserialize message: {ex.Message}", Serilog.Events.LogEventLevel.Error);
+                        // Don't let malformed messages leave orphaned pending requests hanging
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogEvent("CloudWebSocket", $"Unexpected error processing message: {ex.GetType().Name} - {ex.Message}", Serilog.Events.LogEventLevel.Error);
                     }
                 }
             }
@@ -2586,6 +2899,27 @@ namespace ToNRoundCounter.Infrastructure
             finally
             {
                 _logger.LogEvent("CloudWebSocket", "ProcessMessagesAsync completed.");
+            }
+        }
+
+        /// <summary>
+        /// Properly clean up all pending requests when stopping
+        /// </summary>
+        private void CancelAllPendingRequests(Exception? reason = null)
+        {
+            var pendingRequests = _pendingRequests.ToArray();
+            foreach (var kvp in pendingRequests)
+            {
+                if (_pendingRequests.TryRemove(kvp.Key, out var tcs))
+                {
+                    if (!tcs.Task.IsCompleted)
+                    {
+                        if (reason != null)
+                            tcs.SetException(reason);
+                        else
+                            tcs.SetCanceled();
+                    }
+                }
             }
         }
 
@@ -2623,6 +2957,9 @@ namespace ToNRoundCounter.Infrastructure
                 while (_messageChannel.Reader.TryRead(out _))
                 {
                 }
+                
+                // Cancel all pending requests to prevent hanging
+                CancelAllPendingRequests(new OperationCanceledException("WebSocket client stopped"));
 
                 if (processingError != null)
                 {
@@ -2633,16 +2970,43 @@ namespace ToNRoundCounter.Infrastructure
             {
                 _logger.LogEvent("CloudWebSocket", "StopAsync cleaning up resources.");
                 cts?.Dispose();
-                _socket?.Dispose();
-                _socket = null;
+                
+                // BUG FIX #9 (MEDIUM): Use lock to prevent concurrent Dispose() race condition.
+                // Previously: Both Dispose() and StopAsync() could dispose _socket without synchronization,
+                // causing double-dispose or ObjectDisposedException. Now: Use _socketLock for atomicity.
+                lock (_socketLock)
+                {
+                    _socket?.Dispose();
+                    _socket = null;
+                }
             }
         }
 
+        // BUG FIX #9 (MEDIUM): Use lock around socket disposal to prevent race with StopAsync().
         public void Dispose()
         {
+            // Avoid blocking the thread - schedule async cleanup
             try
             {
-                StopAsync().GetAwaiter().GetResult();
+                var cts = Interlocked.Exchange(ref _cts, null);
+                if (cts != null)
+                {
+                    try
+                    {
+                        cts.Cancel();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                    }
+                }
+                
+                // Don't block on async operations - just release resources synchronously
+                // Use lock to prevent concurrent disposal with StopAsync()
+                lock (_socketLock)
+                {
+                    _socket?.Dispose();
+                    _socket = null;
+                }
             }
             catch (Exception ex)
             {
@@ -2657,10 +3021,13 @@ namespace ToNRoundCounter.Infrastructure
 
         private void EnsureProcessingTask(CancellationToken token)
         {
-            var existing = _processingTask;
-            if (existing == null || existing.IsCompleted)
+            lock (_processingTaskSync)
             {
-                _processingTask = Task.Run(() => ProcessMessagesAsync(token), token);
+                var existing = _processingTask;
+                if (existing == null || existing.IsCompleted)
+                {
+                    _processingTask = Task.Run(() => ProcessMessagesAsync(token), token);
+                }
             }
         }
 

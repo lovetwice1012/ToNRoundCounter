@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Text;
 using System.Windows.Forms;
 
 namespace ToNRoundCounter.UI
@@ -8,6 +9,7 @@ namespace ToNRoundCounter.UI
     public class OverlayRoundHistoryForm : OverlaySectionForm
     {
         private readonly TableLayoutPanel historyLayout;
+        private string lastHistorySignature = string.Empty;
 
         public OverlayRoundHistoryForm(string title)
             : base(title, CreateLayout())
@@ -35,6 +37,17 @@ namespace ToNRoundCounter.UI
 
         public void SetHistory(IReadOnlyList<(string Label, string Status)> entries)
         {
+            entries ??= Array.Empty<(string Label, string Status)>();
+            string signature = BuildSignature(entries);
+            if (string.Equals(lastHistorySignature, signature, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            lastHistorySignature = signature;
+            SuspendDrawing(this);
+            try
+            {
             historyLayout.SuspendLayout();
             historyLayout.Controls.Clear();
             historyLayout.ColumnStyles.Clear();
@@ -79,6 +92,26 @@ namespace ToNRoundCounter.UI
 
             historyLayout.ResumeLayout(true);
             AdjustSizeToContent();
+            }
+            finally
+            {
+                ResumeDrawing(this);
+            }
+        }
+
+        private static string BuildSignature(IReadOnlyList<(string Label, string Status)> entries)
+        {
+            var sb = new StringBuilder(entries.Count * 24 + 8);
+            sb.Append(entries.Count);
+            for (int i = 0; i < entries.Count; i++)
+            {
+                sb.Append('|');
+                sb.Append(entries[i].Label);
+                sb.Append('>');
+                sb.Append(entries[i].Status);
+            }
+
+            return sb.ToString();
         }
 
         private static Label CreateTypeLabel(string text)

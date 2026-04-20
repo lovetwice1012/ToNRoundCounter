@@ -6,29 +6,47 @@ import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 
 export const ConnectionStatus: React.FC = () => {
-    const { connectionState, playerId, restClient } = useAppStore();
+    const {
+        connectionState,
+        playerId,
+        setApiLatencyMs,
+        apiLatencyMs,
+        wsLatencyMs,
+        lastSyncAt,
+    } = useAppStore();
     const [apiConnected, setApiConnected] = useState<boolean>(false);
 
     useEffect(() => {
-        // REST APIの接続状態をチェック
+        let cancelled = false;
+        // REST APIの接続状態をチェック (always read latest restClient from store to avoid restart churn)
         const checkApiConnection = async () => {
-            if (restClient) {
-                try {
-                    await restClient.healthCheck();
+            const current = useAppStore.getState().restClient;
+            if (!current) {
+                if (!cancelled) setApiConnected(false);
+                setApiLatencyMs(null);
+                return;
+            }
+            try {
+                const startedAt = performance.now();
+                await current.healthCheck();
+                if (!cancelled) {
                     setApiConnected(true);
-                } catch (error) {
-                    setApiConnected(false);
+                    setApiLatencyMs(Math.round(performance.now() - startedAt));
                 }
-            } else {
-                setApiConnected(false);
+            } catch {
+                if (!cancelled) setApiConnected(false);
+                setApiLatencyMs(null);
             }
         };
 
         checkApiConnection();
-        const interval = setInterval(checkApiConnection, 10000); // 10秒ごとにチェック
+        const interval = setInterval(checkApiConnection, 15000);
 
-        return () => clearInterval(interval);
-    }, [restClient]);
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+        };
+    }, [setApiLatencyMs]);
 
     const getStatusColor = (connected: boolean) => {
         return connected ? '#4caf50' : '#f44336';
@@ -50,51 +68,47 @@ export const ConnectionStatus: React.FC = () => {
     const wsConnected = connectionState === 'connected';
 
     return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-            {/* WebSocket接続状態 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div
-                    style={{
-                        width: '10px',
-                        height: '10px',
-                        borderRadius: '50%',
-                        backgroundColor: getStatusColor(wsConnected),
-                        boxShadow: `0 0 8px ${getStatusColor(wsConnected)}`,
-                    }}
-                />
-                <span style={{ color: '#666', fontSize: '14px', fontWeight: 500 }}>
-                    {getWebSocketStatusText()}
-                </span>
+        <div className="connection-status-grid">
+            <div className="status-chip">
+                <span className="status-dot" style={{ backgroundColor: getStatusColor(wsConnected), boxShadow: `0 0 8px ${getStatusColor(wsConnected)}` }} />
+                <div>
+                    <p>WebSocket</p>
+                    <strong>{getWebSocketStatusText()}</strong>
+                </div>
             </div>
 
-            {/* バックエンドAPI接続状態 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div
-                    style={{
-                        width: '10px',
-                        height: '10px',
-                        borderRadius: '50%',
-                        backgroundColor: getStatusColor(apiConnected),
-                        boxShadow: `0 0 8px ${getStatusColor(apiConnected)}`,
-                    }}
-                />
-                <span style={{ color: '#666', fontSize: '14px', fontWeight: 500 }}>
-                    {apiConnected ? 'API接続中' : 'API未接続'}
-                </span>
+            <div className="status-chip">
+                <span className="status-dot" style={{ backgroundColor: getStatusColor(apiConnected), boxShadow: `0 0 8px ${getStatusColor(apiConnected)}` }} />
+                <div>
+                    <p>REST API</p>
+                    <strong>{apiConnected ? '接続中' : '未接続'}</strong>
+                </div>
+            </div>
+
+            <div className="status-chip">
+                <div>
+                    <p>Latency</p>
+                    <strong>
+                        WS {wsLatencyMs ?? '-'}ms / API {apiLatencyMs ?? '-'}ms
+                    </strong>
+                </div>
             </div>
 
             {playerId && (
-                <span style={{ 
-                    color: '#333', 
-                    fontSize: '14px',
-                    padding: '4px 12px',
-                    backgroundColor: '#f0f0f0',
-                    borderRadius: '12px',
-                    fontWeight: 500
-                }}>
-                    {playerId}
-                </span>
+                <div className="status-chip">
+                    <div>
+                        <p>Player</p>
+                        <strong>{playerId}</strong>
+                    </div>
+                </div>
             )}
+
+            <div className="status-chip">
+                <div>
+                    <p>Last Sync</p>
+                    <strong>{lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString() : '-'}</strong>
+                </div>
+            </div>
         </div>
     );
 };

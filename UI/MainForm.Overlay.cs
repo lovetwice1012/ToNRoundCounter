@@ -36,7 +36,8 @@ namespace ToNRoundCounter.UI
             Shortcuts,
             Clock,
             InstanceTimer,
-            InstanceMembers
+            InstanceMembers,
+            Voting
         }
 
         private void InitializeOverlay()
@@ -70,7 +71,8 @@ namespace ToNRoundCounter.UI
                 (OverlaySection.Shortcuts, "ショートカット", string.Empty),
                 (OverlaySection.Clock, "時計", GetClockOverlayText()),
                 (OverlaySection.InstanceTimer, "滞在時間", GetInstanceTimerDisplayText()),
-                (OverlaySection.InstanceMembers, "メンバー", string.Empty)
+                (OverlaySection.InstanceMembers, "メンバー", string.Empty),
+                (OverlaySection.Voting, "投票", string.Empty)
             };
 
             int x = Math.Max(workingArea.Left, workingArea.Right - 260 - offsetX);
@@ -372,7 +374,7 @@ namespace ToNRoundCounter.UI
                     }
                     break;
                 case OverlayShortcutForm.ShortcutButton.ManualSuicide:
-                    _ = Task.Run(PerformAutoSuicide);
+                    RunBackgroundOperation(() => PerformAutoSuicide(), "OverlayManualSuicide", LogEventLevel.Debug);
                     shortcutOverlayForm?.SetToggleState(OverlayShortcutForm.ShortcutButton.ManualSuicide, true);
                     break;
                 case OverlayShortcutForm.ShortcutButton.AllRoundsModeToggle:
@@ -661,6 +663,7 @@ namespace ToNRoundCounter.UI
                 OverlaySection.Clock => _settings.OverlayShowClock,
                 OverlaySection.InstanceTimer => _settings.OverlayShowInstanceTimer,
                 OverlaySection.InstanceMembers => _settings.OverlayShowInstanceMembers,
+                OverlaySection.Voting => _settings.OverlayShowVoting,
                 _ => false
             };
         }
@@ -776,7 +779,7 @@ namespace ToNRoundCounter.UI
             HashSet<string>? filterSet = null;
             if (hasRoundFilter)
             {
-                filterSet = new HashSet<string>(_settings.RoundTypeStats, StringComparer.OrdinalIgnoreCase);
+                filterSet = new HashSet<string>(_settings.RoundTypeStats!, StringComparer.OrdinalIgnoreCase);
             }
             var entries = aggregates
                 .Where(kvp => !hasRoundFilter || (filterSet != null && filterSet.Contains(kvp.Key)))

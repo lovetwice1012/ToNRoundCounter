@@ -12,6 +12,7 @@ import { initializeDatabase, closeDatabase } from './database/connection';
 import { WebSocketHandler } from './websocket/WebSocketHandler';
 import { ApiController } from './controllers/ApiController';
 import { BackupService } from './services/BackupService';
+import { AuthService } from './services/AuthService';
 
 // Load environment variables
 dotenv.config();
@@ -47,19 +48,62 @@ const server = createServer(app);
 
 // Initialize WebSocket handler
 const wsHandler = new WebSocketHandler(server);
+const authService = new AuthService();
 
 // Initialize API controller
 const apiController = new ApiController(wsHandler);
 
+const requireAuthMiddleware = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const authHeader = req.header('authorization') || '';
+    const match = authHeader.match(/^Bearer\s+(\S+)$/i);
+    const sessionToken = match ? match[1] : null;
+
+    if (!sessionToken) {
+        res.status(401).json({
+            error: {
+                code: 'AUTH_REQUIRED',
+                message: 'Missing authorization token',
+            },
+        });
+        return;
+    }
+
+    try {
+        const session = await authService.validateSession(sessionToken);
+        if (!session) {
+            res.status(401).json({
+                error: {
+                    code: 'INVALID_SESSION',
+                    message: 'Session is invalid or expired',
+                },
+            });
+            return;
+        }
+
+        (req as any).session = session;
+        (req as any).userId = session.user_id;
+        (req as any).playerId = session.player_id;
+        next();
+    } catch (error: any) {
+        logger.error({ error }, 'Failed to validate REST session');
+        res.status(500).json({
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Failed to validate session',
+            },
+        });
+    }
+};
+
 // REST API Routes
-app.get('/api/v1/instances', (req, res) => apiController.getInstances(req, res));
-app.get('/api/v1/instances/:instanceId', (req, res) => apiController.getInstance(req, res));
-app.post('/api/v1/instances', (req, res) => apiController.createInstance(req, res));
-app.put('/api/v1/instances/:instanceId', (req, res) => apiController.updateInstance(req, res));
-app.delete('/api/v1/instances/:instanceId', (req, res) => apiController.deleteInstance(req, res));
-app.get('/api/v1/profiles/:playerId', (req, res) => apiController.getProfile(req, res));
-app.put('/api/v1/profiles/:playerId', (req, res) => apiController.updateProfile(req, res));
-app.get('/api/v1/stats/terrors', (req, res) => apiController.getTerrorStats(req, res));
+app.get('/api/v1/instances', requireAuthMiddleware, (req, res) => apiController.getInstances(req, res));
+app.get('/api/v1/instances/:instanceId', requireAuthMiddleware, (req, res) => apiController.getInstance(req, res));
+app.post('/api/v1/instances', requireAuthMiddleware, (req, res) => apiController.createInstance(req, res));
+app.put('/api/v1/instances/:instanceId', requireAuthMiddleware, (req, res) => apiController.updateInstance(req, res));
+app.delete('/api/v1/instances/:instanceId', requireAuthMiddleware, (req, res) => apiController.deleteInstance(req, res));
+app.get('/api/v1/profiles/:playerId', requireAuthMiddleware, (req, res) => apiController.getProfile(req, res));
+app.put('/api/v1/profiles/:playerId', requireAuthMiddleware, (req, res) => apiController.updateProfile(req, res));
+app.get('/api/v1/stats/terrors', requireAuthMiddleware, (req, res) => apiController.getTerrorStats(req, res));
 
 // Health check endpoint
 app.get('/health', (req, res) => {

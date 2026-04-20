@@ -2,10 +2,14 @@ using System;
 using System.Drawing;
 using System.Numerics;
 using System.Windows.Forms;
+using SharpGen.Runtime;
+using Vortice;
+using Vortice.DCommon;
 using Vortice.Direct2D1;
 using Vortice.DXGI;
 using Vortice.Mathematics;
 using DrawingColor = System.Drawing.Color;
+using Size = System.Drawing.Size;
 
 namespace ToNRoundCounter.UI.DirectX
 {
@@ -43,7 +47,7 @@ namespace ToNRoundCounter.UI.DirectX
 
         protected ID2D1HwndRenderTarget? RenderTarget => renderTarget;
 
-        protected RawRect ContentRectangle
+        protected RawRectF ContentRectangle
         {
             get
             {
@@ -51,7 +55,7 @@ namespace ToNRoundCounter.UI.DirectX
                 float top = ContentPadding.Top;
                 float right = Math.Max(left, Width - ContentPadding.Right);
                 float bottom = Math.Max(top, Height - ContentPadding.Bottom);
-                return new RawRect(left, top, right, bottom);
+                return new RawRectF(left, top, right, bottom);
             }
         }
 
@@ -172,7 +176,7 @@ namespace ToNRoundCounter.UI.DirectX
                 renderTarget.AntialiasMode = AntialiasMode.PerPrimitive;
                 renderTarget.Clear(new Color4(0f, 0f, 0f, 0f));
 
-                var bounds = new RawRect(0f, 0f, Math.Max(0, Width), Math.Max(0, Height));
+                var bounds = new RawRectF(0f, 0f, Math.Max(0, Width), Math.Max(0, Height));
                 var rounded = new RoundedRectangle
                 {
                     Rect = bounds,
@@ -192,10 +196,10 @@ namespace ToNRoundCounter.UI.DirectX
                 renderTarget.EndDraw();
                 deviceResourcesLost = false;
             }
-            catch (Vortice.SharpGenException ex)
+            catch (SharpGenException ex)
             {
-                if (ex.HResult == Vortice.Direct2D1.ResultCode.RecreateTarget.Code ||
-                    ex.HResult == Vortice.DXGI.ResultCode.DeviceRemoved.Code)
+                if (ex.ResultCode == Vortice.Direct2D1.ResultCode.RecreateTarget ||
+                    ex.ResultCode == Vortice.DXGI.ResultCode.DeviceRemoved)
                 {
                     deviceResourcesLost = true;
                 }
@@ -229,7 +233,7 @@ namespace ToNRoundCounter.UI.DirectX
 
             var renderProps = new RenderTargetProperties
             {
-                PixelFormat = new PixelFormat(Format.B8G8R8A8_UNorm, Vortice.Direct2D1.AlphaMode.Premultiplied),
+                PixelFormat = new PixelFormat(Format.B8G8R8A8_UNorm, Vortice.DCommon.AlphaMode.Premultiplied),
                 Usage = RenderTargetUsage.None,
             };
 

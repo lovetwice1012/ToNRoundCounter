@@ -220,9 +220,15 @@ namespace ToNRoundCounter.Infrastructure
 
             try
             {
-                listenerTask?.GetAwaiter().GetResult();
+                if (listenerTask != null && !listenerTask.Wait(TimeSpan.FromSeconds(3)))
+                {
+                    _logger.LogEvent("OSC", "Listener stop timed out after 3 seconds.", Serilog.Events.LogEventLevel.Warning);
+                }
             }
             catch (OperationCanceledException)
+            {
+            }
+            catch (AggregateException ex) when (ex.InnerException is OperationCanceledException)
             {
             }
             catch (Exception ex)
@@ -232,9 +238,15 @@ namespace ToNRoundCounter.Infrastructure
 
             try
             {
-                processingTask?.GetAwaiter().GetResult();
+                if (processingTask != null && !processingTask.Wait(TimeSpan.FromSeconds(3)))
+                {
+                    _logger.LogEvent("OSC", "Message processing stop timed out after 3 seconds.", Serilog.Events.LogEventLevel.Warning);
+                }
             }
             catch (OperationCanceledException)
+            {
+            }
+            catch (AggregateException ex) when (ex.InnerException is OperationCanceledException)
             {
             }
             catch (Exception ex)

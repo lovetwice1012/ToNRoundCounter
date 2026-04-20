@@ -48,7 +48,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
             }
 
             _cts = new CancellationTokenSource();
-            _listenerTask = Task.Run(() => RunAsync(_cts.Token));
+            _listenerTask = RunAsync(_cts.Token);
         }
 
         private async Task RunAsync(CancellationToken token)
@@ -77,7 +77,7 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                         }
 
                         client = await acceptTask.ConfigureAwait(false);
-                        _ = Task.Run(() => HandleClientAsync(client, token));
+                        _ = HandleClientAsync(client, token);
                     }
                     catch (OperationCanceledException)
                     {
@@ -156,7 +156,6 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                 }
 
                 await output.WriteAsync(buffer, 0, read, token).ConfigureAwait(false);
-                await output.FlushAsync(token).ConfigureAwait(false);
             }
         }
 

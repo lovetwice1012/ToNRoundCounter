@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Serilog.Events;
 using ToNRoundCounter.Domain;
@@ -114,7 +115,7 @@ namespace ToNRoundCounter.UI
                 {
                     cts.Dispose();
                 }
-            });
+            }, _cancellation.Token);
         }
 
         private AggregateStatsUpdate? BuildAggregateStatsUpdate(CancellationToken token, StatsDisplayConfig config)
@@ -179,7 +180,7 @@ namespace ToNRoundCounter.UI
                         if (config.FilterSurvivalRate)
                             terrorParts.Add(string.Format(TranslateSafe("生存率") + "={0:F1}%", tAgg.SurvivalRate));
                         string terrorLine = string.Join(" ", terrorParts);
-                        Color rawColor = terrorColors.ContainsKey(terrorKey) ? terrorColors[terrorKey] : Color.Black;
+                        Color rawColor = terrorColors.TryGetValue(terrorKey, out var foundColor) ? foundColor : Color.Black;
                         Color terrorColor = (config.FixedTerrorColor != Color.Empty && config.FixedTerrorColor != Color.White)
                             ? config.FixedTerrorColor
                             : AdjustColorForVisibility(rawColor);
@@ -204,30 +205,60 @@ namespace ToNRoundCounter.UI
             return new AggregateStatsUpdate(lines, entries, totalRounds);
         }
 
+        private const int WM_SETREDRAW = 0x000B;
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int wMsg, IntPtr wParam, IntPtr lParam);
+
+        private static void SuspendDrawing(Control control)
+        {
+            SendMessage(control.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+        }
+
+        private static void ResumeDrawing(Control control)
+        {
+            SendMessage(control.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+            control.Invalidate(true);
+        }
+
         private void ApplyAggregateStatsUpdate(AggregateStatsUpdate update)
         {
-            rtbStatsDisplay.SuspendLayout();
             try
             {
-                rtbStatsDisplay.Clear();
-                foreach (var line in update.Lines)
+                SuspendDrawing(rtbStatsDisplay);
+                try
                 {
-                    if (line.Indent)
+                    rtbStatsDisplay.Clear();
+                    foreach (var line in update.Lines)
                     {
-                        AppendIndentedLine(rtbStatsDisplay, line.Text, line.Color);
-                    }
-                    else
-                    {
-                        AppendLine(rtbStatsDisplay, line.Text, line.Color);
+                        if (line.Indent)
+                        {
+                            AppendIndentedLine(rtbStatsDisplay, line.Text, line.Color);
+                        }
+                        else
+                        {
+                            AppendLine(rtbStatsDisplay, line.Text, line.Color);
+                        }
                     }
                 }
+                finally
+                {
+                    ResumeDrawing(rtbStatsDisplay);
+                }
             }
-            finally
+            catch (Exception ex)
             {
-                rtbStatsDisplay.ResumeLayout();
+                LogUi($"Failed to apply aggregate stats text update: {ex.Message}", LogEventLevel.Warning);
             }
 
-            RefreshRoundStatsOverlay(update.Entries, update.TotalRounds);
+            try
+            {
+                _overlayManager.RefreshRoundStats();
+            }
+            catch (Exception ex)
+            {
+                LogUi($"Failed to refresh round stats overlay: {ex.Message}", LogEventLevel.Warning);
+            }
         }
 
         private CancellationTokenSource RenewTokenSource(ref CancellationTokenSource? target, object syncRoot)
@@ -299,16 +330,23 @@ namespace ToNRoundCounter.UI
             var text = builder.ToString();
             _dispatcher.Invoke(() =>
             {
-                logPanel.RoundLogTextBox.SuspendLayout();
+                // logPanel may not be initialized yet if this is called during early construction
+                if (logPanel?.RoundLogTextBox == null)
+                {
+                    return;
+                }
+
+                var rtb = logPanel.RoundLogTextBox;
+                SuspendDrawing(rtb);
                 try
                 {
-                    logPanel.RoundLogTextBox.Text = text;
-                    logPanel.RoundLogTextBox.SelectionStart = logPanel.RoundLogTextBox.TextLength;
-                    logPanel.RoundLogTextBox.ScrollToCaret();
+                    rtb.Text = text;
+                    rtb.SelectionStart = rtb.TextLength;
+                    rtb.ScrollToCaret();
                 }
                 finally
                 {
-                    logPanel.RoundLogTextBox.ResumeLayout();
+                    ResumeDrawing(rtb);
                 }
             });
         }
@@ -318,16 +356,23 @@ namespace ToNRoundCounter.UI
             var entry = logEntry ?? string.Empty;
             _dispatcher.Invoke(() =>
             {
-                logPanel.RoundLogTextBox.SuspendLayout();
+                // logPanel may not be initialized yet if this is called during early construction
+                if (logPanel?.RoundLogTextBox == null)
+                {
+                    return;
+                }
+
+                var rtb = logPanel.RoundLogTextBox;
+                SuspendDrawing(rtb);
                 try
                 {
-                    logPanel.RoundLogTextBox.AppendText(entry + Environment.NewLine);
-                    logPanel.RoundLogTextBox.SelectionStart = logPanel.RoundLogTextBox.TextLength;
-                    logPanel.RoundLogTextBox.ScrollToCaret();
+                    rtb.AppendText(entry + Environment.NewLine);
+                    rtb.SelectionStart = rtb.TextLength;
+                    rtb.ScrollToCaret();
                 }
                 finally
                 {
-                    logPanel.RoundLogTextBox.ResumeLayout();
+                    ResumeDrawing(rtb);
                 }
             });
         }

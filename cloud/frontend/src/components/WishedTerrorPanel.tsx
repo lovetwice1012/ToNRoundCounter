@@ -3,7 +3,7 @@
  * Manages player's wished terrors (survival preferences)
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 
 interface WishedTerror {
@@ -223,13 +223,17 @@ const TERROR_NAMES = [
 ];
 
 export const WishedTerrorPanel: React.FC = () => {
-    const { client, playerId } = useAppStore();
+    const { client, playerId, pushToast, touchSyncTime } = useAppStore();
     const [wishedTerrors, setWishedTerrors] = useState<WishedTerror[]>([]);
+    const [selectedRegisteredIds, setSelectedRegisteredIds] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [selectedTerrors, setSelectedTerrors] = useState<string[]>([]);
     const [newRoundKey, setNewRoundKey] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
+
+    const buildDuplicateKey = (terrorName: string, roundKey: string) =>
+        `${terrorName.trim().toLocaleLowerCase()}::${roundKey.trim().toLocaleLowerCase()}`;
 
     useEffect(() => {
         if (client && playerId) {
@@ -245,9 +249,12 @@ export const WishedTerrorPanel: React.FC = () => {
         try {
             const result = await client.getWishedTerrors(playerId);
             setWishedTerrors(result as any);
+            setSelectedRegisteredIds([]);
+            touchSyncTime();
         } catch (error) {
             console.error('Failed to load wished terrors:', error);
             setError('ほしいテラーの読み込みに失敗しました');
+            pushToast({ type: 'error', message: 'ほしいテラーの取得に失敗しました。' });
         } finally {
             setLoading(false);
         }
@@ -262,11 +269,39 @@ export const WishedTerrorPanel: React.FC = () => {
 
         setError(null);
         try {
-            const newItems = selectedTerrors.map(terrorName => ({
-                id: crypto.randomUUID(),
-                terror_name: terrorName,
-                round_key: newRoundKey,
-            }));
+            const generateId = () => {
+                if (typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function') {
+                    return (crypto as any).randomUUID() as string;
+                }
+                return `${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+            };
+            const roundKey = newRoundKey.trim();
+            const existingKeys = new Set(
+                wishedTerrors.map(terror => buildDuplicateKey(terror.terror_name, terror.round_key || ''))
+            );
+            const nextSelected = Array.from(new Set(selectedTerrors.map(name => name.trim()).filter(Boolean)));
+            const duplicateNames: string[] = [];
+            const newItems = nextSelected
+                .filter(terrorName => {
+                    const key = buildDuplicateKey(terrorName, roundKey);
+                    if (existingKeys.has(key)) {
+                        duplicateNames.push(terrorName);
+                        return false;
+                    }
+                    existingKeys.add(key);
+                    return true;
+                })
+                .map(terrorName => ({
+                    id: generateId(),
+                    terror_name: terrorName,
+                    round_key: roundKey,
+                }));
+
+            if (newItems.length === 0) {
+                setError('選択したテラーはすでに登録済みです');
+                pushToast({ type: 'info', message: '重複のため追加されませんでした。' });
+                return;
+            }
 
             const newList = [...wishedTerrors, ...newItems];
 
@@ -274,9 +309,19 @@ export const WishedTerrorPanel: React.FC = () => {
             setWishedTerrors(newList);
             setSelectedTerrors([]);
             setNewRoundKey('');
+            touchSyncTime();
+            if (duplicateNames.length > 0) {
+                pushToast({
+                    type: 'info',
+                    message: `${newItems.length}件追加、${duplicateNames.length}件は重複のためスキップしました。`,
+                });
+            } else {
+                pushToast({ type: 'success', message: `${newItems.length}件を追加しました。` });
+            }
         } catch (error) {
             console.error('Failed to add wished terror:', error);
             setError('追加に失敗しました');
+            pushToast({ type: 'error', message: '追加に失敗しました。' });
         }
     };
 
@@ -291,7 +336,6 @@ export const WishedTerrorPanel: React.FC = () => {
     };
 
     const handleSelectAll = () => {
-        const filteredTerrors = getFilteredTerrors();
         if (selectedTerrors.length === filteredTerrors.length) {
             setSelectedTerrors([]);
         } else {
@@ -299,12 +343,23 @@ export const WishedTerrorPanel: React.FC = () => {
         }
     };
 
-    const getFilteredTerrors = () => {
-        if (!searchQuery) return TERROR_NAMES;
-        return TERROR_NAMES.filter(name => 
+    const filteredTerrors = useMemo(() => {
+        const hiddenByAllRounds = new Set(
+            wishedTerrors
+                .filter(terror => !terror.round_key || terror.round_key.trim() === '')
+                .map(terror => terror.terror_name)
+        );
+
+        const visibleNames = TERROR_NAMES.filter(name => !hiddenByAllRounds.has(name));
+
+        if (!searchQuery) {
+            return visibleNames;
+        }
+
+        return visibleNames.filter(name =>
             name.toLowerCase().includes(searchQuery.toLowerCase())
         );
-    };
+    }, [searchQuery, wishedTerrors]);
 
     const handleRemove = async (id: string) => {
         if (!client || !playerId) return;
@@ -314,9 +369,79 @@ export const WishedTerrorPanel: React.FC = () => {
             const newList = wishedTerrors.filter(t => t.id !== id);
             await client.updateWishedTerrors(playerId, newList as any);
             setWishedTerrors(newList);
+            setSelectedRegisteredIds(prev => prev.filter(selectedId => selectedId !== id));
+            touchSyncTime();
+            pushToast({ type: 'info', message: '1件削除しました。' });
         } catch (error) {
             console.error('Failed to remove wished terror:', error);
             setError('削除に失敗しました');
+            pushToast({ type: 'error', message: '削除に失敗しました。' });
+        }
+    };
+
+    const handleToggleRegistered = (id: string) => {
+        setSelectedRegisteredIds(prev => {
+            if (prev.includes(id)) {
+                return prev.filter(existingId => existingId !== id);
+            }
+            return [...prev, id];
+        });
+    };
+
+    const handleToggleRegisteredAll = () => {
+        if (selectedRegisteredIds.length === wishedTerrors.length) {
+            setSelectedRegisteredIds([]);
+        } else {
+            setSelectedRegisteredIds(wishedTerrors.map(item => item.id));
+        }
+    };
+
+    const handleRemoveSelected = async () => {
+        if (!client || !playerId) return;
+        if (selectedRegisteredIds.length === 0) {
+            setError('削除するテラーを選択してください');
+            return;
+        }
+
+        setError(null);
+        try {
+            const selectedSet = new Set(selectedRegisteredIds);
+            const newList = wishedTerrors.filter(t => !selectedSet.has(t.id));
+
+            await client.updateWishedTerrors(playerId, newList as any);
+            setWishedTerrors(newList);
+            setSelectedRegisteredIds([]);
+            touchSyncTime();
+            pushToast({ type: 'info', message: `${selectedSet.size}件を一括削除しました。` });
+        } catch (error) {
+            console.error('Failed to remove selected wished terrors:', error);
+            setError('一括削除に失敗しました');
+            pushToast({ type: 'error', message: '一括削除に失敗しました。' });
+        }
+    };
+
+    const handleRemoveAll = async () => {
+        if (!client || !playerId) return;
+        if (wishedTerrors.length === 0) {
+            return;
+        }
+
+        const shouldDelete = window.confirm(`登録済みの${wishedTerrors.length}件をすべて削除します。よろしいですか？`);
+        if (!shouldDelete) {
+            return;
+        }
+
+        setError(null);
+        try {
+            await client.updateWishedTerrors(playerId, []);
+            setWishedTerrors([]);
+            setSelectedRegisteredIds([]);
+            touchSyncTime();
+            pushToast({ type: 'info', message: '登録済みテラーをすべて削除しました。' });
+        } catch (error) {
+            console.error('Failed to remove all wished terrors:', error);
+            setError('全削除に失敗しました');
+            pushToast({ type: 'error', message: '全削除に失敗しました。' });
         }
     };
 
@@ -365,7 +490,7 @@ export const WishedTerrorPanel: React.FC = () => {
                             className="btn-select-all"
                             type="button"
                         >
-                            {selectedTerrors.length === getFilteredTerrors().length && getFilteredTerrors().length > 0
+                            {selectedTerrors.length === filteredTerrors.length && filteredTerrors.length > 0
                                 ? 'すべて解除'
                                 : 'すべて選択'}
                         </button>
@@ -375,7 +500,7 @@ export const WishedTerrorPanel: React.FC = () => {
                     </div>
 
                     <div className="terror-checkbox-list">
-                        {getFilteredTerrors().map(name => (
+                        {filteredTerrors.map(name => (
                             <label key={name} className="terror-checkbox-item">
                                 <input
                                     type="checkbox"
@@ -398,13 +523,39 @@ export const WishedTerrorPanel: React.FC = () => {
             </div>
 
             <div className="list-section">
-                <h3>登録済み ({wishedTerrors.length}件)</h3>
+                <div className="selection-header">
+                    <h3>登録済み ({wishedTerrors.length}件)</h3>
+                    <div className="list-actions">
+                        <span className="selection-count">{selectedRegisteredIds.length}件選択中</span>
+                        <button
+                            onClick={handleRemoveSelected}
+                            className="btn-remove-selected"
+                            disabled={loading || selectedRegisteredIds.length === 0}
+                        >
+                            選択削除
+                        </button>
+                        <button
+                            onClick={handleRemoveAll}
+                            className="btn-remove-all"
+                            disabled={loading || wishedTerrors.length === 0}
+                        >
+                            全削除
+                        </button>
+                    </div>
+                </div>
                 {wishedTerrors.length === 0 ? (
                     <p className="empty-message">まだ登録されていません</p>
                 ) : (
                     <table className="wished-terror-table">
                         <thead>
                             <tr>
+                                <th className="registered-select-cell">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedRegisteredIds.length === wishedTerrors.length && wishedTerrors.length > 0}
+                                        onChange={handleToggleRegisteredAll}
+                                    />
+                                </th>
                                 <th>テラー名</th>
                                 <th>ラウンド</th>
                                 <th>操作</th>
@@ -412,7 +563,14 @@ export const WishedTerrorPanel: React.FC = () => {
                         </thead>
                         <tbody>
                             {wishedTerrors.map(terror => (
-                                <tr key={terror.id}>
+                                <tr key={terror.id} className={selectedRegisteredIds.includes(terror.id) ? 'registered-row-selected' : ''}>
+                                    <td className="registered-select-cell">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedRegisteredIds.includes(terror.id)}
+                                            onChange={() => handleToggleRegistered(terror.id)}
+                                        />
+                                    </td>
                                     <td>{terror.terror_name}</td>
                                     <td>{terror.round_key || '全ラウンド'}</td>
                                     <td>

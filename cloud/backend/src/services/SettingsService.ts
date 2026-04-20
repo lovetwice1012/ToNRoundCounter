@@ -38,20 +38,34 @@ export class SettingsService {
 
     async mergeSettings(
         userId: string,
-        localSettings: SettingsCategories,
-        remoteSettings: SettingsCategories
+        baseSettings: SettingsCategories,
+        overrideSettings: SettingsCategories
     ): Promise<SettingsCategories> {
-        // Simple merge strategy: remote wins for conflicts
-        const merged = { ...localSettings };
+        // Override values win for keys present in both. Caller decides which
+        // side is the authoritative override (e.g. local-wins or remote-wins).
+        const merged: SettingsCategories = { ...baseSettings };
 
-        for (const category in remoteSettings) {
-            if (typeof remoteSettings[category] === 'object' && !Array.isArray(remoteSettings[category])) {
-                merged[category] = {
-                    ...(merged[category] || {}),
-                    ...remoteSettings[category],
+        if (!overrideSettings || typeof overrideSettings !== 'object') {
+            return merged;
+        }
+
+        for (const category in overrideSettings) {
+            const overrideValue = (overrideSettings as any)[category];
+            const baseValue = (merged as any)[category];
+            if (
+                overrideValue !== null &&
+                typeof overrideValue === 'object' &&
+                !Array.isArray(overrideValue) &&
+                baseValue !== null &&
+                typeof baseValue === 'object' &&
+                !Array.isArray(baseValue)
+            ) {
+                (merged as any)[category] = {
+                    ...baseValue,
+                    ...overrideValue,
                 };
             } else {
-                merged[category] = remoteSettings[category];
+                (merged as any)[category] = overrideValue;
             }
         }
 
@@ -81,8 +95,9 @@ export class SettingsService {
             return { settings: remoteSettings, action: 'updated' };
         }
 
-        // Local is newer or conflict, merge and update
-        const merged = await this.mergeSettings(userId, localSettings, remoteSettings.categories);
+        // Local is newer than remote. Merge with local taking priority so the
+        // user does not lose their newer changes to a stale remote copy.
+        const merged = await this.mergeSettings(userId, remoteSettings.categories, localSettings);
         const settings = await this.updateSettings(userId, merged);
 
         return { settings, action: 'conflict_resolved' };
@@ -114,8 +129,23 @@ export class SettingsService {
     }
 
     private broadcastSettingsChange(userId: string, settings: Settings): void {
-        // In a real implementation, this would broadcast to all user's connected clients
-        // For now, we'll implement instance-level broadcasting
+        try {
+            // Notify all websocket clients connected for this user so the UI
+            // can refresh its synced state without polling.
+            if (this.wsHandler && typeof this.wsHandler.broadcastToUser === 'function') {
+                this.wsHandler.broadcastToUser(userId, {
+                    stream: 'settings.updated',
+                    data: {
+                        user_id: userId,
+                        version: settings.version,
+                        categories: settings.categories,
+                    },
+                    timestamp: new Date().toISOString(),
+                });
+            }
+        } catch (err) {
+            logger.warn({ err, userId }, 'Failed to broadcast settings change');
+        }
         logger.debug({ userId, version: settings.version }, 'Broadcasting settings change');
     }
 }

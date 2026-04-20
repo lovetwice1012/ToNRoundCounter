@@ -18,7 +18,13 @@ namespace ToNRoundCounter.UI
 
         public override void SetValue(string value)
         {
-            anglePanel.DisplayText = value ?? string.Empty;
+            string nextValue = value ?? string.Empty;
+            if (string.Equals(anglePanel.DisplayText, nextValue, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            anglePanel.DisplayText = nextValue;
             AdjustSizeToContent();
         }
 
@@ -107,11 +113,18 @@ namespace ToNRoundCounter.UI
                 get => angle;
                 set
                 {
-                    angle = value % 360f;
-                    if (angle < 0)
+                    float normalized = value % 360f;
+                    if (normalized < 0)
                     {
-                        angle += 360f;
+                        normalized += 360f;
                     }
+
+                    if (Math.Abs(normalized - angle) < 0.01f)
+                    {
+                        return;
+                    }
+
+                    angle = normalized;
                     Invalidate();
                 }
             }

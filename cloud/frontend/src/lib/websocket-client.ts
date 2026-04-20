@@ -21,6 +21,8 @@ export interface WebSocketMessage {
 export interface Session {
     session_token: string;
     player_id: string;
+    /** Internal DB user id — returned by validateSession, login, and loginWithOneTimeToken. */
+    user_id?: string;
     expires_at: string;
 }
 
@@ -48,7 +50,7 @@ export interface PlayerState {
 }
 
 export type StreamCallback = (data: any) => void;
-export type ConnectionStateCallback = (state: 'connected' | 'disconnected' | 'reconnecting') => void;
+export type ConnectionStateCallback = (state: 'connected' | 'disconnected' | 'reconnecting' | 'auth-required') => void;
 
 export class ToNRoundCloudClient {
     private ws: WebSocket | null = null;
@@ -67,6 +69,22 @@ export class ToNRoundCloudClient {
     private streamCallbacks = new Map<string, Set<StreamCallback>>();
     private connectionStateCallbacks = new Set<ConnectionStateCallback>();
     private heartbeatInterval: NodeJS.Timeout | null = null;
+    private reconnectTimer: NodeJS.Timeout | null = null;
+    private manualDisconnect = false;
+    /** Set when a disconnect was triggered by an auth error (AUTH_REQUIRED etc.). */
+    private authErrorDisconnect = false;
+    /** Internal DB user id (ws.userId on the server) — returned by every auth RPC. */
+    private _userId: string | null = null;
+
+    get userId(): string | null {
+        return this._userId;
+    }
+
+    private clearSession(): void {
+        this.sessionToken = null;
+        this.playerId = null;
+        this._userId = null;
+    }
 
     constructor(url: string) {
         this.url = url;
@@ -76,6 +94,31 @@ export class ToNRoundCloudClient {
      * Connect to WebSocket server
      */
     async connect(): Promise<void> {
+        this.manualDisconnect = false;
+        this.clearReconnectTimer();
+
+        // Guard against double-connect: if a socket already exists (open or
+        // still connecting), close it before opening a new one. Without this,
+        // rapid `connect()` calls (auto-reconnect timer racing with manual
+        // re-login, etc.) leave dangling WebSocket instances whose `onclose`
+        // handlers later flip `connected -> disconnected` and corrupt state.
+        if (this.ws) {
+            try {
+                // Detach handlers so the orphaned socket can't drive state.
+                this.ws.onopen = null;
+                this.ws.onmessage = null;
+                this.ws.onerror = null;
+                this.ws.onclose = null;
+                if (this.ws.readyState === WebSocket.OPEN ||
+                    this.ws.readyState === WebSocket.CONNECTING) {
+                    this.ws.close();
+                }
+            } catch {
+                /* ignore */
+            }
+            this.ws = null;
+        }
+
         return new Promise((resolve, reject) => {
             try {
                 this.ws = new WebSocket(this.url);
@@ -100,7 +143,10 @@ export class ToNRoundCloudClient {
                     console.log('[ToNRoundCloud] Disconnected');
                     this.notifyConnectionState('disconnected');
                     this.stopHeartbeat();
-                    this.attemptReconnect();
+                    this.rejectAllPendingRequests(new Error('Connection closed'));
+                    if (!this.manualDisconnect) {
+                        this.attemptReconnect();
+                    }
                 };
             } catch (error) {
                 reject(error);
@@ -112,10 +158,13 @@ export class ToNRoundCloudClient {
      * Disconnect from WebSocket server
      */
     disconnect(): void {
+        this.manualDisconnect = true;
+        this.clearReconnectTimer();
         if (this.ws) {
             this.ws.close();
             this.ws = null;
         }
+        this.rejectAllPendingRequests(new Error('Disconnected by client'));
         this.stopHeartbeat();
     }
 
@@ -142,6 +191,7 @@ export class ToNRoundCloudClient {
         const params: any = {
             player_id: playerId,
             client_version: clientVersion,
+            client_type: 'web',
         };
 
         if (accessKey) {
@@ -152,6 +202,9 @@ export class ToNRoundCloudClient {
 
         this.sessionToken = result.session_token;
         this.playerId = result.player_id;
+        if (typeof result.user_id === 'string') {
+            this._userId = result.user_id;
+        }
 
         return result;
     }
@@ -163,10 +216,14 @@ export class ToNRoundCloudClient {
         const result = await this.call('auth.loginWithOneTimeToken', {
             token,
             client_version: clientVersion,
+            client_type: 'web',
         });
 
         this.sessionToken = result.session_token;
         this.playerId = result.player_id;
+        if (typeof result.user_id === 'string') {
+            this._userId = result.user_id;
+        }
 
         console.log('[ToNRoundCloud] Session token set after login:', !!this.sessionToken, 'Player ID:', this.playerId);
 
@@ -178,8 +235,7 @@ export class ToNRoundCloudClient {
      */
     async logout(): Promise<void> {
         await this.call('auth.logout', {});
-        this.sessionToken = null;
-        this.playerId = null;
+        this.clearSession();
     }
 
     /**
@@ -198,10 +254,14 @@ export class ToNRoundCloudClient {
         const result = await this.call('auth.validateSession', {
             session_token: sessionToken,
             player_id: playerId,
+            client_type: 'web',
         });
 
         this.sessionToken = result.session_token;
         this.playerId = result.player_id;
+        if (typeof result.user_id === 'string') {
+            this._userId = result.user_id;
+        }
 
         console.log('[ToNRoundCloud] Session validated:', !!this.sessionToken, 'Player ID:', this.playerId);
 
@@ -243,11 +303,23 @@ export class ToNRoundCloudClient {
     }
 
     // Player State
-    async updatePlayerState(playerId: string, state: string, data: any = {}): Promise<void> {
+    /**
+     * Send a player state update for the given instance.
+     *
+     * Backend signature is `{ instance_id, player_state: { ... } }`. The previous
+     * implementation sent `{ player_id, state, ...data }` which the server always
+     * rejected with `instance_id and player_state are required`.
+     */
+    async updatePlayerState(instanceId: string, state: Partial<PlayerState> & Record<string, any>): Promise<void> {
+        const { player_id, ...rest } = state;
         return await this.call('player.state.update', {
-            player_id: playerId,
-            state,
-            ...data,
+            instance_id: instanceId,
+            player_state: {
+                ...rest,
+                // The server overwrites player_id with the authenticated user, but
+                // include it here so older middleware/logging still sees a value.
+                player_id: player_id ?? this.playerId ?? undefined,
+            },
         });
     }
 
@@ -259,8 +331,8 @@ export class ToNRoundCloudClient {
     }
 
     async getAllPlayerStates(instanceId: string): Promise<PlayerState[]> {
-        const result = await this.call('player.states.get', { instanceId });
-        return result.player_states || [];
+        const result = await this.call('player.states.get', { instance_id: instanceId, instanceId });
+        return Array.isArray(result?.player_states) ? result.player_states : [];
     }
 
     async getCurrentInstance(playerId?: string): Promise<any> {
@@ -277,27 +349,30 @@ export class ToNRoundCloudClient {
         });
     }
 
-    async respondToThreat(threatId: string, playerId: string, decision: 'survive' | 'cancel' | 'skip' | 'execute' | 'timeout'): Promise<void> {
+    async respondToThreat(threatId: string, _playerId: string, decision: 'survive' | 'cancel' | 'skip' | 'execute' | 'timeout'): Promise<void> {
+        // Player identity is taken from the authenticated session on the server.
         return await this.call('threat.response', {
             threat_id: threatId,
-            player_id: playerId,
             decision,
         });
     }
 
     // Voting
-    async startVoting(instanceId: string, terrorName: string, expiresAt: Date): Promise<any> {
+    async startVoting(instanceId: string, terrorName: string, expiresAt: Date, roundKey?: string): Promise<any> {
         return await this.call('coordinated.voting.start', {
             instance_id: instanceId,
             terror_name: terrorName,
             expires_at: expiresAt.toISOString(),
+            round_key: roundKey?.trim() || undefined,
         });
     }
 
-    async submitVote(campaignId: string, playerId: string, decision: 'Proceed' | 'Cancel'): Promise<void> {
+    async submitVote(campaignId: string, _playerId: string, decision: 'Continue' | 'Skip' | 'Proceed' | 'Cancel'): Promise<void> {
+        // The server identifies the voter from the authenticated session
+        // (ws.userId), so any client-supplied player_id is ignored. Sending it
+        // is pure spoofing surface, so we omit it here.
         return await this.call('coordinated.voting.vote', {
             campaign_id: campaignId,
-            player_id: playerId,
             decision,
         });
     }
@@ -306,22 +381,66 @@ export class ToNRoundCloudClient {
         return await this.call('coordinated.voting.getCampaign', { campaign_id: campaignId });
     }
 
+    /**
+     * Returns the latest still-active (PENDING, not yet expired) voting
+     * campaign for an instance, or null if none. Lets the dashboard render
+     * voting UI even when the user opens it after a campaign has started.
+     */
+    async getActiveVotingCampaign(instanceId: string): Promise<any | null> {
+        const result = await this.call('coordinated.voting.getActive', { instance_id: instanceId });
+        return result?.campaign ?? null;
+    }
+
     async getVotingVotes(campaignId: string): Promise<any[]> {
         const result = await this.call('coordinated.voting.getVotes', { campaign_id: campaignId });
-        return result.votes;
+        return Array.isArray(result?.votes) ? result.votes : [];
+    }
+
+    async getCoordinatedAutoSuicideState(instanceId: string): Promise<any> {
+        return await this.call('coordinated.autoSuicide.get', { instance_id: instanceId });
+    }
+
+    async updateCoordinatedAutoSuicideState(instanceId: string, state: any): Promise<any> {
+        return await this.call('coordinated.autoSuicide.update', {
+            instance_id: instanceId,
+            state,
+        });
     }
 
     // Wished Terrors
-    async updateWishedTerrors(playerId: string, wishedTerrors: string[]): Promise<void> {
+    // The backend stores per-player wishes as objects ({ id, terror_name, round_key, ... }).
+    // Older revisions of this client treated entries as raw strings, which silently
+    // dropped round_key matching and caused INSERT failures on the server (NOT NULL
+    // terror_name) when the UI sent a list of strings. The server now normalizes
+    // both shapes; we keep the rich object shape on the client so the panel UI can
+    // display/edit round_key per entry.
+    async updateWishedTerrors(playerId: string, wishedTerrors: Array<string | { id?: string; terror_name: string; round_key?: string }>): Promise<void> {
         return await this.call('wished.terrors.update', {
-            player_id: playerId,
             wished_terrors: wishedTerrors,
         });
     }
 
-    async getWishedTerrors(playerId: string): Promise<string[]> {
-        const result = await this.call('wished.terrors.get', { player_id: playerId });
-        return result.wished_terrors;
+    async getWishedTerrors(_playerId?: string): Promise<Array<{ id: string; terror_name: string; round_key: string; created_at?: string }>> {
+        const result = await this.call('wished.terrors.get', {});
+        if (!result || !Array.isArray(result.wished_terrors)) {
+            return [];
+        }
+        return result.wished_terrors
+            .map((entry: any) => {
+                if (typeof entry === 'string') {
+                    return { id: entry, terror_name: entry, round_key: '' };
+                }
+                if (entry && typeof entry === 'object' && typeof entry.terror_name === 'string') {
+                    return {
+                        id: typeof entry.id === 'string' ? entry.id : entry.terror_name,
+                        terror_name: entry.terror_name,
+                        round_key: typeof entry.round_key === 'string' ? entry.round_key : '',
+                        created_at: entry.created_at,
+                    };
+                }
+                return null;
+            })
+            .filter((e: any): e is { id: string; terror_name: string; round_key: string } => e !== null);
     }
 
     async findDesirePlayersForTerror(instanceId: string, terrorName: string, roundKey: string = ''): Promise<Array<{ player_id: string; player_name: string }>> {
@@ -330,47 +449,50 @@ export class ToNRoundCloudClient {
             terror_name: terrorName,
             round_key: roundKey,
         });
-        return result.desire_players;
+        return Array.isArray(result?.desire_players) ? result.desire_players : [];
     }
 
     // Profile
     async getProfile(playerId: string): Promise<any> {
-        return await this.call('profile.get', { player_id: playerId });
+        return await this.call('profile.get', {});
     }
 
-    async updateProfile(playerId: string, updates: {
+    async updateProfile(_playerId: string, updates: {
         player_name?: string;
         skill_level?: number;
-        terror_stats?: any;
-        total_rounds?: number;
-        total_survived?: number;
     }): Promise<any> {
-        return await this.call('profile.update', {
-            player_id: playerId,
-            ...updates,
-        });
+        // Stats fields (terror_stats/total_rounds/total_survived) are aggregated
+        // server-side from gameplay events and are not directly settable by the
+        // client — sending them is rejected by the backend.
+        const payload: Record<string, any> = {};
+        if (typeof updates.player_name === 'string') {
+            payload.player_name = updates.player_name;
+        }
+        if (typeof updates.skill_level === 'number') {
+            payload.skill_level = updates.skill_level;
+        }
+        return await this.call('profile.update', payload);
     }
 
     // Settings
     async getSettings(userId?: string): Promise<any> {
-        return await this.call('settings.get', { user_id: userId });
+        return await this.call('settings.get', {});
     }
 
     async updateSettings(userId: string, settings: any): Promise<any> {
-        return await this.call('settings.update', { user_id: userId, settings });
+        return await this.call('settings.update', { settings });
     }
 
     async syncSettings(userId: string, localSettings: any, localVersion: number): Promise<any> {
         return await this.call('settings.sync', {
-            user_id: userId,
             local_settings: localSettings,
             local_version: localVersion,
         });
     }
 
     async getSettingsHistory(userId: string, limit: number = 10): Promise<any[]> {
-        const result = await this.call('settings.history', { user_id: userId, limit });
-        return result.history;
+        const result = await this.call('settings.history', { limit });
+        return Array.isArray(result?.history) ? result.history : [];
     }
 
     // Monitoring
@@ -382,30 +504,28 @@ export class ToNRoundCloudClient {
     }
 
     async getMonitoringStatus(userId?: string, limit: number = 10): Promise<any> {
-        return await this.call('monitoring.status', { user_id: userId, limit });
+        return await this.call('monitoring.status', { limit });
     }
 
     async getMonitoringErrors(userId?: string, severity?: string, limit: number = 50): Promise<any> {
-        return await this.call('monitoring.errors', { user_id: userId, severity, limit });
+        return await this.call('monitoring.errors', { severity, limit });
     }
 
     // Remote Control
-    async createRemoteCommand(instanceId: string, commandType: string, action: string, parameters: any = {}, priority: number = 0): Promise<any> {
-        return await this.call('remote.command.create', {
-            instance_id: instanceId,
-            command_type: commandType,
-            action,
-            parameters,
-            priority,
-        });
+    // NOTE: The backend permanently disabled remote.command.* endpoints
+    // (arbitrary remote command execution is a critical security risk).
+    // These wrappers are kept only to surface a clear, actionable error if any
+    // legacy UI still tries to call them — they no longer hit the wire.
+    async createRemoteCommand(_instanceId: string, _commandType: string, _action: string, _parameters: any = {}, _priority: number = 0): Promise<any> {
+        throw new Error('Remote control has been disabled for security reasons.');
     }
 
-    async executeRemoteCommand(commandId: string): Promise<any> {
-        return await this.call('remote.command.execute', { command_id: commandId });
+    async executeRemoteCommand(_commandId: string): Promise<any> {
+        throw new Error('Remote control has been disabled for security reasons.');
     }
 
-    async getRemoteCommandStatus(commandId?: string, instanceId?: string): Promise<any> {
-        return await this.call('remote.command.status', { command_id: commandId, instance_id: instanceId });
+    async getRemoteCommandStatus(_commandId?: string, _instanceId?: string): Promise<any> {
+        throw new Error('Remote control has been disabled for security reasons.');
     }
 
     // Analytics
@@ -433,6 +553,15 @@ export class ToNRoundCloudClient {
         return await this.call('analytics.trends', { group_by: groupBy, limit });
     }
 
+    async getRoundTypeAnalytics(timeRange?: { start: Date; end: Date }): Promise<any> {
+        return await this.call('analytics.roundTypes', {
+            time_range: timeRange ? {
+                start: timeRange.start.toISOString(),
+                end: timeRange.end.toISOString(),
+            } : undefined,
+        });
+    }
+
     async getInstanceAnalytics(instanceId: string): Promise<any> {
         return await this.call('analytics.instance', { instance_id: instanceId });
     }
@@ -458,8 +587,15 @@ export class ToNRoundCloudClient {
         });
     }
 
-    async listBackups(userId?: string): Promise<any[]> {
-        return await this.call('backup.list', { user_id: userId });
+    async listBackups(): Promise<any[]> {
+        const result = await this.call('backup.list', {});
+        if (Array.isArray(result)) {
+            return result;
+        }
+        if (result && Array.isArray(result.backups)) {
+            return result.backups;
+        }
+        return [];
     }
 
     // Client Status
@@ -505,6 +641,14 @@ export class ToNRoundCloudClient {
         return this.subscribe('coordinated.voting.resolved', callback);
     }
 
+    onCoordinatedAutoSuicideUpdated(callback: StreamCallback): () => void {
+        return this.subscribe('coordinated.autoSuicide.updated', callback);
+    }
+
+    onRoundReported(callback: StreamCallback): () => void {
+        return this.subscribe('round.reported', callback);
+    }
+
     // Connection State
     onConnectionStateChange(callback: ConnectionStateCallback): () => void {
         this.connectionStateCallbacks.add(callback);
@@ -520,13 +664,8 @@ export class ToNRoundCloudClient {
         }
 
         const id = `${++this.messageId}`;
-        
-        // セッショントークンがある場合はparamsに追加
-        const enhancedParams = this.sessionToken 
-            ? { ...params, session_token: this.sessionToken }
-            : params;
-        
-        const message: WebSocketMessage = { id, rpc, params: enhancedParams };
+
+        const message: WebSocketMessage = { id, rpc, params };
 
         // デバッグログ
         console.log('[ToNRoundCloud] Sending RPC:', rpc, 'with session token:', !!this.sessionToken);
@@ -538,7 +677,14 @@ export class ToNRoundCloudClient {
             }, 30000);
 
             this.pendingRequests.set(id, { resolve, reject, timeout });
-            this.ws!.send(JSON.stringify(message));
+
+            try {
+                this.ws!.send(JSON.stringify(message));
+            } catch (sendError) {
+                clearTimeout(timeout);
+                this.pendingRequests.delete(id);
+                reject(sendError);
+            }
         });
     }
 
@@ -552,6 +698,9 @@ export class ToNRoundCloudClient {
             const callbacks = this.streamCallbacks.get(stream);
             if (callbacks) {
                 callbacks.delete(callback);
+                if (callbacks.size === 0) {
+                    this.streamCallbacks.delete(stream);
+                }
             }
         };
     }
@@ -567,6 +716,24 @@ export class ToNRoundCloudClient {
                 this.pendingRequests.delete(message.id);
 
                 if (message.error) {
+                    // Detect auth expiry / unauthenticated errors and clear session
+                    const errCode = String(message.error.code || '').toUpperCase();
+                    const errMsg = String(message.error.message || '');
+                    if (errCode === 'AUTH_REQUIRED' ||
+                        errCode === 'UNAUTHORIZED' ||
+                        errCode === 'INVALID_SESSION' ||
+                        /authentication required|invalid session|unauthorized/i.test(errMsg)) {
+                        console.warn('[ToNRoundCloud] Auth error detected — will attempt re-authentication on reconnect');
+                        // Don't clearSession() yet — keep the token so that
+                        // attemptReconnect() can try to re-validate / re-attach
+                        // the session on a fresh socket. Only clear if
+                        // re-validation actually fails.
+                        this.authErrorDisconnect = true;
+                        // Force a real socket close so the reconnect loop runs.
+                        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                            try { this.ws.close(4001, 'auth-required'); } catch { /* ignore */ }
+                        }
+                    }
                     pending.reject(new Error(`${message.error.code}: ${message.error.message}`));
                 } else {
                     pending.resolve(message.result);
@@ -577,7 +744,16 @@ export class ToNRoundCloudClient {
             if (message.stream) {
                 const callbacks = this.streamCallbacks.get(message.stream);
                 if (callbacks) {
-                    callbacks.forEach(callback => callback(message.data));
+                    callbacks.forEach(callback => {
+                        try {
+                            callback(message.data);
+                        } catch (callbackError) {
+                            console.error('[ToNRoundCloud] Stream callback failed:', {
+                                stream: message.stream,
+                                error: callbackError,
+                            });
+                        }
+                    });
                 }
             }
         } catch (error) {
@@ -586,12 +762,10 @@ export class ToNRoundCloudClient {
     }
 
     private startHeartbeat(): void {
-        this.heartbeatInterval = setInterval(() => {
-            if (this.isConnected()) {
-                // WebSocket ping is handled by the browser
-                // We just keep the connection alive
-            }
-        }, 25000);
+        // The server (`WebSocketHandler.startHeartbeat`) drives the keep-alive
+        // by sending WS PING frames every 60s, which the browser automatically
+        // answers with a PONG. There is nothing for the client to do here, so
+        // we no longer schedule a no-op interval that wastes a timer slot.
     }
 
     private stopHeartbeat(): void {
@@ -602,6 +776,46 @@ export class ToNRoundCloudClient {
     }
 
     private attemptReconnect(): void {
+        // ── Auth-error path: try exactly ONE reconnect + re-validate ──
+        // If the session token is still valid (e.g. server restarted but
+        // tokens persist in DB), the single attempt will succeed.  If the
+        // token is truly expired, we immediately force-logout instead of
+        // burning through all retry attempts with a stale credential.
+        if (this.authErrorDisconnect) {
+            this.authErrorDisconnect = false;
+
+            if (!this.sessionToken || !this.playerId) {
+                // No credentials to re-validate — force logout immediately.
+                console.warn('[ToNRoundCloud] Auth error but no stored credentials — forcing logout');
+                this.forceLogout();
+                return;
+            }
+
+            console.log('[ToNRoundCloud] Auth error — attempting single re-authentication...');
+            this.notifyConnectionState('reconnecting');
+
+            this.clearReconnectTimer();
+            this.reconnectTimer = setTimeout(() => {
+                this.connect()
+                    .then(async () => {
+                        try {
+                            await this.validateSession(this.sessionToken!, this.playerId!);
+                            console.log('[ToNRoundCloud] Session re-validated after auth error');
+                            this.reconnectAttempts = 0;
+                        } catch (validateErr: any) {
+                            console.warn('[ToNRoundCloud] Session re-validation failed — forcing logout:', validateErr?.message || validateErr);
+                            this.forceLogout();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('[ToNRoundCloud] Reconnect failed during auth recovery:', error);
+                        this.forceLogout();
+                    });
+            }, 1000); // single short delay
+            return;
+        }
+
+        // ── Normal (network) reconnect with exponential backoff ──
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
             console.error('[ToNRoundCloud] Max reconnect attempts reached');
             return;
@@ -613,14 +827,74 @@ export class ToNRoundCloudClient {
         const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
         console.log(`[ToNRoundCloud] Reconnecting in ${delay}ms... (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
 
-        setTimeout(() => {
-            this.connect().catch(error => {
-                console.error('[ToNRoundCloud] Reconnect failed:', error);
-            });
+        this.clearReconnectTimer();
+        this.reconnectTimer = setTimeout(() => {
+            this.connect()
+                .then(async () => {
+                    // After auto-reconnect, the new socket is unauthenticated.
+                    // Try to re-attach the existing session silently.
+                    if (this.sessionToken && this.playerId) {
+                        try {
+                            await this.validateSession(this.sessionToken, this.playerId);
+                            console.log('[ToNRoundCloud] Session re-validated after reconnect');
+                        } catch (validateErr: any) {
+                            console.warn('[ToNRoundCloud] Session re-validation failed — forcing logout:', validateErr?.message || validateErr);
+                            // Token is stale — don't waste remaining retries.
+                            this.forceLogout();
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('[ToNRoundCloud] Reconnect failed:', error);
+                });
         }, delay);
     }
 
-    private notifyConnectionState(state: 'connected' | 'disconnected' | 'reconnecting'): void {
-        this.connectionStateCallbacks.forEach(callback => callback(state));
+    /**
+     * Cleanly tear down the connection and signal the UI to redirect to login.
+     * Sets manualDisconnect so the socket's onclose handler does not trigger
+     * another reconnect cycle.
+     */
+    private forceLogout(): void {
+        this.manualDisconnect = true;
+        this.clearReconnectTimer();
+        this.clearSession();
+        this.stopHeartbeat();
+        if (this.ws) {
+            try {
+                // Detach onclose to prevent an intermediate 'disconnected'
+                // notification before we emit 'auth-required'.
+                this.ws.onclose = null;
+                this.ws.close();
+            } catch { /* ignore */ }
+            this.ws = null;
+        }
+        this.rejectAllPendingRequests(new Error('Session expired'));
+        this.notifyConnectionState('auth-required');
+    }
+
+    private clearReconnectTimer(): void {
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+    }
+
+    private rejectAllPendingRequests(error: Error): void {
+        this.pendingRequests.forEach(pending => {
+            clearTimeout(pending.timeout);
+            pending.reject(error);
+        });
+        this.pendingRequests.clear();
+    }
+
+    private notifyConnectionState(state: 'connected' | 'disconnected' | 'reconnecting' | 'auth-required'): void {
+        this.connectionStateCallbacks.forEach(callback => {
+            try {
+                callback(state);
+            } catch (error) {
+                console.error('[ToNRoundCloud] Connection state callback failed:', error);
+            }
+        });
     }
 }

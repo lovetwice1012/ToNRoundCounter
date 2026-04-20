@@ -6,7 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 
 export const InstanceList: React.FC = () => {
-    const { client, instances, currentInstance, setCurrentInstance } = useAppStore();
+    const { client, instances, currentInstance, setCurrentInstance, pushToast, touchSyncTime } = useAppStore();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +41,7 @@ export const InstanceList: React.FC = () => {
             const list = await client.listInstances();
             // 配列であることを保証
             useAppStore.getState().setInstances(Array.isArray(list) ? list : []);
+            touchSyncTime();
         } catch (error) {
             console.error('Failed to load instances:', error);
             setError('インスタンスの読み込みに失敗しました');
@@ -57,10 +58,11 @@ export const InstanceList: React.FC = () => {
         try {
             const instance = await client.createInstance(6);
             await loadInstances();
-            alert('インスタンスを作成しました: ' + instance.instance_id);
+            pushToast({ type: 'success', message: `インスタンスを作成しました: ${instance.instance_id}` });
         } catch (error) {
             console.error('Failed to create instance:', error);
             setError('インスタンスの作成に失敗しました');
+            pushToast({ type: 'error', message: 'インスタンス作成に失敗しました。' });
         }
     };
 
@@ -72,10 +74,12 @@ export const InstanceList: React.FC = () => {
             const instances = await client.listInstances();
             const joined = instances.find((i: any) => i.instance_id === instanceId);
             setCurrentInstance(joined);
-            alert('インスタンスに参加しました');
+            touchSyncTime();
+            pushToast({ type: 'success', message: 'インスタンスに参加しました。' });
         } catch (error) {
             console.error('Failed to join instance:', error);
             setError('インスタンスへの参加に失敗しました');
+            pushToast({ type: 'error', message: 'インスタンスへの参加に失敗しました。' });
         }
     };
 
@@ -86,10 +90,11 @@ export const InstanceList: React.FC = () => {
             await client.leaveInstance(instanceId);
             setCurrentInstance(null);
             await loadInstances();
-            alert('インスタンスから離脱しました');
+            pushToast({ type: 'info', message: 'インスタンスから離脱しました。' });
         } catch (error) {
             console.error('Failed to leave instance:', error);
             setError('インスタンスからの離脱に失敗しました');
+            pushToast({ type: 'error', message: 'インスタンスからの離脱に失敗しました。' });
         }
     };
 
@@ -104,10 +109,11 @@ export const InstanceList: React.FC = () => {
                 max_players: parseInt(newMaxPlayers, 10),
             });
             await loadInstances();
-            alert('インスタンスを更新しました');
+            pushToast({ type: 'success', message: 'インスタンス設定を更新しました。' });
         } catch (error) {
             console.error('Failed to update instance:', error);
             setError('インスタンスの更新に失敗しました');
+            pushToast({ type: 'error', message: 'インスタンス更新に失敗しました。' });
         }
     };
 
@@ -122,10 +128,11 @@ export const InstanceList: React.FC = () => {
                 setCurrentInstance(null);
             }
             await loadInstances();
-            alert('インスタンスを削除しました');
+            pushToast({ type: 'info', message: 'インスタンスを削除しました。' });
         } catch (error) {
             console.error('Failed to delete instance:', error);
             setError('インスタンスの削除に失敗しました');
+            pushToast({ type: 'error', message: 'インスタンス削除に失敗しました。' });
         }
     };
 

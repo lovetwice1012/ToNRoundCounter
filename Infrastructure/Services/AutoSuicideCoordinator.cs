@@ -236,7 +236,7 @@ namespace ToNRoundCounter.Infrastructure.Services
                 return false;
             }
 
-            int decision = EvaluateAutoSuicideDecision(round.RoundType, round.TerrorKey, out bool hasPendingDelayed);
+            int decision = EvaluateAutoSuicideDecision(round.RoundType ?? string.Empty, round.TerrorKey, out bool hasPendingDelayed);
             return decision > 0;
         }
 

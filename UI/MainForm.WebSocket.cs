@@ -16,11 +16,18 @@ namespace ToNRoundCounter.UI
     {
         private ClientWebSocket? instanceWsConnection;
         private static readonly SemaphoreSlim sendAlertSemaphore = new SemaphoreSlim(1, 1);
+        private readonly object _instanceConnectionSync = new object();
+        private Task? _instanceReconnectTask;
         private int connected = 0;
         private bool followAutoSelfKill = false;
 
         private async Task ConnectToInstance(string instanceValue)
         {
+            if (_cancellation.Token.IsCancellationRequested)
+            {
+                return;
+            }
+
             // NOTE: Remote instance join/leave removed due to VRChat platform constraints
             // VRChat does not allow external applications to control world joining
             // Players must manually join worlds through VRChat client
@@ -31,22 +38,26 @@ namespace ToNRoundCounter.UI
             // - Statistics collection
             // - Voting system coordination
 
-            // Legacy TonSprink backend connection
-            string url = $"ws://xy.f5.si:8880/ToNRoundCounter/{instanceValue}";
-            instanceWsConnection = new ClientWebSocket();
+            // Legacy external backend has been retired; use configured cloud endpoint if needed.
+            string url = string.IsNullOrWhiteSpace(_settings.CloudWebSocketUrl)
+                ? "ws://localhost:3000/ws"
+                : _settings.CloudWebSocketUrl;
+            var socket = new ClientWebSocket();
+            var previousSocket = Interlocked.Exchange(ref instanceWsConnection, socket);
+            previousSocket?.Dispose();
             try
             {
                 LogUi($"Connecting to shared instance stream at {url}.");
-                await instanceWsConnection.ConnectAsync(new Uri(url), _cancellation.Token);
+                await socket.ConnectAsync(new Uri(url), _cancellation.Token);
                 LogUi("Instance WebSocket connection established.", LogEventLevel.Debug);
-                while (instanceWsConnection.State == WebSocketState.Open)
+                while (socket.State == WebSocketState.Open)
                 {
                     var buffer = new byte[8192];
-                    WebSocketReceiveResult result = await instanceWsConnection.ReceiveAsync(new ArraySegment<byte>(buffer), _cancellation.Token);
+                    WebSocketReceiveResult result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), _cancellation.Token);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
                         LogUi("Instance WebSocket close frame received. Closing connection.", LogEventLevel.Debug);
-                        await instanceWsConnection.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", _cancellation.Token);
+                        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
                         break;
                     }
                     else
@@ -55,7 +66,7 @@ namespace ToNRoundCounter.UI
                         messageBytes.AddRange(buffer.Take(result.Count));
                         while (!result.EndOfMessage)
                         {
-                            result = await instanceWsConnection.ReceiveAsync(new ArraySegment<byte>(buffer), _cancellation.Token);
+                            result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), _cancellation.Token);
                             messageBytes.AddRange(buffer.Take(result.Count));
                         }
                         string msg = Encoding.UTF8.GetString(messageBytes.ToArray());
@@ -63,6 +74,10 @@ namespace ToNRoundCounter.UI
                         ProcessInstanceMessage(msg);
                     }
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                LogUi("Instance WebSocket connection cancelled.", LogEventLevel.Debug);
             }
             catch (Exception ex)
             {
@@ -74,15 +89,53 @@ namespace ToNRoundCounter.UI
             }
             finally
             {
-                if (instanceWsConnection != null)
+                if (socket.State == WebSocketState.Open || socket.State == WebSocketState.CloseReceived)
                 {
-                    try { await instanceWsConnection.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", _cancellation.Token); } catch { }
-                    instanceWsConnection.Dispose();
-                    instanceWsConnection = null;
-                    LogUi("Instance WebSocket connection disposed. Scheduling reconnect.", LogEventLevel.Warning);
-                    await Task.Delay(300);
-                    _ = Task.Run(() => ConnectToInstance(instanceValue));
+                    try { await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None); } catch { }
                 }
+
+                socket.Dispose();
+
+                Interlocked.CompareExchange(ref instanceWsConnection, null, socket);
+
+                if (!_cancellation.Token.IsCancellationRequested)
+                {
+                    LogUi("Instance WebSocket connection disposed. Scheduling reconnect.", LogEventLevel.Warning);
+                    ScheduleInstanceReconnect(instanceValue);
+                }
+            }
+        }
+
+        private void ScheduleInstanceReconnect(string instanceValue)
+        {
+            lock (_instanceConnectionSync)
+            {
+                if (_instanceReconnectTask != null && !_instanceReconnectTask.IsCompleted)
+                {
+                    return;
+                }
+
+                _instanceReconnectTask = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(300, _cancellation.Token);
+                        if (!_cancellation.Token.IsCancellationRequested)
+                        {
+                            await ConnectToInstance(instanceValue);
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                    }
+                    finally
+                    {
+                        lock (_instanceConnectionSync)
+                        {
+                            _instanceReconnectTask = null;
+                        }
+                    }
+                });
             }
         }
 
@@ -105,19 +158,16 @@ namespace ToNRoundCounter.UI
                 else if (type == "alertIncoming")
                 {
                     LogUi("Instance alert incoming event received.");
-                    using (var sender = new OscSender(IPAddress.Parse("127.0.0.1"), 9000))
-                    {
-                        _logger.LogEvent("alertIncoming", "start process");
-                        float alertNum = json.Value<float>("alertNum");
-                        bool isLocal = json.Value<bool>("isLocal");
-                        _ = Task.Run(() => SendAlertOscMessagesAsync(alertNum, isLocal));
-                    }
+                    _logger.LogEvent("alertIncoming", "start process");
+                    float alertNum = json.Value<float>("alertNum");
+                    bool isLocal = json.Value<bool>("isLocal");
+                    RunBackgroundOperation(() => SendAlertOscMessagesAsync(alertNum, isLocal), "InstanceAlertOsc", LogEventLevel.Debug);
                 }
                 else if (type == "performFollowAutoSucide")
                 {
                     if (followAutoSelfKill)
                     {
-                        _ = Task.Run(() => PerformAutoSuicide());
+                        RunBackgroundOperation(() => PerformAutoSuicide(), "FollowAutoSuicide", LogEventLevel.Debug);
                     }
                 }
             }
@@ -178,6 +228,7 @@ namespace ToNRoundCounter.UI
                 using (var sender = new OscSender(IPAddress.Parse("127.0.0.1"), 0, 9000))
                 {
                     _logger.LogEvent("disableAutoFollofSelfKillOscMessagesAsync", "send false");
+                    sender.Connect();
                     var msg0 = new OscMessage("/avatar/parameters/followAutoSelfKill", false);
                     sender.Send(msg0);
                     _logger.LogEvent("disableAutoFollofSelfKillOscMessagesAsync", "closing");
@@ -201,13 +252,13 @@ namespace ToNRoundCounter.UI
                 _logger.LogEvent("SendPieSizeOscMessagesAsync", "start process");
                 using (var sender = new OscSender(IPAddress.Parse("127.0.0.1"), 0, 9000))
                 {
-                    string switchString = isLocal ? "_Local" : "";
                     _logger.LogEvent("SendPieSizeOscMessagesAsync", "start connect");
                     sender.Connect();
                     _logger.LogEvent("SendPieSizeOscMessagesAsync", "connected");
                     _logger.LogEvent("SendPieSizeOscMessagesAsync", "start send");
-                    _logger.LogEvent("SendPieSizeOscMessagesAsync", "send " + piesizetNum * 1 / 20);
-                    var msg = new OscMessage("/avatar/parameters/Breast_size", piesizetNum * 1 / 20);
+                    float normalizedPieSize = piesizetNum / 20f;
+                    _logger.LogEvent("SendPieSizeOscMessagesAsync", "send " + normalizedPieSize);
+                    var msg = new OscMessage("/avatar/parameters/Breast_size", normalizedPieSize);
                     sender.Send(msg);
                     _logger.LogEvent("SendPieSizeOscMessagesAsync", "closing");
                     sender.Close();
@@ -221,24 +272,36 @@ namespace ToNRoundCounter.UI
             }
         }
 
-        private async Task SendAlertToTonSprinkAsync(float alertNum)
+        private async Task SendAlertToCloudAsync(float alertNum)
         {
-            if (instanceWsConnection != null && instanceWsConnection.State == WebSocketState.Open)
+            if (_settings.CloudSyncEnabled && _cloudClient != null && _cloudClient.IsConnected && !string.IsNullOrWhiteSpace(currentInstanceId))
             {
-                LogUi($"Forwarding alert value {alertNum} to TonSprink backend.", LogEventLevel.Debug);
-                var jsonMessage = new JObject
+                LogUi($"Forwarding alert value {alertNum} to integrated cloud backend.", LogEventLevel.Debug);
+                var payload = new JObject
                 {
-                    ["type"] = "Alert",
-                    ["alertNum"] = alertNum
+                    ["source"] = "osc",
+                    ["value"] = alertNum,
+                    ["isLocal"] = true
                 };
-                string message = jsonMessage.ToString();
-                byte[] bytes = Encoding.UTF8.GetBytes(message);
-                await instanceWsConnection.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cancellation.Token);
+
+                try
+                {
+                    await _cloudClient.InstanceAlertAsync(
+                        currentInstanceId,
+                        "osc-alert",
+                        payload.ToString(Newtonsoft.Json.Formatting.None),
+                        _cancellation.Token).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    LogUi($"Failed to forward alert to integrated cloud backend: {ex.Message}", LogEventLevel.Warning);
+                    _logger.LogEvent("AlertSendError", $"Integrated cloud alert send failed: {ex.Message}");
+                }
             }
             else
             {
-                LogUi("Unable to forward alert to TonSprink because instance connection is unavailable.", LogEventLevel.Warning);
-                _logger.LogEvent("AlertSendError", "Instance WebSocket connection is not available.");
+                LogUi("Unable to forward alert because cloud connection or instance context is unavailable.", LogEventLevel.Warning);
+                _logger.LogEvent("AlertSendError", "Cloud client is not available or not connected.");
             }
         }
     }

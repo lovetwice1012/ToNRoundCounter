@@ -1,12 +1,19 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Vortice;
 using Vortice.Direct2D1;
 using Vortice.Mathematics;
 
 namespace ToNRoundCounter.UI.DirectX
 {
-    internal static class DirectXSegmentRenderer
+    /// <summary>
+    /// DISABLED: 7-segment display renderer.
+    /// 7-segment rendering was not displaying properly and has been replaced with text-based rendering.
+    /// All overlay forms now use DirectWrite text rendering instead.
+    /// This class is kept for reference but should not be used. To be removed in future cleanup.
+    /// </summary>
+    internal static class DirectXSegmentRenderer_DISABLED
     {
         [Flags]
         private enum SegmentFlags
@@ -108,14 +115,14 @@ namespace ToNRoundCounter.UI.DirectX
             float verticalLength = (digitHeight - (3f * thickness)) / 2f;
             float middleY = offsetY + thickness + verticalLength;
 
-            var segmentA = new RawRect(offsetX + halfThickness, offsetY, offsetX + halfThickness + horizontalLength, offsetY + thickness);
-            var segmentB = new RawRect(offsetX + digitWidth - thickness, offsetY + thickness, offsetX + digitWidth, offsetY + thickness + verticalLength);
-            var segmentC = new RawRect(offsetX + digitWidth - thickness, middleY + thickness, offsetX + digitWidth, middleY + thickness + verticalLength);
-            var segmentD = new RawRect(offsetX + halfThickness, offsetY + digitHeight - thickness, offsetX + halfThickness + horizontalLength, offsetY + digitHeight);
-            var segmentE = new RawRect(offsetX, middleY + thickness, offsetX + thickness, middleY + thickness + verticalLength);
-            var segmentF = new RawRect(offsetX, offsetY + thickness, offsetX + thickness, offsetY + thickness + verticalLength);
-            var segmentG = new RawRect(offsetX + halfThickness, middleY, offsetX + halfThickness + horizontalLength, middleY + thickness);
-            var decimalRect = new RawRect(offsetX + digitWidth - thickness, offsetY + digitHeight - thickness, offsetX + digitWidth, offsetY + digitHeight);
+            var segmentA = new Rect(offsetX + halfThickness, offsetY, offsetX + halfThickness + horizontalLength, offsetY + thickness);
+            var segmentB = new Rect(offsetX + digitWidth - thickness, offsetY + thickness, offsetX + digitWidth, offsetY + thickness + verticalLength);
+            var segmentC = new Rect(offsetX + digitWidth - thickness, middleY + thickness, offsetX + digitWidth, middleY + thickness + verticalLength);
+            var segmentD = new Rect(offsetX + halfThickness, offsetY + digitHeight - thickness, offsetX + halfThickness + horizontalLength, offsetY + digitHeight);
+            var segmentE = new Rect(offsetX, middleY + thickness, offsetX + thickness, middleY + thickness + verticalLength);
+            var segmentF = new Rect(offsetX, offsetY + thickness, offsetX + thickness, offsetY + thickness + verticalLength);
+            var segmentG = new Rect(offsetX + halfThickness, middleY, offsetX + halfThickness + horizontalLength, middleY + thickness);
+            var decimalRect = new Rect(offsetX + digitWidth - thickness, offsetY + digitHeight - thickness, offsetX + digitWidth, offsetY + digitHeight);
 
             FillSegment(target, segmentA, segments.HasFlag(SegmentFlags.A), onBrush, offBrush);
             FillSegment(target, segmentB, segments.HasFlag(SegmentFlags.B), onBrush, offBrush);
@@ -135,7 +142,7 @@ namespace ToNRoundCounter.UI.DirectX
             }
         }
 
-        private static void FillSegment(ID2D1HwndRenderTarget target, RawRect rect, bool active, ID2D1SolidColorBrush onBrush, ID2D1SolidColorBrush offBrush)
+        private static void FillSegment(ID2D1HwndRenderTarget target, Rect rect, bool active, ID2D1SolidColorBrush onBrush, ID2D1SolidColorBrush offBrush)
         {
             target.FillRectangle(rect, offBrush);
             if (active)

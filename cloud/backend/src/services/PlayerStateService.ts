@@ -69,21 +69,29 @@ export class PlayerStateService {
         // Update cache
         this.lastStates.set(stateKey, currentStateJson);
 
-        // Use ON DUPLICATE KEY UPDATE for MySQL (don't sort items, order matters)
+        // Use ON DUPLICATE KEY UPDATE for MySQL (don't sort items, order matters).
+        // We rebind the values explicitly because MySQL 8.0 deprecated the
+        // `VALUES(col)` reference inside ON DUPLICATE KEY UPDATE.
         await this.db.run(
             `INSERT INTO player_states (instance_id, player_id, player_name, velocity, afk_duration, items, damage, is_alive, timestamp)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
              ON DUPLICATE KEY UPDATE
-                player_name = VALUES(player_name),
-                velocity = VALUES(velocity),
-                afk_duration = VALUES(afk_duration),
-                items = VALUES(items),
-                damage = VALUES(damage),
-                is_alive = VALUES(is_alive),
+                player_name = ?,
+                velocity = ?,
+                afk_duration = ?,
+                items = ?,
+                damage = ?,
+                is_alive = ?,
                 timestamp = NOW()`,
             [
                 instanceId,
                 player_id,
+                player_name,
+                velocity,
+                afk_duration,
+                JSON.stringify(itemsArray),
+                damage,
+                is_alive ? 1 : 0,
                 player_name,
                 velocity,
                 afk_duration,
@@ -116,11 +124,22 @@ export class PlayerStateService {
             player_name: row.player_name || row.player_id,
             velocity: row.velocity,
             afk_duration: row.afk_duration,
-            items: JSON.parse(row.items),
+            items: this.safeParseItems(row.items),
             damage: row.damage,
             is_alive: row.is_alive === 1,
             timestamp: new Date(row.timestamp),
         };
+    }
+
+    private safeParseItems(raw: any): any[] {
+        if (raw == null || raw === '') return [];
+        if (Array.isArray(raw)) return raw;
+        try {
+            const parsed = JSON.parse(String(raw));
+            return Array.isArray(parsed) ? parsed : [];
+        } catch {
+            return [];
+        }
     }
 
     async getAllPlayerStates(instanceId: string): Promise<PlayerState[]> {
@@ -143,7 +162,7 @@ export class PlayerStateService {
             player_name: row.player_name || row.player_id,
             velocity: row.velocity,
             afk_duration: row.afk_duration,
-            items: JSON.parse(row.items),
+            items: this.safeParseItems(row.items),
             damage: row.damage,
             is_alive: row.is_alive === 1,
             timestamp: new Date(row.timestamp),

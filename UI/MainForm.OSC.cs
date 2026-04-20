@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
@@ -7,6 +8,8 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.IO;
 using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
 using Newtonsoft.Json.Linq;
 using Rug.Osc;
 using Serilog.Events;
@@ -33,84 +36,64 @@ namespace ToNRoundCounter.UI
 
         private async Task InitializeOSCRepeater()
         {
-            LogUi("Initializing OSC repeater integration.", LogEventLevel.Debug);
-            if (File.Exists("./OscRepeater.exe"))
+            LogUi("Initializing in-process OSC repeater.", LogEventLevel.Debug);
+
+            // Kill any leftover external OscRepeater processes from previous runs.
+            foreach (var processName in new[] { "OscRepeater", "OSCRepeater" })
             {
-                foreach (var processName in new[] { "OscRepeater", "OSCRepeater" })
+                foreach (var existingProcess in Process.GetProcessesByName(processName))
                 {
-                    foreach (var existingProcess in Process.GetProcessesByName(processName))
+                    try
                     {
-                        try
+                        if (!existingProcess.HasExited)
                         {
-                            if (!existingProcess.HasExited)
-                            {
-                                _logger?.LogEvent("OSCRepeater", "Existing OSCRepeater instance detected. Terminating before restart.");
-                                existingProcess.Kill();
-                                existingProcess.WaitForExit(5000);
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger?.LogEvent("OSCRepeater", $"Failed to terminate existing OSCRepeater process: {ex.Message}");
-                        }
-                        finally
-                        {
-                            existingProcess.Dispose();
+                            _logger?.LogEvent("OSCRepeater", "Existing OSCRepeater instance detected. Terminating.");
+                            existingProcess.Kill();
+                            existingProcess.WaitForExit(5000);
                         }
                     }
-                }
-
-                if (!_settings.OSCPortChanged)
-                {
-                    int port = 30000;
-                    bool portFound = false;
-                    LogUi("Selecting OSC port for repeater.", LogEventLevel.Debug);
-                    while (!portFound)
+                    catch (Exception ex)
                     {
-                        try
-                        {
-                            TcpListener listener = new TcpListener(IPAddress.Loopback, port);
-                            listener.Start();
-                            listener.Stop();
-                            portFound = true;
-                        }
-                        catch (SocketException)
-                        {
-                            port++;
-                        }
+                        _logger?.LogEvent("OSCRepeater", $"Failed to terminate existing OSCRepeater process: {ex.Message}");
                     }
-                    LogUi($"OSC repeater port selected: {port}.", LogEventLevel.Debug);
-                    _settings.OSCPort = port;
-                    _settings.OSCPortChanged = true;
-                    await _settings.SaveAsync();
-                    LogUi("OSC port persisted to settings.", LogEventLevel.Debug);
-                }
-
-                ProcessStartInfo psi = new ProcessStartInfo();
-                psi.FileName = "./OscRepeater.exe";
-                psi.Arguments = $"--autostart --autoconfig 127.0.0.1:{_settings.OSCPort} --minimized";
-                psi.UseShellExecute = false;
-                LogUi($"Starting OSC repeater process with arguments '{psi.Arguments}'.");
-                oscRepeaterProcess = Process.Start(psi);
-                if (oscRepeaterProcess != null)
-                {
-                    LogUi($"OSC repeater process started (PID: {oscRepeaterProcess.Id}).", LogEventLevel.Debug);
-                    oscRepeaterProcess.EnableRaisingEvents = true;
-                    oscRepeaterProcess.Exited += (s, ev) =>
+                    finally
                     {
-                        LogUi("OSC repeater process exited. Closing application.", LogEventLevel.Warning);
-                        _dispatcher.Invoke(() => { this.Close(); });
-                    };
-                }
-                else
-                {
-                    LogUi("Failed to start OSC repeater process.", LogEventLevel.Error);
+                        existingProcess.Dispose();
+                    }
                 }
             }
-            else
+
+            if (!_settings.OSCPortChanged)
             {
-                LogUi("OscRepeater.exe not found. Skipping repeater startup.", LogEventLevel.Warning);
+                int port = 30000;
+                bool portFound = false;
+                LogUi("Selecting OSC port for internal listener.", LogEventLevel.Debug);
+                while (!portFound)
+                {
+                    try
+                    {
+                        TcpListener listener = new TcpListener(IPAddress.Loopback, port);
+                        listener.Start();
+                        listener.Stop();
+                        portFound = true;
+                    }
+                    catch (SocketException)
+                    {
+                        port++;
+                    }
+                }
+                LogUi($"OSC internal listener port selected: {port}.", LogEventLevel.Debug);
+                _settings.OSCPort = port;
+                _settings.OSCPortChanged = true;
+                await _settings.SaveAsync();
+                LogUi("OSC port persisted to settings.", LogEventLevel.Debug);
             }
+
+            // Configure the in-process repeater: listen on VRChat's default port (9001)
+            // and forward to our internal listener port.
+            _oscRepeaterService.AddDestination("127.0.0.1", _settings.OSCPort);
+            await _oscRepeaterService.StartAsync(9001);
+            LogUi($"In-process OSC repeater started: 9001 -> 127.0.0.1:{_settings.OSCPort}.", LogEventLevel.Information);
         }
 
         private void HandleOscMessage(OscMessage message)
@@ -192,7 +175,7 @@ namespace ToNRoundCounter.UI
                 if (suicideFlag)
                 {
                     LogUi("Immediate suicide flag received. Executing auto suicide action.");
-                    _ = Task.Run(() => PerformAutoSuicide());
+                    RunBackgroundOperation(() => PerformAutoSuicide(), "OscImmediateSuicide", LogEventLevel.Debug);
                 }
             }
             else if (message.Address == "/avatar/parameters/autosuside")
@@ -214,7 +197,7 @@ namespace ToNRoundCounter.UI
                     {
                         CancelAutoSuicide();
                     }
-                    UpdateShortcutOverlayState();
+                    SyncShortcutOverlayState();
                 }
                 LogUi($"Auto suicide OSC toggle set to {autoSuicideOSC}.", LogEventLevel.Debug);
             }
@@ -277,8 +260,8 @@ namespace ToNRoundCounter.UI
                 }
                 if (setAlertValue != 0)
                 {
-                    LogUi($"Forwarding alert value {setAlertValue} to TonSprink.", LogEventLevel.Debug);
-                    _ = SendAlertToTonSprinkAsync(setAlertValue);
+                    LogUi($"Forwarding alert value {setAlertValue} to integrated cloud.", LogEventLevel.Debug);
+                    RunBackgroundOperation(() => SendAlertToCloudAsync(setAlertValue), "OscForwardAlert", LogEventLevel.Debug);
                 }
             }
             else if (message.Address == "/avatar/parameters/getlatestsavecode")
@@ -298,45 +281,27 @@ namespace ToNRoundCounter.UI
                 if (getLatestSaveCode)
                 {
                     LogUi("OSC request received for latest save code.");
-                    if (string.IsNullOrEmpty(_settings.ApiKey))
+                    RunBackgroundOperation(async () =>
                     {
-                        CopyCachedSaveCode("API key is not configured");
-                    }
-                    else
-                    {
-                        _ = Task.Run(async () =>
+                        try
                         {
-                            using (var client = new HttpClient())
+                            var saveCode = await GetLatestSaveCodeFromCloudAsync(_cancellation.Token).ConfigureAwait(false);
+                            if (!string.IsNullOrWhiteSpace(saveCode))
                             {
-                                client.BaseAddress = new Uri("https://toncloud.sprink.cloud/api/savecode/get/" + _settings.ApiKey + "/latest");
-                                try
-                                {
-                                    var response = await client.GetAsync("");
-                                    if (response.IsSuccessStatusCode)
-                                    {
-                                        var jsonResponse = await response.Content.ReadAsStringAsync();
-                                        var json = JObject.Parse(jsonResponse);
-                                        string saveCode = json.Value<string>("savecode") ?? "";
-                                        await PersistLastSaveCodeAsync(saveCode).ConfigureAwait(false);
-                                        CopySaveCodeToClipboard(saveCode);
-                                        _logger.LogEvent("SaveCode", "Latest save code copied to clipboard: " + saveCode);
-                                    }
-                                    else if ((int)response.StatusCode >= 400 && (int)response.StatusCode < 600)
-                                    {
-                                        CopyCachedSaveCode($"Failed to get latest save code: {response.StatusCode}");
-                                    }
-                                    else
-                                    {
-                                        _logger.LogEvent("SaveCodeError", $"Failed to get latest save code: {response.StatusCode}");
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    CopyCachedSaveCode($"Exception occurred: {ex.Message}");
-                                }
+                                await PersistLastSaveCodeAsync(saveCode).ConfigureAwait(false);
+                                CopySaveCodeToClipboard(saveCode);
+                                _logger.LogEvent("SaveCode", "Latest save code copied to clipboard from cloud settings: " + saveCode);
                             }
-                        });
-                    }
+                            else
+                            {
+                                CopyCachedSaveCode("No save code found in cloud settings.");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            CopyCachedSaveCode($"Exception occurred while fetching latest save code from cloud settings: {ex.Message}");
+                        }
+                    }, "OscFetchLatestSaveCode", LogEventLevel.Warning);
                 }
             }
             else if (message.Address == "/avatar/parameters/isAllSelfKill")
@@ -350,7 +315,7 @@ namespace ToNRoundCounter.UI
                         {
                             issetAllSelfKillMode = newValue;
                             LogUi($"Received 'isAllSelfKill' flag: {issetAllSelfKillMode}.", LogEventLevel.Debug);
-                            UpdateShortcutOverlayState();
+                            SyncShortcutOverlayState();
                         }
                     }
                     catch (Exception ex)
@@ -386,20 +351,25 @@ namespace ToNRoundCounter.UI
 
         private void CopySaveCodeToClipboard(string saveCode)
         {
-            Thread thread = new Thread(() =>
+            // Marshal to the existing UI thread (already STA) instead of allocating a new thread per call
+            try
             {
-                try
+                _dispatcher.Invoke(() =>
                 {
-                    Clipboard.SetText(saveCode ?? string.Empty);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogEvent("SaveCodeError", $"Failed to copy save code to clipboard: {ex.Message}");
-                }
-            });
-            thread.SetApartmentState(ApartmentState.STA);
-            thread.Start();
-            thread.Join();
+                    try
+                    {
+                        Clipboard.SetText(saveCode ?? string.Empty);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogEvent("SaveCodeError", $"Failed to copy save code to clipboard: {ex.Message}");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogEvent("SaveCodeError", $"Failed to dispatch clipboard copy: {ex.Message}");
+            }
         }
 
         private async Task PersistLastSaveCodeAsync(string saveCode)
@@ -421,6 +391,76 @@ namespace ToNRoundCounter.UI
             {
                 _logger.LogEvent("SaveCodeError", $"Failed to persist save code: {ex.Message}");
             }
+        }
+
+        private async Task BackupSaveCodeToCloudAsync(string saveCode)
+        {
+            var normalized = saveCode ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return;
+            }
+
+            if (!_settings.CloudSyncEnabled || _cloudClient == null || !_cloudClient.IsConnected)
+            {
+                _logger.LogEvent("SaveCode", "Skipped cloud backup because cloud sync is disabled or disconnected.");
+                return;
+            }
+
+            var settingsPayload = new Dictionary<string, object>
+            {
+                ["saveCode"] = new Dictionary<string, object>
+                {
+                    ["latest"] = normalized,
+                    ["updatedAtUtc"] = DateTime.UtcNow.ToString("O")
+                }
+            };
+
+            try
+            {
+                await _cloudClient.UpdateSettingsAsync(ResolveCloudSettingsUserId(), settingsPayload, _cancellation.Token).ConfigureAwait(false);
+                _logger.LogEvent("SaveCode", "Save code backed up to cloud settings successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogEvent("SaveCodeError", $"Exception occurred while backing up save code to cloud settings: {ex.Message}");
+            }
+        }
+
+        private async Task<string> GetLatestSaveCodeFromCloudAsync(CancellationToken cancellationToken)
+        {
+            if (!_settings.CloudSyncEnabled || _cloudClient == null || !_cloudClient.IsConnected)
+            {
+                return string.Empty;
+            }
+
+            var cloudSettings = await _cloudClient.GetSettingsAsync(ResolveCloudSettingsUserId(), cancellationToken).ConfigureAwait(false);
+            if (!cloudSettings.TryGetValue("categories", out var categoriesObj) || categoriesObj is not JsonElement categoriesElem || categoriesElem.ValueKind != JsonValueKind.Object)
+            {
+                return string.Empty;
+            }
+
+            if (!categoriesElem.TryGetProperty("saveCode", out var saveCodeElem) || saveCodeElem.ValueKind != JsonValueKind.Object)
+            {
+                return string.Empty;
+            }
+
+            if (!saveCodeElem.TryGetProperty("latest", out var latestElem) || latestElem.ValueKind != JsonValueKind.String)
+            {
+                return string.Empty;
+            }
+
+            return latestElem.GetString() ?? string.Empty;
+        }
+
+        private string ResolveCloudSettingsUserId()
+        {
+            if (!string.IsNullOrWhiteSpace(_settings.CloudPlayerName))
+            {
+                return _settings.CloudPlayerName;
+            }
+
+            return Environment.UserName;
         }
 
         private void CopyCachedSaveCode(string reason)

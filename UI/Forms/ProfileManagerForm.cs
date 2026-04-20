@@ -17,6 +17,7 @@ namespace ToNRoundCounter.UI
     {
         private readonly CloudWebSocketClient? _cloudClient;
         private readonly string _playerId;
+        private readonly CancellationTokenSource _lifetimeCts = new CancellationTokenSource();
         private Dictionary<string, object>? _currentProfile;
         private bool _isDirty = false;
 
@@ -284,7 +285,7 @@ namespace ToNRoundCounter.UI
 
             try
             {
-                _currentProfile = await _cloudClient.GetProfileAsync(_playerId, CancellationToken.None);
+                _currentProfile = await _cloudClient.GetProfileAsync(_playerId, _lifetimeCts.Token);
 
                 if (_currentProfile != null)
                 {
@@ -322,39 +323,52 @@ namespace ToNRoundCounter.UI
 
                     // Load terror stats
                     terrorStatsListView.Items.Clear();
-                    if (_currentProfile.TryGetValue("terror_stats", out var terrorStatsObj))
+                    if (_currentProfile.TryGetValue("terror_stats", out var terrorStatsObj) && terrorStatsObj != null)
                     {
-                        var terrorStatsJson = terrorStatsObj.ToString();
-                        if (!string.IsNullOrEmpty(terrorStatsJson))
+                        try
                         {
-                            try
+                            JsonElement terrorStatsElement;
+                            if (terrorStatsObj is JsonElement jsonElement)
                             {
-                                var terrorStats = JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, int>>>(terrorStatsJson);
-                                if (terrorStats != null)
-                                {
-                                    foreach (var kvp in terrorStats)
-                                    {
-                                        var terrorName = kvp.Key;
-                                        var stats = kvp.Value;
-                                        var encounters = stats.TryGetValue("encounters", out var enc) ? enc : 0;
-                                        var survivals = stats.TryGetValue("survived", out var surv) ? surv : 0;
-                                        var survRate = encounters > 0 ? (double)survivals / encounters * 100 : 0;
+                                terrorStatsElement = jsonElement;
+                            }
+                            else
+                            {
+                                terrorStatsElement = JsonSerializer.SerializeToElement(terrorStatsObj);
+                            }
 
-                                        var item = new ListViewItem(terrorName);
-                                        item.SubItems.Add(encounters.ToString());
-                                        item.SubItems.Add(survivals.ToString());
-                                        item.SubItems.Add($"{survRate:F1}%");
-                                        terrorStatsListView.Items.Add(item);
-                                    }
+                            if (terrorStatsElement.ValueKind == JsonValueKind.Object)
+                            {
+                                foreach (var terrorProperty in terrorStatsElement.EnumerateObject())
+                                {
+                                    var terrorName = terrorProperty.Name;
+                                    var stats = terrorProperty.Value;
+                                    var totalRoundsValue = GetTerrorStatInt(stats, "total_rounds", "encounters");
+                                    var survivals = GetTerrorStatInt(stats, "survived");
+                                    var survivalRate = totalRoundsValue > 0
+                                        ? (double)survivals / totalRoundsValue * 100
+                                        : GetTerrorStatDouble(stats, "survival_rate") * 100;
+
+                                    var item = new ListViewItem(terrorName);
+                                    item.SubItems.Add(totalRoundsValue.ToString());
+                                    item.SubItems.Add(survivals.ToString());
+                                    item.SubItems.Add($"{survivalRate:F1}%");
+                                    terrorStatsListView.Items.Add(item);
                                 }
                             }
-                            catch { }
+                        }
+                        catch
+                        {
                         }
                     }
 
                     _isDirty = false;
                     saveButton.Enabled = false;
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                // Ignore cancellation while closing the form.
             }
             catch (Exception ex)
             {
@@ -365,6 +379,48 @@ namespace ToNRoundCounter.UI
                 loadingProgressBar.Visible = false;
                 refreshButton.Enabled = true;
             }
+        }
+
+        private static int GetTerrorStatInt(JsonElement stats, params string[] propertyNames)
+        {
+            foreach (var propertyName in propertyNames)
+            {
+                if (stats.TryGetProperty(propertyName, out var value))
+                {
+                    if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var intValue))
+                    {
+                        return intValue;
+                    }
+
+                    if (value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out var parsedValue))
+                    {
+                        return parsedValue;
+                    }
+                }
+            }
+
+            return 0;
+        }
+
+        private static double GetTerrorStatDouble(JsonElement stats, params string[] propertyNames)
+        {
+            foreach (var propertyName in propertyNames)
+            {
+                if (stats.TryGetProperty(propertyName, out var value))
+                {
+                    if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var doubleValue))
+                    {
+                        return doubleValue;
+                    }
+
+                    if (value.ValueKind == JsonValueKind.String && double.TryParse(value.GetString(), out var parsedValue))
+                    {
+                        return parsedValue;
+                    }
+                }
+            }
+
+            return 0;
         }
 
         private async Task SaveProfileAsync()
@@ -386,7 +442,7 @@ namespace ToNRoundCounter.UI
                     terrorStats: null, // Keep existing terror stats
                     totalRounds: null, // Keep existing rounds
                     totalSurvived: null, // Keep existing survived
-                    cancellationToken: CancellationToken.None
+                    cancellationToken: _lifetimeCts.Token
                 );
 
                 MessageBox.Show("プロフィールを保存しました", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -395,6 +451,10 @@ namespace ToNRoundCounter.UI
 
                 // Reload to get updated data
                 await LoadProfileAsync();
+            }
+            catch (OperationCanceledException)
+            {
+                // Ignore cancellation while closing the form.
             }
             catch (Exception ex)
             {
@@ -422,6 +482,12 @@ namespace ToNRoundCounter.UI
                 {
                     e.Cancel = true;
                 }
+            }
+
+            if (!e.Cancel)
+            {
+                _lifetimeCts.Cancel();
+                _lifetimeCts.Dispose();
             }
 
             base.OnFormClosing(e);

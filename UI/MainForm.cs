@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -79,10 +79,8 @@ namespace ToNRoundCounter.UI
         private readonly ISoundManager _soundManager;
         private readonly IOverlayManager _overlayManager;
         private readonly IAutoSuicideCoordinator _autoSuicideCoordinator;
-
-        // Overlay-related state that MainForm manages
-        private string lastRoundTypeForHistory = string.Empty;
-        private bool overlayTemporarilyHidden;
+        private readonly ConcurrentDictionary<Guid, string> _backgroundOperations = new();
+        private int _isClosing;
 
         private Action<WebSocketConnected>? _wsConnectedHandler;
         private Action<WebSocketDisconnected>? _wsDisconnectedHandler;
@@ -96,6 +94,7 @@ namespace ToNRoundCounter.UI
         private bool lastOptedIn = true;
         private bool _isWebSocketConnected;
         private bool _isOscConnected;
+        private static readonly HttpClient SharedHttpClient = new HttpClient();
 
         private Random randomGenerator = new Random();
 
@@ -104,7 +103,7 @@ namespace ToNRoundCounter.UI
             "クラシック", "走れ！", "オルタネイト", "パニッシュ", "狂気", "サボタージュ", "霧", "ブラッドバス", "ダブルトラブル", "EX", "ミッドナイト", "ゴースト", "8ページ", "アンバウンド", "寒い夜", "ミスティックムーン", "ブラッドムーン", "トワイライト", "ソルスティス"
         };
 
-        private Process? oscRepeaterProcess;
+        private readonly IOscRepeaterService _oscRepeaterService;
 
         private bool isNotifyActivated = false;
 
@@ -118,9 +117,9 @@ namespace ToNRoundCounter.UI
 
         private readonly AutoSuicideService autoSuicideService;
 
-        private bool itemMusicActive;
+        private bool itemMusicActive = false;
         private DateTime itemMusicMatchStart = DateTime.MinValue;
-        private bool roundBgmActive;
+        private bool roundBgmActive = false;
         private DateTime roundBgmMatchStart = DateTime.MinValue;
         private string currentTerrorBaseText = string.Empty;
         private string currentOverlayTerrorBaseText = string.Empty;
@@ -139,12 +138,25 @@ namespace ToNRoundCounter.UI
         private DateTimeOffset currentInstanceEnteredAt = DateTimeOffset.Now;
         private List<InstanceMemberInfo> currentInstanceMembers = new List<InstanceMemberInfo>();
         private List<string> currentDesirePlayers = new List<string>();
+        // Cached current map name (mirrors InfoPanel.MapValue.Text) to avoid UI marshalling from background threads
+        private volatile string currentMapName = string.Empty;
+        // Cached current held item name (mirrors InfoPanel.ItemValue.Text). Updated synchronously from any path
+        // that mutates the InfoPanel item label, so background senders (e.g. cloud player state) can read it
+        // without depending on UI thread marshalling.
+        private volatile string currentHeldItemName = string.Empty;
         private System.Windows.Forms.Timer? instanceMemberUpdateTimer;
 
         // Cloud state update tracking
         private DateTime lastCloudStateUpdate = DateTime.MinValue;
         private const double CloudStateUpdateIntervalSeconds = 0.2;
+        // Fallback full-sync interval (primary updates come via player.state.updated stream)
+        private DateTime lastInstanceMembersFetch = DateTime.MinValue;
+        private const double InstanceMembersFetchIntervalSeconds = 5.0;
+        private DateTime lastThreatAnnouncementSync = DateTime.MinValue;
+        private string lastThreatAnnouncementSyncSignature = string.Empty;
+        private const double ThreatAnnouncementSyncIntervalSeconds = 5.0;
         private List<string> currentPlayerItems = new List<string>();
+        private VotingPanelForm? activeVotingPanelForm;
 
         // Cloud monitoring status tracking
         private DateTime lastMonitoringStatusUpdate = DateTime.MinValue;
@@ -175,6 +187,51 @@ namespace ToNRoundCounter.UI
             }
 
             _logger.LogEvent("MainForm", message, level);
+        }
+
+        private void RunBackgroundOperation(Func<Task> operation, string operationName, LogEventLevel failureLevel = LogEventLevel.Warning)
+        {
+            if (Volatile.Read(ref _isClosing) == 1)
+            {
+                return;
+            }
+
+            var operationId = Guid.NewGuid();
+            _backgroundOperations.TryAdd(operationId, operationName);
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await operation().ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    LogUi($"Background operation cancelled: {operationName}", LogEventLevel.Debug);
+                }
+                catch (Exception ex)
+                {
+                    LogUi($"Background operation failed ({operationName}): {ex.Message}", failureLevel);
+                }
+                finally
+                {
+                    _backgroundOperations.TryRemove(operationId, out _);
+                }
+            }, _cancellation.Token);
+        }
+
+        private async Task DrainBackgroundOperationsAsync(TimeSpan timeout)
+        {
+            var start = DateTime.UtcNow;
+            while (_backgroundOperations.Count > 0 && (DateTime.UtcNow - start) < timeout)
+            {
+                await Task.Delay(50).ConfigureAwait(false);
+            }
+
+            if (_backgroundOperations.Count > 0)
+            {
+                LogUi($"Background operations still pending during shutdown: {_backgroundOperations.Count}", LogEventLevel.Warning);
+            }
         }
 
         private void EvaluateAutoRecording(string reason)
@@ -212,21 +269,26 @@ namespace ToNRoundCounter.UI
         }
 
 
-        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, IEnumerable<IOscRepeaterPolicy> oscRepeaterPolicies, AutoRecordingService autoRecordingService, ModuleHost moduleHost, CloudWebSocketClient cloudClient, ISoundManager soundManager, IOverlayManager overlayManager, IAutoSuicideCoordinator autoSuicideCoordinator)
+        public MainForm(IWebSocketClient webSocketClient, IOSCListener oscListener, AutoSuicideService autoSuicideService, StateService stateService, IAppSettings settings, IEventLogger logger, MainPresenter presenter, IEventBus eventBus, ICancellationProvider cancellation, IInputSender inputSender, IUiDispatcher dispatcher, IEnumerable<IAfkWarningHandler> afkWarningHandlers, IEnumerable<IOscRepeaterPolicy> oscRepeaterPolicies, AutoRecordingService autoRecordingService, ModuleHost moduleHost, CloudWebSocketClient cloudClient, ISoundManager soundManager, IOverlayManager overlayManager, IAutoSuicideCoordinator autoSuicideCoordinator, IOscRepeaterService oscRepeaterService)
         {
+            _oscRepeaterService = oscRepeaterService;
             _soundManager = soundManager;
             _soundManager.Initialize();
             _overlayManager = overlayManager;
+
+            // Assign fields that SyncShortcutOverlayState (callback) depends on
+            // BEFORE initializing the coordinator, which triggers the callback.
+            this.autoSuicideService = autoSuicideService;
+            this.stateService = stateService;
+            _settings = settings;
+
             _autoSuicideCoordinator = autoSuicideCoordinator;
-            _autoSuicideCoordinator.SetUpdateOverlayStateCallback(UpdateShortcutOverlayState);
+            _autoSuicideCoordinator.SetUpdateOverlayStateCallback(SyncShortcutOverlayState);
             _autoSuicideCoordinator.Initialize();
             this.Name = "MainForm";
             this.webSocketClient = webSocketClient;
-            this.autoSuicideService = autoSuicideService;
             this.oscListener = oscListener;
-            this.stateService = stateService;
             _cloudClient = cloudClient;
-            _settings = settings;
             _logger = logger;
             _uiLogQueue = new BlockingCollection<(string Message, LogEventLevel Level)>(
                 new ConcurrentQueue<(string Message, LogEventLevel Level)>());
@@ -247,8 +309,7 @@ namespace ToNRoundCounter.UI
             LogUi($"AFK warning handlers resolved: {_afkWarningHandlers.Count}.", LogEventLevel.Debug);
             LogUi($"OSC repeater policies resolved: {_oscRepeaterPolicies.Count}.", LogEventLevel.Debug);
             _moduleHost = moduleHost;
-            _presenter.AttachView(this);
-            LogUi("Presenter attached to main form view.", LogEventLevel.Debug);
+            LogUi("Presenter will be attached to main form view after UI initialization.", LogEventLevel.Debug);
 
             terrorColors = new Dictionary<string, Color>();
             LoadTerrorInfo();
@@ -267,6 +328,11 @@ namespace ToNRoundCounter.UI
             {
                 throw new InvalidOperationException("Main form controls failed to initialize.");
             }
+            
+            // Now attach the presenter to the view after all UI components are initialized
+            _presenter.AttachView(this);
+            LogUi("Presenter attached to main form view.", LogEventLevel.Debug);
+            
             _overlayManager.Initialize();
             _overlayManager.ShortcutButtonClicked += OverlayManager_ShortcutButtonClicked;
             _moduleHost.NotifyMainWindowMenuBuilding(new ModuleMainWindowMenuContext(this, mainMenuStrip, _moduleHost.CurrentServiceProvider));
@@ -312,47 +378,40 @@ namespace ToNRoundCounter.UI
 
             _settingsValidationFailedHandler = e => _dispatcher.Invoke(() => MessageBox.Show(string.Join("\n", e.Errors), "Settings Error"));
             _eventBus.Subscribe(_settingsValidationFailedHandler);
-            _ = webSocketClient.StartAsync();
-            _ = oscListener.StartAsync(_settings.OSCPort);
+            RunBackgroundOperation(() => webSocketClient.StartAsync(), "WebSocketStart", LogEventLevel.Warning);
+            RunBackgroundOperation(() => oscListener.StartAsync(_settings.OSCPort), "OscListenerStart", LogEventLevel.Warning);
 
             if (_settings.CloudSyncEnabled)
             {
-                _ = Task.Run(async () =>
+                RunBackgroundOperation(async () =>
                 {
-                    try
+                    await _cloudClient.StartAsync().ConfigureAwait(false);
+                    _logger?.LogEvent("CloudSync", "Cloud WebSocket client started successfully.");
+
+                    // 起動時に認証を実行
+                    if (!string.IsNullOrWhiteSpace(_settings.ApiKey))
                     {
-                        await _cloudClient.StartAsync();
-                        _logger?.LogEvent("CloudSync", "Cloud WebSocket client started successfully.");
+                        string playerIdForAuth = !string.IsNullOrWhiteSpace(_settings.CloudPlayerName)
+                            ? _settings.CloudPlayerName
+                            : Environment.UserName;
 
-                        // 起動時に認証を実行
-                        if (!string.IsNullOrWhiteSpace(_settings.apikey))
+                        try
                         {
-                            string playerIdForAuth = !string.IsNullOrWhiteSpace(_settings.CloudPlayerName)
-                                ? _settings.CloudPlayerName
-                                : Environment.UserName;
-
-                            try
-                            {
-                                _logger?.LogEvent("CloudAuth", $"Authenticating on startup: {playerIdForAuth}");
-                                await _cloudClient.LoginWithApiKeyAsync(
-                                    playerIdForAuth,
-                                    _settings.apikey,
-                                    "1.0.0",
-                                    System.Threading.CancellationToken.None
-                                );
-                                _logger?.LogEvent("CloudAuth", "Startup authentication successful");
-                            }
-                            catch (Exception authEx)
-                            {
-                                _logger?.LogEvent("CloudAuth", $"Startup authentication failed: {authEx.Message}", LogEventLevel.Warning);
-                            }
+                            _logger?.LogEvent("CloudAuth", $"Authenticating on startup: {playerIdForAuth}");
+                            await _cloudClient.LoginWithApiKeyAsync(
+                                playerIdForAuth,
+                                _settings.ApiKey,
+                                "1.0.0",
+                                _cancellation.Token
+                            ).ConfigureAwait(false);
+                            _logger?.LogEvent("CloudAuth", "Startup authentication successful");
+                        }
+                        catch (Exception authEx)
+                        {
+                            _logger?.LogEvent("CloudAuth", $"Startup authentication failed: {authEx.Message}", LogEventLevel.Warning);
                         }
                     }
-                    catch (Exception ex)
-                    {
-                        _logger?.LogEvent("CloudSync", $"Failed to start Cloud WebSocket client: {ex.Message}", LogEventLevel.Warning);
-                    }
-                });
+                }, "CloudClientStartAndAuth", LogEventLevel.Warning);
 
                 // Subscribe to Cloud stream events
                 if (_cloudClient != null)
@@ -614,14 +673,14 @@ namespace ToNRoundCounter.UI
             splitContainerMain.Height = this.ClientSize.Height - currentY - margin;
         }
 
-        private void BtnToggleTopMost_Click(object sender, EventArgs e)
+        private void BtnToggleTopMost_Click(object? sender, EventArgs e)
         {
             this.TopMost = !this.TopMost;
             btnToggleTopMost.Text = this.TopMost ? LanguageManager.Translate("固定解除") : LanguageManager.Translate("固定する");
             LogUi($"TopMost toggled. New state: {this.TopMost}.", LogEventLevel.Debug);
         }
 
-        private async void BtnSettings_Click(object sender, EventArgs e)
+        private async void BtnSettings_Click(object? sender, EventArgs e)
         {
             try
             {
@@ -629,8 +688,8 @@ namespace ToNRoundCounter.UI
             }
             catch (Exception ex)
             {
-                LogUi($"Unhandled error in settings dialog: {ex.Message}", LogEventLevel.Error);
-                MessageBox.Show($"設定ダイアログでエラーが発生しました: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                LogUi($"Unhandled error in settings dialog: {ex}", LogEventLevel.Error);
+                MessageBox.Show($"設定ダイアログでエラーが発生しました: {ex.Message}\n\n{ex.StackTrace}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -668,6 +727,7 @@ namespace ToNRoundCounter.UI
                 settingsForm.SettingsPanel.OverlayClockCheckBox.Checked = _settings.OverlayShowClock;
                 settingsForm.SettingsPanel.OverlayInstanceTimerCheckBox.Checked = _settings.OverlayShowInstanceTimer;
                 settingsForm.SettingsPanel.OverlayInstanceMembersCheckBox.Checked = _settings.OverlayShowInstanceMembers;
+                settingsForm.SettingsPanel.OverlayVotingCheckBox.Checked = _settings.OverlayShowVoting;
                 settingsForm.SettingsPanel.SetOverlayOpacity(_settings.OverlayOpacity);
                 int historyLength = _settings.OverlayRoundHistoryLength <= 0 ? 3 : _settings.OverlayRoundHistoryLength;
                 historyLength = Math.Max((int)settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Minimum, Math.Min((int)settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Maximum, historyLength));
@@ -678,15 +738,15 @@ namespace ToNRoundCounter.UI
                 settingsForm.SettingsPanel.FixedTerrorColorLabel.BackColor = _settings.FixedTerrorColor;
                 for (int i = 0; i < settingsForm.SettingsPanel.RoundTypeStatsListBox.Items.Count; i++)
                 {
-                    string item = settingsForm.SettingsPanel.RoundTypeStatsListBox.Items[i].ToString();
-                    settingsForm.SettingsPanel.RoundTypeStatsListBox.SetItemChecked(i, _settings.RoundTypeStats.Contains(item));
+                    string item = settingsForm.SettingsPanel.RoundTypeStatsListBox.Items[i]?.ToString() ?? string.Empty;
+                    settingsForm.SettingsPanel.RoundTypeStatsListBox.SetItemChecked(i, !string.IsNullOrEmpty(item) && _settings.RoundTypeStats.Contains(item));
                 }
                 settingsForm.SettingsPanel.autoSuicideCheckBox.Checked = _settings.AutoSuicideEnabled;
                 settingsForm.SettingsPanel.autoSuicideUseDetailCheckBox.Checked = _settings.AutoSuicideUseDetail;
                 for (int i = 0; i < settingsForm.SettingsPanel.autoSuicideRoundListBox.Items.Count; i++)
                 {
-                    string item = settingsForm.SettingsPanel.autoSuicideRoundListBox.Items[i].ToString();
-                    settingsForm.SettingsPanel.autoSuicideRoundListBox.SetItemChecked(i, _settings.AutoSuicideRoundTypes.Contains(item));
+                    string item = settingsForm.SettingsPanel.autoSuicideRoundListBox.Items[i]?.ToString() ?? string.Empty;
+                    settingsForm.SettingsPanel.autoSuicideRoundListBox.SetItemChecked(i, !string.IsNullOrEmpty(item) && _settings.AutoSuicideRoundTypes.Contains(item));
                 }
                 settingsForm.SettingsPanel.oscPortNumericUpDown.Value = _settings.OSCPort;
                 settingsForm.SettingsPanel.webSocketIpTextBox.Text = _settings.WebSocketIp;
@@ -746,6 +806,7 @@ namespace ToNRoundCounter.UI
                     _settings.OverlayShowClock = settingsForm.SettingsPanel.OverlayClockCheckBox.Checked;
                     _settings.OverlayShowInstanceTimer = settingsForm.SettingsPanel.OverlayInstanceTimerCheckBox.Checked;
                     _settings.OverlayShowInstanceMembers = settingsForm.SettingsPanel.OverlayInstanceMembersCheckBox.Checked;
+                    _settings.OverlayShowVoting = settingsForm.SettingsPanel.OverlayVotingCheckBox.Checked;
                     _settings.OverlayOpacity = settingsForm.SettingsPanel.GetOverlayOpacity();
                     _settings.OverlayRoundHistoryLength = (int)settingsForm.SettingsPanel.OverlayRoundHistoryCountNumeric.Value;
                     _settings.BackgroundColor_InfoPanel = settingsForm.SettingsPanel.InfoPanelBgLabel.BackColor;
@@ -755,14 +816,22 @@ namespace ToNRoundCounter.UI
                     _settings.RoundTypeStats.Clear();
                     foreach (object item in settingsForm.SettingsPanel.RoundTypeStatsListBox.CheckedItems)
                     {
-                        _settings.RoundTypeStats.Add(item.ToString());
+                        string? value = item?.ToString();
+                        if (!string.IsNullOrEmpty(value))
+                        {
+                            _settings.RoundTypeStats.Add(value);
+                        }
                     }
                     _settings.AutoSuicideEnabled = settingsForm.SettingsPanel.autoSuicideCheckBox.Checked;
                     _settings.AutoSuicideUseDetail = settingsForm.SettingsPanel.autoSuicideUseDetailCheckBox.Checked;
                     _settings.AutoSuicideRoundTypes.Clear();
                     foreach (object item in settingsForm.SettingsPanel.autoSuicideRoundListBox.CheckedItems)
                     {
-                        _settings.AutoSuicideRoundTypes.Add(item.ToString());
+                        string? value = item?.ToString();
+                        if (!string.IsNullOrEmpty(value))
+                        {
+                            _settings.AutoSuicideRoundTypes.Add(value);
+                        }
                     }
                     settingsForm.SettingsPanel.CleanAutoSuicideDetailRules();
                     _settings.AutoSuicideDetailCustom = settingsForm.SettingsPanel.GetCustomAutoSuicideLines();
@@ -800,12 +869,6 @@ namespace ToNRoundCounter.UI
                     _settings.RoundBgmEnabled = settingsForm.SettingsPanel.RoundBgmEnabledCheckBox.Checked;
                     _settings.RoundBgmEntries = settingsForm.SettingsPanel.GetRoundBgmEntries();
                     _settings.RoundBgmItemConflictBehavior = settingsForm.SettingsPanel.GetRoundBgmItemConflictBehavior();
-                    _settings.AutoLaunchExecutablePath = string.Empty;
-                    _settings.AutoLaunchArguments = string.Empty;
-                    _settings.ItemMusicItemName = string.Empty;
-                    _settings.ItemMusicSoundPath = string.Empty;
-                    _settings.ItemMusicMinSpeed = 0;
-                    _settings.ItemMusicMaxSpeed = 0;
                     _settings.DiscordWebhookUrl = settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text.Trim();
                     _settings.ThemeKey = settingsForm.SettingsPanel.SelectedThemeKey;
                     _autoSuicideCoordinator.LoadRules();
@@ -858,40 +921,33 @@ namespace ToNRoundCounter.UI
                     UpdateAggregateStatsDisplay();
                     UpdateDisplayVisibility();
                     _overlayManager.ApplyBackgroundOpacity();
-                    UpdateOverlayVisibility();
-                    UpdateShortcutOverlayState();
+                    SyncShortcutOverlayState();
                     _overlayManager.ApplyRoundHistorySettings();
                     _moduleHost.NotifyAuxiliaryWindowCatalogBuilding();
                     BuildAuxiliaryWindowsMenu();
+                    _overlayManager.CapturePositions();
                     await _settings.SaveAsync();
 
                     // Restart Cloud client if needed
                     if (cloudNeedsRestart && _cloudClient != null)
                     {
-                        _ = Task.Run(async () =>
+                        RunBackgroundOperation(async () =>
                         {
-                            try
-                            {
-                                await _cloudClient.StopAsync();
-                                _logger?.LogEvent("CloudSync", "Cloud client stopped for restart.");
+                            await _cloudClient.StopAsync().ConfigureAwait(false);
+                            _logger?.LogEvent("CloudSync", "Cloud client stopped for restart.");
 
-                                if (_settings.CloudSyncEnabled)
+                            if (_settings.CloudSyncEnabled)
+                            {
+                                if (!string.IsNullOrWhiteSpace(_settings.CloudWebSocketUrl))
                                 {
-                                    if (!string.IsNullOrWhiteSpace(_settings.CloudWebSocketUrl))
-                                    {
-                                        _cloudClient.UpdateEndpoint(_settings.CloudWebSocketUrl);
-                                    }
-
-                                    await _cloudClient.StartAsync();
-                                    _logger?.LogEvent("CloudSync", "Cloud client restarted successfully.");
-                                    // 認証はVRChatのCONNECTEDイベントで行う
+                                    _cloudClient.UpdateEndpoint(_settings.CloudWebSocketUrl);
                                 }
+
+                                await _cloudClient.StartAsync().ConfigureAwait(false);
+                                _logger?.LogEvent("CloudSync", "Cloud client restarted successfully.");
+                                // 認証はVRChatのCONNECTEDイベントで行う
                             }
-                            catch (Exception ex)
-                            {
-                                _logger?.LogEvent("CloudSync", $"Failed to restart Cloud client: {ex.Message}", LogEventLevel.Warning);
-                            }
-                        });
+                        }, "CloudClientRestart", LogEventLevel.Warning);
                     }
                 }
 
@@ -941,8 +997,8 @@ namespace ToNRoundCounter.UI
 
             for (int i = 0; i < settingsForm.SettingsPanel.RoundTypeStatsListBox.Items.Count; i++)
             {
-                string item = settingsForm.SettingsPanel.RoundTypeStatsListBox.Items[i].ToString();
-                settingsForm.SettingsPanel.RoundTypeStatsListBox.SetItemChecked(i, _settings.RoundTypeStats.Contains(item));
+                string item = settingsForm.SettingsPanel.RoundTypeStatsListBox.Items[i]?.ToString() ?? string.Empty;
+                settingsForm.SettingsPanel.RoundTypeStatsListBox.SetItemChecked(i, !string.IsNullOrEmpty(item) && _settings.RoundTypeStats.Contains(item));
             }
 
             settingsForm.SettingsPanel.autoSuicideCheckBox.Checked = _settings.AutoSuicideEnabled;
@@ -950,8 +1006,8 @@ namespace ToNRoundCounter.UI
 
             for (int i = 0; i < settingsForm.SettingsPanel.autoSuicideRoundListBox.Items.Count; i++)
             {
-                string item = settingsForm.SettingsPanel.autoSuicideRoundListBox.Items[i].ToString();
-                settingsForm.SettingsPanel.autoSuicideRoundListBox.SetItemChecked(i, _settings.AutoSuicideRoundTypes.Contains(item));
+                string item = settingsForm.SettingsPanel.autoSuicideRoundListBox.Items[i]?.ToString() ?? string.Empty;
+                settingsForm.SettingsPanel.autoSuicideRoundListBox.SetItemChecked(i, !string.IsNullOrEmpty(item) && _settings.AutoSuicideRoundTypes.Contains(item));
             }
 
             settingsForm.SettingsPanel.oscPortNumericUpDown.Value = _settings.OSCPort;
@@ -1093,7 +1149,18 @@ namespace ToNRoundCounter.UI
                 votingMenuItem.Click += (s, e) =>
                 {
                     var votingForm = new VotingPanelForm(_cloudClient, currentInstanceId, _settings.CloudPlayerName ?? Environment.UserName);
-                    votingForm.ShowDialog(this);
+                    activeVotingPanelForm = votingForm;
+                    try
+                    {
+                        votingForm.ShowDialog(this);
+                    }
+                    finally
+                    {
+                        if (ReferenceEquals(activeVotingPanelForm, votingForm))
+                        {
+                            activeVotingPanelForm = null;
+                        }
+                    }
                 };
                 windowsMenuItem.DropDownItems.Add(votingMenuItem);
 
@@ -1151,7 +1218,7 @@ namespace ToNRoundCounter.UI
             }
         }
 
-        private async void MainForm_Load(object sender, EventArgs e)
+        private async void MainForm_Load(object? sender, EventArgs e)
         {
             try
             {
@@ -1216,49 +1283,46 @@ namespace ToNRoundCounter.UI
             try
             {
                 LogUi("Checking for application updates.", LogEventLevel.Debug);
-                using (var client = new HttpClient())
+                var json = await SharedHttpClient.GetStringAsync("https://raw.githubusercontent.com/lovetwice1012/ToNRoundCounter/refs/heads/master/version.json");
+                var data = JObject.Parse(json);
+                var latest = data["latest"]?.ToString();
+                var url = data["url"]?.ToString();
+                if (!string.IsNullOrEmpty(latest) && !string.IsNullOrEmpty(url) && IsOlderVersion(version, latest))
                 {
-                    var json = await client.GetStringAsync("https://raw.githubusercontent.com/lovetwice1012/ToNRoundCounter/refs/heads/master/version.json");
-                    var data = JObject.Parse(json);
-                    var latest = data["latest"]?.ToString();
-                    var url = data["url"]?.ToString();
-                    if (!string.IsNullOrEmpty(latest) && !string.IsNullOrEmpty(url) && IsOlderVersion(version, latest))
+                    LogUi($"Update available. Current: {version}, Latest: {latest}.");
+                    var result = MessageBox.Show($"新しいバージョン {latest} が利用可能です。\n更新をダウンロードして適用しますか？", "アップデート", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                    if (result == DialogResult.Yes)
                     {
-                        LogUi($"Update available. Current: {version}, Latest: {latest}.");
-                        var result = MessageBox.Show($"新しいバージョン {latest} が利用可能です。\n更新をダウンロードして適用しますか？", "アップデート", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
-                        if (result == DialogResult.Yes)
-                        {
-                            LogUi("User accepted update download.");
-                            var zipPath = Path.Combine(Path.GetTempPath(), "ToNRoundCounter_update.zip");
-                            var bytes = await client.GetByteArrayAsync(url);
-                            File.WriteAllBytes(zipPath, bytes);
+                        LogUi("User accepted update download.");
+                        var zipPath = Path.Combine(Path.GetTempPath(), "ToNRoundCounter_update.zip");
+                        var bytes = await SharedHttpClient.GetByteArrayAsync(url);
+                        File.WriteAllBytes(zipPath, bytes);
 
-                            var updaterExe = Path.Combine(Directory.GetCurrentDirectory(), "Updater.exe");
-                            if (File.Exists(updaterExe))
+                        var updaterExe = Path.Combine(Directory.GetCurrentDirectory(), "Updater.exe");
+                        if (File.Exists(updaterExe))
+                        {
+                            LogUi($"Launching updater from '{updaterExe}' with package '{zipPath}'.");
+                            Process.Start(new ProcessStartInfo(updaterExe)
                             {
-                                LogUi($"Launching updater from '{updaterExe}' with package '{zipPath}'.");
-                                Process.Start(new ProcessStartInfo(updaterExe)
-                                {
-                                    Arguments = $"\"{zipPath}\" \"{WinFormsApp.ExecutablePath}\"",
-                                    UseShellExecute = false
-                                });
-                                WinFormsApp.Exit();
-                            }
-                            else
-                            {
-                                LogUi("Updater executable not found during update attempt.", LogEventLevel.Error);
-                                MessageBox.Show("Updater.exe が見つかりません。", "アップデート", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                            }
+                                Arguments = $"\"{zipPath}\" \"{WinFormsApp.ExecutablePath}\"",
+                                UseShellExecute = false
+                            });
+                            WinFormsApp.Exit();
                         }
                         else
                         {
-                            LogUi("User declined update installation.", LogEventLevel.Debug);
+                            LogUi("Updater executable not found during update attempt.", LogEventLevel.Error);
+                            MessageBox.Show("Updater.exe が見つかりません。", "アップデート", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         }
                     }
                     else
                     {
-                        LogUi("Application is up to date.", LogEventLevel.Debug);
+                        LogUi("User declined update installation.", LogEventLevel.Debug);
                     }
+                }
+                else
+                {
+                    LogUi("Application is up to date.", LogEventLevel.Debug);
                 }
             }
             catch (Exception ex)
@@ -1315,6 +1379,7 @@ namespace ToNRoundCounter.UI
 
         private async Task OnFormClosingAsync(FormClosingEventArgs e)
         {
+            Interlocked.Exchange(ref _isClosing, 1);
             LogUi("Main form closing initiated.");
             SaveRoundLogsToFile();
             _overlayManager.CapturePositions();
@@ -1385,17 +1450,14 @@ namespace ToNRoundCounter.UI
             }
 
             _cancellation.Cancel();
-            if (oscRepeaterProcess != null && !oscRepeaterProcess.HasExited)
+            await DrainBackgroundOperationsAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+            try
             {
-                try
-                {
-                    oscRepeaterProcess.Kill();
-                    oscRepeaterProcess.WaitForExit();
-                }
-                catch (Exception ex)
-                {
-                    LogUi($"Failed to kill OSC repeater process: {ex.Message}", LogEventLevel.Warning);
-                }
+                _oscRepeaterService?.Stop();
+            }
+            catch (Exception ex)
+            {
+                LogUi($"Failed to stop OSC repeater service: {ex.Message}", LogEventLevel.Warning);
             }
             LogUi("Main form closing sequence finished. Base closing invoked.", LogEventLevel.Debug);
         }
@@ -1410,7 +1472,19 @@ namespace ToNRoundCounter.UI
 
                 try
                 {
-                    webSocketClient?.StopAsync().GetAwaiter().GetResult();
+                    if (_cloudClient != null)
+                    {
+                        _cloudClient.MessageReceived -= OnCloudMessageReceived;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogUi($"Failed to unsubscribe cloud message handler: {ex.Message}", LogEventLevel.Warning);
+                }
+
+                try
+                {
+                    _ = webSocketClient.StopAsync();
                 }
                 catch (Exception ex)
                 {
@@ -1624,6 +1698,7 @@ namespace ToNRoundCounter.UI
                     currentRound.MapName = mapName;
                     currentRound.Damage = 0;
                     currentRound.PageCount = 0;
+                    ResetCoordinatedAutoSuicideRoundState();
                     if (!string.IsNullOrEmpty(itemName))
                         currentRound.ItemNames.Add(itemName);
                     _dispatcher.Invoke(() =>
@@ -1632,224 +1707,173 @@ namespace ToNRoundCounter.UI
                         InfoPanel.RoundTypeValue.ForeColor = ConvertColorFromInt(displayColorInt);
                     });
 
-            if (_settings.CloudSyncEnabled)
-            {
-                RunPresenterAsyncWithErrorHandling(
-                    () => _presenter.OnRoundStartAsync(currentRound, currentInstanceId),
-                    "round start"
-                );
-            }
-
-            if (testerNames.Contains(stateService.PlayerDisplayName) && roundType == "オルタネイト")
-            {
-                PlayFromStart(tester_roundStartAlternatePlayer);
-            }
-
-            if (_autoSuicideCoordinator.IsAllRoundsModeEnabled)
-            {
-                _autoSuicideCoordinator.Schedule(TimeSpan.FromSeconds(DefaultAutoSuicideDelaySeconds), true, true);
-            }
-            else
-            {
-                // Delegate auto-suicide decision to coordinator
-                var currentRound = stateService.CurrentRound;
-                if (currentRound != null && _autoSuicideCoordinator.ShouldScheduleForRound(currentRound))
-                {
-                    int autoAction = _autoSuicideCoordinator.EvaluateDecision(roundType, null, out var hasPendingDelayed);
-                    if (autoAction == 1)
+                    // Cloud同期: ラウンド開始
+                    if (_settings.CloudSyncEnabled)
                     {
-                        var delay = hasPendingDelayed ? TimeSpan.FromSeconds(DelayedAutoSuicideSeconds) : TimeSpan.FromSeconds(DefaultAutoSuicideDelaySeconds);
-                        _autoSuicideCoordinator.Schedule(delay, true);
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await _presenter.OnRoundStartAsync(currentRound, currentInstanceId);
+                                await RefreshCoordinatedAutoSuicideStateAsync(true);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger?.LogEvent("CloudSync", $"Failed to sync round start: {ex.Message}", LogEventLevel.Warning);
+                            }
+                        });
+                    }
+
+                    //もしtesterNamesに含まれているかつオルタネイトなら、オルタネイトラウンド開始の音を鳴らす
+                    if (testerNames.Contains(stateService.PlayerDisplayName) && roundType == "オルタネイト")
+                    {
+                        PlayFromStart(tester_roundStartAlternatePlayer);
+                    }
+                    //issetAllSelfKillModeがtrueなら13秒後に自殺入力をする
+                    int autoAction = ShouldAutoSuicide(roundType, null, out var hasPendingDelayed);
+                    if (issetAllSelfKillMode)
+                    {
+                        ScheduleAutoSuicide(TimeSpan.FromSeconds(13), true, true);
+                    }
+                    else if (autoAction == 1)
+                    {
+                        var delay = hasPendingDelayed ? TimeSpan.FromSeconds(40) : TimeSpan.FromSeconds(13);
+                        ScheduleAutoSuicide(delay, true);
                     }
                     else if (autoAction == 2)
                     {
-                        _autoSuicideCoordinator.Schedule(TimeSpan.FromSeconds(40), true);
+                        ScheduleAutoSuicide(TimeSpan.FromSeconds(40), true);
                     }
+
+                    EvaluateAutoRecording("RoundTypeUpdated");
                 }
-            }
-
-            EvaluateAutoRecording("RoundTypeUpdated");
-        }
-
-        /// <summary>
-        /// Handles the TRACKER WebSocket event and routes to specific tracker sub-events.
-        /// </summary>
-        private void HandleTrackerEvent(JObject json)
-        {
-            string trackerEvent = json.Value<string>("event") ?? "";
-            if (trackerEvent == "round_start")
-            {
-                HandleTrackerRoundStart(json);
-            }
-            else if (trackerEvent == "round_killers")
-            {
-                HandleTrackerRoundKillers(json);
-            }
-            else if (trackerEvent == "round_won")
-            {
-                HandleTrackerRoundWon();
-            }
-            else if (trackerEvent == "round_lost")
-            {
-                HandleTrackerRoundLost();
-            }
-        }
-
-        /// <summary>
-        /// Handles the TRACKER round_start sub-event.
-        /// </summary>
-        private void HandleTrackerRoundStart(JObject json)
-        {
-            if (lastOptedIn != false)
-            {
-                var trackerRound = new Round();
-                stateService.UpdateCurrentRound(trackerRound);
-                trackerRound.RoundType = string.Empty;
-                trackerRound.IsDeath = false;
-                trackerRound.TerrorKey = string.Empty;
-                trackerRound.RoundColor = 0xFFFFFF;
-                string mapName = string.Empty;
-                _dispatcher.Invoke(() => mapName = InfoPanel.MapValue.Text);
-                trackerRound.MapName = mapName;
-                trackerRound.Damage = 0;
-            }
-        }
-
-        /// <summary>
-        /// Handles the TRACKER round_killers sub-event.
-        /// Updates terror IDs for the current round.
-        /// </summary>
-        private void HandleTrackerRoundKillers(JObject json)
-        {
-            var args = json.Value<JArray>("args");
-            var activeRound = stateService.CurrentRound;
-            if (args != null && activeRound != null)
-            {
-                if (activeRound.TerrorIds == null || activeRound.TerrorIds.Length < 3)
+                else if (eventType == "TRACKER")
                 {
-                    activeRound.TerrorIds = new int[3];
-                }
-
-                for (int index = 0; index < activeRound.TerrorIds.Length; index++)
-                {
-                    activeRound.TerrorIds[index] = 0;
-                }
-
-                for (int i = 0; i < Math.Min(3, args.Count); i++)
-                {
-                    int? terrorId = TryConvertToInt(args[i]);
-                    activeRound.TerrorIds[i] = terrorId ?? 0;
-                }
-            }
-        }
-
-        /// <summary>
-        /// Handles the TRACKER round_won sub-event.
-        /// </summary>
-        private void HandleTrackerRoundWon()
-        {
-            var existingRound = stateService.CurrentRound;
-            if (existingRound != null)
-            {
-                FinalizeCurrentRound(existingRound.IsDeath ? "☠" : "✅");
-            }
-        }
-
-        /// <summary>
-        /// Handles the TRACKER round_lost sub-event.
-        /// </summary>
-        private void HandleTrackerRoundLost()
-        {
-            var existingRound = stateService.CurrentRound;
-            if (existingRound != null && !existingRound.IsDeath)
-            {
-                existingRound.IsDeath = true;
-                FinalizeCurrentRound("☠");
-            }
-        }
-
-        /// <summary>
-        /// Handles the LOCATION WebSocket event when command is 1.
-        /// Updates map name for the current round and UI.
-        /// </summary>
-        private void HandleLocationEvent(int command, JObject json)
-        {
-            if (command != 1)
-                return;
-
-            string updatedMapName = json.Value<string>("Name") ?? string.Empty;
-            _dispatcher.Invoke(() =>
-            {
-                InfoPanel.MapValue.Text = updatedMapName;
-            });
-
-            var existingRound = stateService.CurrentRound;
-            string? roundTypeForStorage = existingRound?.RoundType;
-            string? terrorKeyForStorage = existingRound?.TerrorKey;
-
-            if (existingRound != null)
-            {
-                existingRound.MapName = updatedMapName;
-            }
-
-            if (string.IsNullOrWhiteSpace(roundTypeForStorage))
-            {
-                _dispatcher.Invoke(() =>
-                {
-                    var currentRoundType = InfoPanel.RoundTypeValue.Text;
-                    if (!string.IsNullOrWhiteSpace(currentRoundType))
+                    string trackerEvent = json.Value<string>("event") ?? "";
+                    if (trackerEvent == "round_start")
                     {
-                        roundTypeForStorage = currentRoundType;
+                        if (lastOptedIn != false)
+                        {
+                            var trackerRound = new Round();
+                            stateService.UpdateCurrentRound(trackerRound);
+                            trackerRound.RoundType = string.Empty;
+                            trackerRound.IsDeath = false;
+                            trackerRound.TerrorKey = string.Empty;
+                            trackerRound.RoundColor = 0xFFFFFF;
+                            string mapName = string.Empty;
+                            _dispatcher.Invoke(() => mapName = InfoPanel.MapValue.Text);
+                            trackerRound.MapName = mapName;
+                            trackerRound.Damage = 0;
+                        }
                     }
-                });
-            }
+                    else if (trackerEvent == "round_killers")
+                    {
+                        var args = json.Value<JArray>("args");
+                        var activeRound = stateService.CurrentRound;
+                        if (args != null && activeRound != null)
+                        {
+                            if (activeRound.TerrorIds == null || activeRound.TerrorIds.Length < 3)
+                            {
+                                activeRound.TerrorIds = new int[3];
+                            }
 
-            if (!string.IsNullOrWhiteSpace(updatedMapName) && !string.IsNullOrWhiteSpace(roundTypeForStorage))
-            {
-                stateService.SetRoundMapName(roundTypeForStorage!, updatedMapName);
-                if (!string.IsNullOrWhiteSpace(terrorKeyForStorage))
-                {
-                    stateService.SetTerrorMapName(roundTypeForStorage!, terrorKeyForStorage!, updatedMapName);
+                            for (int index = 0; index < activeRound.TerrorIds.Length; index++)
+                            {
+                                activeRound.TerrorIds[index] = 0;
+                            }
+
+                            for (int i = 0; i < Math.Min(3, args.Count); i++)
+                            {
+                                int? terrorId = TryConvertToInt(args[i]);
+                                activeRound.TerrorIds[i] = terrorId ?? 0;
+                            }
+                        }
+                    }
+                    else if (trackerEvent == "round_won")
+                    {
+                        var existingRound = stateService.CurrentRound;
+                        if (existingRound != null)
+                        {
+                            FinalizeCurrentRound(existingRound.IsDeath ? "☠" : "✅");
+                        }
+                    }
+                    else if (trackerEvent == "round_lost")
+                    {
+                        var existingRound = stateService.CurrentRound;
+                        if (existingRound != null && !existingRound.IsDeath)
+                        {
+                            existingRound.IsDeath = true;
+                            FinalizeCurrentRound("☠");
+                        }
+                    }
                 }
-            }
-        }
-
-        /// <summary>
-        /// Handles the TERRORS WebSocket event when command is 0 or 1.
-        /// Updates terror information and triggers auto-suicide evaluation.
-        /// </summary>
-        private void HandleTerrorsEvent(int command, JObject json)
-        {
-            if (command != 0 && command != 1)
-                return;
-
-            string displayName = json.Value<string>("DisplayName") ?? "";
-            int displayColorInt = json.Value<int>("DisplayColor");
-            Color color = ConvertColorFromInt(displayColorInt);
-
-            var activeRound = stateService.CurrentRound;
-            if (activeRound != null && !activeRound.RoundColor.HasValue)
-            {
-                activeRound.RoundColor = displayColorInt;
-            }
-
-            List<(string name, int count)>? terrors = null;
-            var namesArray = json.Value<JArray>("Names");
-            if (namesArray != null && namesArray.Count > 0)
-            {
-                var arr = namesArray.Select(token => token.ToString()).ToList();
-                terrors = arr.Select(n => (n, 1)).ToList();
-            }
-
-            var roundType = stateService.CurrentRound?.RoundType ?? string.Empty;
-            if ((terrors == null || terrors.Count == 0) && roundType == "アンバウンド")
-            {
-                var lookup = UnboundRoundDefinitions.GetTerrors(displayName);
-                if (lookup != null)
+                else if (eventType == "LOCATION" && command == 1)
                 {
-                    terrors = lookup.ToList();
+                    string updatedMapName = json.Value<string>("Name") ?? string.Empty;
+                    _dispatcher.Invoke(() =>
+                    {
+                        InfoPanel.MapValue.Text = updatedMapName;
+                    });
+
+                    var existingRound = stateService.CurrentRound;
+                    string? roundTypeForStorage = existingRound?.RoundType;
+                    string? terrorKeyForStorage = existingRound?.TerrorKey;
+
+                    if (existingRound != null)
+                    {
+                        existingRound.MapName = updatedMapName;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(roundTypeForStorage))
+                    {
+                        _dispatcher.Invoke(() =>
+                        {
+                            var currentRoundType = InfoPanel.RoundTypeValue.Text;
+                            if (!string.IsNullOrWhiteSpace(currentRoundType))
+                            {
+                                roundTypeForStorage = currentRoundType;
+                            }
+                        });
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(updatedMapName) && !string.IsNullOrWhiteSpace(roundTypeForStorage))
+                    {
+                        stateService.SetRoundMapName(roundTypeForStorage!, updatedMapName);
+                        if (!string.IsNullOrWhiteSpace(terrorKeyForStorage))
+                        {
+                            stateService.SetTerrorMapName(roundTypeForStorage!, terrorKeyForStorage!, updatedMapName);
+                        }
+                    }
                 }
-            }
+                else if (eventType == "TERRORS" && (command == 0 || command == 1))
+                {
+                    string displayName = json.Value<string>("DisplayName") ?? "";
+                    int displayColorInt = json.Value<int>("DisplayColor");
+                    Color color = ConvertColorFromInt(displayColorInt);
+
+                    var activeRound = stateService.CurrentRound;
+                    if (activeRound != null && !activeRound.RoundColor.HasValue)
+                    {
+                        activeRound.RoundColor = displayColorInt;
+                    }
+
+                    List<(string name, int count)>? terrors = null;
+                    var namesArray = json.Value<JArray>("Names");
+                    if (namesArray != null && namesArray.Count > 0)
+                    {
+                        var arr = namesArray.Select(token => token.ToString()).ToList();
+                        terrors = arr.Select(n => (n, 1)).ToList();
+                    }
+
+                    var roundType = stateService.CurrentRound?.RoundType ?? string.Empty;
+                    if ((terrors == null || terrors.Count == 0) && roundType == "アンバウンド")
+                    {
+                        var lookup = UnboundRoundDefinitions.GetTerrors(displayName);
+                        if (lookup != null)
+                        {
+                            terrors = lookup.ToList();
+                        }
+                    }
 
                     var namesForLogic = terrors?.SelectMany(t => Enumerable.Repeat(t.name, t.count)).ToList();
                     var activeRoundForNames = stateService.CurrentRound;
@@ -1866,82 +1890,84 @@ namespace ToNRoundCounter.UI
                         // If TerrorKey changed, clear desire players and trigger refresh
                         if (terrorKeyChanged)
                         {
-                            lock (instanceTimerSync)
-                            {
-                                currentDesirePlayers.Clear();
-                            }
+                            currentDesirePlayers = new List<string>();
+                            currentTerrorDetectedAtUtc = DateTime.UtcNow;
+                            lastAppliedCoordinatedSkipSignature = string.Empty;
+                            lastAppliedNoWishSkipSignature = string.Empty;
                             _logger?.LogEvent("TerrorKey", $"TerrorKey changed to: {joinedNames}, cleared desire players", LogEventLevel.Information);
                         }
                     }
 
-            _dispatcher.Invoke(() => { UpdateTerrorDisplay(displayName, color, terrors); });
+                    _dispatcher.Invoke(() => { UpdateTerrorDisplay(displayName, color, terrors); });
 
-            var activeRoundForAuto = stateService.CurrentRound;
-            if (activeRoundForAuto != null)
-            {
-                // Announce threat to Cloud
-                if (_settings.CloudSyncEnabled && _cloudClient != null && _cloudClient.IsConnected && !string.IsNullOrEmpty(currentInstanceId))
-                {
-                    _ = Task.Run(async () =>
+                    var activeRoundForAuto = stateService.CurrentRound;
+                    if (activeRoundForAuto != null)
                     {
-                        try
+                        // Announce threat to Cloud
+                        if (_settings.CloudSyncEnabled && _cloudClient != null && _cloudClient.IsConnected && !string.IsNullOrEmpty(currentInstanceId))
                         {
-                            await _cloudClient.AnnounceThreatAsync(
-                                currentInstanceId,
-                                activeRoundForAuto.TerrorKey ?? displayName,
-                                roundType
-                            );
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    await _cloudClient.AnnounceThreatAsync(
+                                        currentInstanceId,
+                                        activeRoundForAuto.TerrorKey ?? displayName,
+                                        roundType
+                                    );
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger?.LogEvent("CloudThreat", $"Failed to announce threat: {ex.Message}", LogEventLevel.Debug);
+                                }
+                            });
                         }
-                        catch (Exception ex)
+
+                        // Check for desire players
+                        _ = Task.Run(async () =>
                         {
-                            _logger?.LogEvent("CloudThreat", $"Failed to announce threat: {ex.Message}", LogEventLevel.Debug);
-                        }
-                    });
-                }
+                            await CheckDesirePlayersForRoundAsync(roundType, activeRoundForAuto.TerrorKey);
+                        });
 
-                // Check for desire players
-                _ = Task.Run(async () =>
-                {
-                    await CheckDesirePlayersForRoundAsync(roundType, activeRoundForAuto.TerrorKey);
-                });
+                        var sharedCoordinatedSkipScheduled = TryScheduleSharedCoordinatedSkip(roundType, activeRoundForAuto.TerrorKey);
 
-                if (roundType == "ブラッドバス" && namesForLogic != null && namesForLogic.Any(n => n.Contains("LVL 3")))
-                {
-                    roundType = "EX";
-                }
-
-                int terrorAction = _autoSuicideCoordinator.EvaluateDecision(roundType, activeRoundForAuto.TerrorKey, out _);
-                if (terrorAction == 0 && autoSuicideService.HasScheduled && !_autoSuicideCoordinator.IsAllRoundsModeEnabled)
-                {
-                    _autoSuicideCoordinator.Cancel();
-                }
-
-                if (_autoSuicideCoordinator.IsAllRoundsModeEnabled)
-                {
-                    _ = Task.Run(() => _autoSuicideCoordinator.Execute());
-                }
-                else if (terrorAction == 1)
-                {
-                    // Non-delayed auto suicide - check for desire players
-                    ScheduleAutoSuicideWithDesireCheck(TimeSpan.FromSeconds(3), true, _autoSuicideCoordinator.IsAllRoundsModeForced);
-                }
-                else if (terrorAction == 2)
-                {
-                    var roundStart = autoSuicideService.RoundStartTime;
-                    bool resetStartTime = roundStart == default;
-                    TimeSpan remaining;
-                    if (resetStartTime)
-                    {
-                        remaining = TimeSpan.FromSeconds(40);
-                    }
-                    else
-                    {
-                        remaining = TimeSpan.FromSeconds(40) - (DateTime.UtcNow - roundStart);
-                        if (remaining < TimeSpan.Zero)
+                        if (!sharedCoordinatedSkipScheduled && roundType == "ブラッドバス" && namesForLogic != null && namesForLogic.Any(n => n.Contains("LVL 3")))
                         {
-                            remaining = TimeSpan.Zero;
+                            roundType = "EX";
                         }
-                    }
+                        //もしroundTypeが自動自殺ラウンド対象なら自動自殺
+                        int terrorAction = sharedCoordinatedSkipScheduled ? 0 : ShouldAutoSuicide(roundType, activeRoundForAuto.TerrorKey);
+                        if (!sharedCoordinatedSkipScheduled && terrorAction == 0 && autoSuicideService.HasScheduled && !issetAllSelfKillMode)
+                        {
+                            CancelAutoSuicide();
+                        }
+
+                        if (!sharedCoordinatedSkipScheduled && issetAllSelfKillMode)
+                        {
+                            _ = Task.Run(() => PerformAutoSuicide());
+                        }
+                        else if (!sharedCoordinatedSkipScheduled && terrorAction == 1)
+                        {
+                            // Non-delayed auto suicide - check for desire players
+                            ScheduleAutoSuicideWithDesireCheck(TimeSpan.FromSeconds(3), true, allRoundsForcedSchedule);
+                        }
+                        else if (!sharedCoordinatedSkipScheduled && terrorAction == 2)
+                        {
+                            var roundStart = autoSuicideService.RoundStartTime;
+                            bool resetStartTime = roundStart == default;
+                            TimeSpan remaining;
+                            if (resetStartTime)
+                            {
+                                remaining = TimeSpan.FromSeconds(40);
+                            }
+                            else
+                            {
+                                remaining = TimeSpan.FromSeconds(40) - (DateTime.UtcNow - roundStart);
+                                if (remaining < TimeSpan.Zero)
+                                {
+                                    remaining = TimeSpan.Zero;
+                                }
+                            }
 
                             ScheduleAutoSuicide(remaining, resetStartTime, allRoundsForcedSchedule);
                         }
@@ -1966,12 +1992,12 @@ namespace ToNRoundCounter.UI
                             if (InfoPanel?.DamageValue != null)
                             {
                                 InfoPanel.DamageValue.Text = currentRound.Damage.ToString();
-                                UpdateOverlay(OverlaySection.Damage, form => form.SetValue(GetDamageOverlayText()));
+                                _overlayManager.UpdateDamage(InfoPanel.DamageValue.Text);
                             }
                         });
 
                         // Send damage update to Cloud
-                        _ = Task.Run(async () => await UpdateCloudPlayerState());
+                        RunBackgroundOperation(() => UpdateCloudPlayerState(), "CloudPlayerStateDamage", LogEventLevel.Debug);
                     }
                 }
                 else if (eventType == "DEATH")
@@ -2006,89 +2032,125 @@ namespace ToNRoundCounter.UI
                     string statName = json.Value<string>("Name") ?? string.Empty;
                     JToken? valueToken = json["Value"];
 
-            if (string.IsNullOrWhiteSpace(statName) || valueToken == null)
-            {
-                return;
-            }
-
-            var statValue = valueToken.Type == JTokenType.Null ? null : valueToken.ToObject<object>();
-            if (statValue != null)
-            {
-                stateService.UpdateStat(statName, statValue);
-            }
-
-            int? numericValue = TryConvertToInt(valueToken);
-            if (numericValue.HasValue && stateService.CurrentRound != null)
-            {
-                if (string.Equals(statName, "RoundInt", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(statName, "RoundID", StringComparison.OrdinalIgnoreCase))
-                {
-                    stateService.CurrentRound.RoundNumber = numericValue.Value;
-                }
-                else if (string.Equals(statName, "MapInt", StringComparison.OrdinalIgnoreCase) ||
-                         string.Equals(statName, "MapID", StringComparison.OrdinalIgnoreCase) ||
-                         string.Equals(statName, "MapId", StringComparison.OrdinalIgnoreCase))
-                {
-                    stateService.CurrentRound.MapId = numericValue.Value;
-                }
-            }
-        }
-
-        /// <summary>
-        /// Handles the PAGE_COUNT WebSocket event.
-        /// Updates page count for the current round.
-        /// </summary>
-        private void HandlePageCountEvent(JObject json)
-        {
-            int pages = json.Value<int>("Value");
-            if (stateService.CurrentRound != null)
-            {
-                stateService.CurrentRound.PageCount = pages;
-                _dispatcher.Invoke(UpdateRoundTypeLabel);
-            }
-        }
-
-        /// <summary>
-        /// Handles the OPTED_IN WebSocket event.
-        /// Manages opt-in status and triggers alert notifications.
-        /// </summary>
-        private void HandleOptedInEvent(JObject json)
-        {
-            if (!isNotifyActivated)
-            {
-                _ = Task.Run(() => SendAlertOscMessagesAsync(0.9f, false));
-                isNotifyActivated = true;
-            }
-            bool optedIn = json.Value<bool?>("Value") ?? true;
-            lastOptedIn = optedIn;
-            if (stateService.CurrentRound != null && optedIn == false)
-                stateService.CurrentRound.IsDeath = true;
-        }
-
-        /// <summary>
-        /// Handles the INSTANCE WebSocket event.
-        /// Manages instance connection and tracking.
-        /// </summary>
-        private async Task HandleInstanceEventAsync(JObject json)
-        {
-            string instanceValue = json.Value<string>("Value") ?? string.Empty;
-            if (!string.IsNullOrEmpty(instanceValue))
-            {
-                bool instanceChanged;
-                DateTimeOffset now = DateTimeOffset.Now;
-                lock (instanceTimerSync)
-                {
-                    instanceChanged = !string.Equals(instanceValue, currentInstanceId, StringComparison.Ordinal);
-                    if (instanceChanged)
+                    if (string.IsNullOrWhiteSpace(statName) || valueToken == null)
                     {
-                        currentInstanceId = instanceValue;
-                        currentInstanceEnteredAt = now;
+                        return;
+                    }
+
+                    var statValue = valueToken.Type == JTokenType.Null ? null : valueToken.ToObject<object>();
+                    if (statValue != null)
+                    {
+                        stateService.UpdateStat(statName, statValue);
+                    }
+
+                    // Some game builds report held item changes via STATS instead of ITEM.
+                    // Reflect them to InfoPanel and cloud state immediately.
+                    TryApplyItemStatUpdate(statName, valueToken);
+
+                    int? numericValue = TryConvertToInt(valueToken);
+                    if (numericValue.HasValue && stateService.CurrentRound != null)
+                    {
+                        if (string.Equals(statName, "RoundInt", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(statName, "RoundID", StringComparison.OrdinalIgnoreCase))
+                        {
+                            stateService.CurrentRound.RoundNumber = numericValue.Value;
+                        }
+                        else if (string.Equals(statName, "MapInt", StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(statName, "MapID", StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(statName, "MapId", StringComparison.OrdinalIgnoreCase))
+                        {
+                            stateService.CurrentRound.MapId = numericValue.Value;
+                        }
                     }
                 }
+                else if (eventType == "ALIVE")
+                {
+                    /*
+                    bool isAlive = json.Value<bool?>("Value") ?? true;
+                    if (stateService.CurrentRound != null)
+                    {
+                        if (!isAlive && !stateService.CurrentRound.IsDeath)
+                        {
+                            stateService.CurrentRound.IsDeath = true;
+                            FinalizeCurrentRound("☠");
+                        }
+                        else if (isAlive)
+                        {
+                            stateService.CurrentRound.IsDeath = false;
+                        }
+                    }
+                    */
+                }
+                else if (eventType == "REBORN")
+                {
+                    /*
+                    bool reborn = json.Value<bool?>("Value") ?? false;
+                    if (stateService.CurrentRound != null && reborn)
+                    {
+                        stateService.CurrentRound.IsDeath = false;
+                    }
+                    */
+                }
+                else if (eventType == "PAGE_COUNT")
+                {
+                    int pages = json.Value<int>("Value");
+                    if (stateService.CurrentRound != null)
+                    {
+                        stateService.CurrentRound.PageCount = pages;
+                        _dispatcher.Invoke(UpdateRoundTypeLabel);
+                    }
+                }
+                else if (eventType == "PLAYER_JOIN")
+                {
+                    /*
+                    if (stateService.CurrentRound != null)
+                    {
+                        stateService.CurrentRound.InstancePlayersCount++;
+                    }
+                    */
+                }
+                else if (eventType == "PLAYER_LEAVE")
+                {
+                    /*
+                    if (stateService.CurrentRound != null && stateService.CurrentRound.InstancePlayersCount > 0)
+                    {
+                        stateService.CurrentRound.InstancePlayersCount--;
+                    }
+                    */
+                }
+                else if (eventType == "OPTED_IN")
+                {
+                    if (!isNotifyActivated)
+                    {
+                        _ = Task.Run(() => SendAlertOscMessagesAsync(0.9f, false));
+                        isNotifyActivated = true;
+                    }
+                    bool optedIn = json.Value<bool?>("Value") ?? true;
+                    lastOptedIn = optedIn;
+                    if (stateService.CurrentRound != null && optedIn == false)
+                        stateService.CurrentRound.IsDeath = true;
+                }
+                else if (eventType == "INSTANCE")
+                {
+                    // "INSTANCE" タイプの接続を受けたら、メッセージ内の "Value" フィールドを使ってインスタンス接続を開始する
+                    string instanceValue = json.Value<string>("Value") ?? string.Empty;
+                    if (!string.IsNullOrEmpty(instanceValue))
+                    {
+                        bool instanceChanged;
+                        DateTimeOffset now = DateTimeOffset.Now;
+                        lock (instanceTimerSync)
+                        {
+                            instanceChanged = !string.Equals(instanceValue, currentInstanceId, StringComparison.Ordinal);
+                            if (instanceChanged)
+                            {
+                                currentInstanceId = instanceValue;
+                                currentInstanceEnteredAt = now;
+                            }
+                        }
 
                         if (instanceChanged)
                         {
-                            UpdateInstanceTimerOverlay();
+                            _overlayManager.UpdateInstanceTimer(currentInstanceId, currentInstanceEnteredAt);
 
                             // Cloud instance join
                             if (_settings.CloudSyncEnabled && _cloudClient != null && _cloudClient.IsConnected)
@@ -2115,25 +2177,24 @@ namespace ToNRoundCounter.UI
                             }
                         }
 
-                _ = Task.Run(() => ConnectToInstance(instanceValue));
-                isNotifyActivated = false;
-            }
-            else
-            {
-                bool hadInstance;
-                string previousInstanceId;
-                DateTimeOffset now = DateTimeOffset.Now;
-                lock (instanceTimerSync)
-                {
-                    hadInstance = !string.IsNullOrEmpty(currentInstanceId);
-                    previousInstanceId = currentInstanceId;
-                    currentInstanceId = string.Empty;
-                    currentInstanceEnteredAt = now;
-                }
+                        isNotifyActivated = false;
+                    }
+                    else
+                    {
+                        bool hadInstance;
+                        string previousInstanceId;
+                        DateTimeOffset now = DateTimeOffset.Now;
+                        lock (instanceTimerSync)
+                        {
+                            hadInstance = !string.IsNullOrEmpty(currentInstanceId);
+                            previousInstanceId = currentInstanceId;
+                            currentInstanceId = string.Empty;
+                            currentInstanceEnteredAt = now;
+                        }
 
                         if (hadInstance)
                         {
-                            UpdateInstanceTimerOverlay();
+                            _overlayManager.UpdateInstanceTimer(string.Empty, DateTimeOffset.Now);
 
                             // Cloud instance leave
                             if (_settings.CloudSyncEnabled && _cloudClient != null && _cloudClient.IsConnected)
@@ -2195,31 +2256,7 @@ namespace ToNRoundCounter.UI
                     if (!string.IsNullOrEmpty(savecode))
                     {
                         await PersistLastSaveCodeAsync(savecode).ConfigureAwait(false);
-                    }
-                    if (savecode != String.Empty && _settings.apikey != String.Empty)
-                    {
-                        // https://toncloud.sprink.cloud/api/savecode/create/{apikey} にPOSTリクエストを送信(savecodeを送信)
-                        using (var client = new HttpClient())
-                        {
-                            client.BaseAddress = new Uri("https://toncloud.sprink.cloud/api/savecode/create/" + _settings.apikey);
-                            var content = new StringContent("{\"savecode\":\"" + savecode + "\"}", Encoding.UTF8, "application/json");
-                            try
-                            {
-                                var response = await client.PostAsync("", content);
-                                if (response.IsSuccessStatusCode)
-                                {
-                                    _logger.LogEvent("SaveCode", "Save code sent successfully.");
-                                }
-                                else
-                                {
-                                    _logger.LogEvent("SaveCodeError", $"Failed to send save code: {response.StatusCode}");
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogEvent("SaveCodeError", $"Exception occurred: {ex.Message}");
-                            }
-                        }
+                        await BackupSaveCodeToCloudAsync(savecode).ConfigureAwait(false);
                     }
                 }
                 else if (eventType == "CUSTOM")
@@ -2241,12 +2278,143 @@ namespace ToNRoundCounter.UI
                                     });
                                 }
 
-                    });
-                    break;
-                default:
-                    _logger.LogEvent("CustomEvent", $"Unknown custom event: {customEvent}");
-                    break;
+                            });
+                            break;
+                        default:
+                            _logger.LogEvent("CustomEvent", $"Unknown custom event: {customEvent}");
+                            break;
+                    }
+
+                }
             }
+            catch (Exception ex)
+            {
+                _logger.LogEvent(LanguageManager.Translate("ParseError"), message);
+                LogUi($"Failed to process WebSocket payload: {ex.Message}", LogEventLevel.Error);
+            }
+        }
+
+        /// <summary>
+        /// 共通のラウンド終了処理
+        /// </summary>
+        /// <param name="status">"☠" または "✅"</param>
+        private void FinalizeCurrentRound(string status)
+        {
+            var round = stateService.CurrentRound;
+            if (round != null)
+            {
+                ResetRoundBgmTracking();
+                string roundType = round.RoundType ?? string.Empty;
+
+                if (string.IsNullOrWhiteSpace(round.MapName))
+                {
+                    string latestMapName = string.Empty;
+                    _dispatcher.Invoke(() => latestMapName = InfoPanel.MapValue.Text);
+                    if (!string.IsNullOrWhiteSpace(latestMapName))
+                    {
+                        round.MapName = latestMapName;
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(round.MapName))
+                {
+                    stateService.SetRoundMapName(roundType, round.MapName);
+                }
+                if (!string.IsNullOrEmpty(round.TerrorKey))
+                {
+                    string terrorKey = round.TerrorKey!;
+                    bool survived = lastOptedIn && !round.IsDeath;
+                    stateService.RecordRoundResult(roundType, terrorKey, survived);
+                    if (!string.IsNullOrWhiteSpace(round.MapName))
+                    {
+                        stateService.SetTerrorMapName(roundType, terrorKey, round.MapName);
+                    }
+                }
+                else
+                {
+                    stateService.RecordRoundResult(roundType, null, !round.IsDeath);
+                }
+
+                _overlayManager.RefreshRoundStats();
+
+                // 次ラウンド予測ロジック
+                var normalTypes = new[] { "クラシック", "Classic", "RUN", "走れ！" };
+                var overrideTypes = new HashSet<string> { "アンバウンド", "8ページ", "ゴースト", "オルタネイト" };
+                string current = round.RoundType ?? string.Empty;
+                int roundCycleForHistory = stateService.RoundCycle;
+
+                string? historyStatusOverride = null;
+                bool isNormalRound = normalTypes.Any(type => current.Contains(type));
+                bool isOverrideRound = overrideTypes.Contains(current);
+
+                if (isNormalRound)
+                {
+                    // 通常ラウンド
+                    if (stateService.RoundCycle == 0)
+                        stateService.SetRoundCycle(1); // 次は通常 or 特殊
+                    else if (stateService.RoundCycle == 1)
+                        stateService.SetRoundCycle(2); // 次は特殊
+                    else
+                        stateService.SetRoundCycle(1); // 想定外: 状態を不確定へ
+                }
+                else if (isOverrideRound)
+                {
+                    // 8ページ・アンバウンド・ゴースト・オルタネイトによる上書き
+                    if (stateService.RoundCycle >= 2)
+                        stateService.SetRoundCycle(0); // 特殊として扱いリセット
+                    else
+                        stateService.SetRoundCycle(1); // 通常扱いだが次は不確定
+                    historyStatusOverride = "置き換え";
+                    hasObservedSpecialRound = true;
+                }
+                else
+                {
+                    // 確定特殊ラウンド
+                    stateService.SetRoundCycle(0);
+                    hasObservedSpecialRound = true;
+                }
+
+                stateService.UpdateCurrentRound(null);
+                EvaluateAutoRecording("RoundFinalized");
+                var roundForHistory = stateService.PreviousRound ?? round;
+                lastRoundTypeForHistory = roundForHistory?.RoundType ?? string.Empty;
+
+                // Cloud同期: ラウンド終了
+                if (_settings.CloudSyncEnabled && roundForHistory != null)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _presenter.OnRoundEndAsync(roundForHistory, status, currentInstanceId);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger?.LogEvent("CloudSync", $"Failed to sync round end: {ex.Message}", LogEventLevel.Warning);
+                        }
+                    });
+                }
+
+                _dispatcher.Invoke(() =>
+                {
+                    UpdateNextRoundPrediction(historyStatusOverride, roundCycleForHistory);
+                    UpdateAggregateStatsDisplay();
+                    if (roundForHistory != null)
+                    {
+                        _presenter.AppendRoundLog(roundForHistory, status);
+                    }
+                    ClearEventDisplays();
+                    ClearItemDisplay();
+                    lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2}";
+                });
+                if (roundForHistory != null)
+                {
+                    _ = _presenter.UploadRoundLogAsync(roundForHistory, status);
+                }
+                _overlayManager.ResetRoundScopedShortcutButtons();
+            }
+            _overlayManager.SetTemporarilyHidden(false);
+            overlayTemporarilyHidden = false;
         }
 
 
@@ -2282,7 +2450,7 @@ namespace ToNRoundCounter.UI
             return false;
         }
 
-        private async void VelocityTimer_Tick(object sender, EventArgs e)
+        private async void VelocityTimer_Tick(object? sender, EventArgs e)
         {
             try
             {
@@ -2310,7 +2478,7 @@ namespace ToNRoundCounter.UI
             lastIdleSeconds = idleSecondsForDisplay;
 
             // Update velocity overlay with current state
-            UpdateVelocityOverlay();
+            _overlayManager.UpdateVelocity(currentVelocity, lastIdleSeconds);
 
             // Update round BGM state
             UpdateRoundBgmState();
@@ -2334,19 +2502,23 @@ namespace ToNRoundCounter.UI
         /// </summary>
         private void SendCloudUpdatesAsync()
         {
-            // Send state update to Cloud (throttled)
-            _ = Task.Run(async () => await UpdateCloudPlayerState());
+            // Send state update to Cloud (throttled - velocity timer fires at 20Hz, but cloud doesn't need that)
+            var now = DateTime.Now;
+            if ((now - lastCloudStateUpdate).TotalSeconds >= CloudStateUpdateIntervalSeconds)
+            {
+                lastCloudStateUpdate = now;
+                RunBackgroundOperation(() => UpdateCloudPlayerState(), "CloudPlayerStateUpdate", LogEventLevel.Debug);
+            }
 
             // Send monitoring status to Cloud (throttled)
-            _ = Task.Run(async () =>
+            if ((now - lastMonitoringStatusUpdate).TotalSeconds >= MonitoringStatusUpdateIntervalSeconds)
             {
-                var now = DateTime.Now;
-                if ((now - lastMonitoringStatusUpdate).TotalSeconds >= MonitoringStatusUpdateIntervalSeconds)
+                lastMonitoringStatusUpdate = now;
+                RunBackgroundOperation(async () =>
                 {
-                    lastMonitoringStatusUpdate = now;
-                    await ReportMonitoringStatusAsync();
-                }
-            });
+                    await ReportMonitoringStatusAsync().ConfigureAwait(false);
+                }, "CloudMonitoringStatusUpdate", LogEventLevel.Debug);
+            }
         }
 
         /// <summary>
@@ -2377,7 +2549,7 @@ namespace ToNRoundCounter.UI
                         if (!handled)
                         {
                             _soundManager.PlayAfkWarning();
-                            _ = Task.Run(() => SendAlertOscMessagesAsync(0.1f));
+                            RunBackgroundOperation(() => SendAlertOscMessagesAsync(0.1f), "AfkAlertOsc", LogEventLevel.Debug);
                         }
                         afkSoundPlayed = true;
                     }
@@ -2587,13 +2759,23 @@ namespace ToNRoundCounter.UI
             }
 
             UpdateNextRoundOverlay();
-            RecordRoundHistory(historyStatusOverride, roundCycleForHistory);
+            {
+                string label = !string.IsNullOrWhiteSpace(lastRoundTypeForHistory)
+                    ? lastRoundTypeForHistory
+                    : InfoPanel?.NextRoundType?.Text ?? string.Empty;
+                string status = historyStatusOverride ?? GetDefaultRoundHistoryStatus(roundCycleForHistory ?? stateService.RoundCycle);
+                if (!string.IsNullOrWhiteSpace(label) || !string.IsNullOrWhiteSpace(status))
+                {
+                    _overlayManager.RecordRoundHistory(label, status);
+                }
+            }
         }
 
         private void ClearEventDisplays()
         {
             InfoPanel.RoundTypeValue.Text = "";
             InfoPanel.MapValue.Text = "";
+            currentMapName = string.Empty;
             currentUnboundDisplayName = null;
             currentUnboundTerrorDetails = null;
             SetTerrorBaseText(string.Empty);
@@ -2601,24 +2783,200 @@ namespace ToNRoundCounter.UI
             ResetTerrorCountdown();
             InfoPanel.DamageValue.Text = "";
             InfoPanel.ItemValue.Text = "";
+            currentHeldItemName = string.Empty;
             _overlayManager.UpdateDamage(InfoPanel.DamageValue?.Text ?? "0");
             _overlayManager.UpdateRoundStatus(InfoPanel.RoundTypeValue.Text ?? string.Empty);
         }
 
         private void UpdateItemDisplay(JObject json)
         {
-            string itemName = json.Value<string>("Name") ?? "";
+            string itemName = NormalizeCurrentItemText(ExtractItemTextFromEvent(json));
+            string currentItem = NormalizeCurrentItemText(InfoPanel.ItemValue.Text);
+            try
+            {
+                _logger?.LogEvent("ITEM", $"UpdateItemDisplay extracted='{itemName}' current='{currentItem}' raw={json?.ToString(Newtonsoft.Json.Formatting.None)}", LogEventLevel.Debug);
+            }
+            catch { }
+            if (string.Equals(currentItem, itemName, StringComparison.Ordinal))
+            {
+                currentHeldItemName = itemName;
+                return;
+            }
+
             InfoPanel.ItemValue.Text = itemName;
+            currentHeldItemName = itemName;
             if (stateService.CurrentRound != null)
             {
-                if (!stateService.CurrentRound.ItemNames.Contains(itemName))
+                if (!string.IsNullOrEmpty(itemName) && !stateService.CurrentRound.ItemNames.Contains(itemName))
                     stateService.CurrentRound.ItemNames.Add(itemName);
             }
+
+            TriggerCloudPlayerStateItemSync("CloudPlayerStateItemEvent");
         }
 
         private void ClearItemDisplay()
         {
+            if (string.IsNullOrEmpty(InfoPanel.ItemValue.Text))
+            {
+                currentHeldItemName = string.Empty;
+                return;
+            }
+
             InfoPanel.ItemValue.Text = "";
+            currentHeldItemName = string.Empty;
+            TriggerCloudPlayerStateItemSync("CloudPlayerStateItemClear");
+        }
+
+        private void TriggerCloudPlayerStateItemSync(string operationName)
+        {
+            if (!_settings.CloudSyncEnabled || _cloudClient == null || !_cloudClient.IsConnected)
+            {
+                return;
+            }
+
+            RunBackgroundOperation(() => UpdateCloudPlayerState(), operationName, LogEventLevel.Debug);
+        }
+
+        private void TryApplyItemStatUpdate(string statName, JToken valueToken)
+        {
+            if (string.IsNullOrWhiteSpace(statName) || valueToken == null)
+            {
+                return;
+            }
+
+            string normalizedName = NormalizeStatName(statName);
+            bool isItemStat = normalizedName.Contains("item", StringComparison.Ordinal)
+                || normalizedName.Contains("inventory", StringComparison.Ordinal)
+                || normalizedName.Contains("held", StringComparison.Ordinal);
+            if (!isItemStat)
+            {
+                return;
+            }
+
+            string? rawItem = ExtractItemTextFromStatValue(valueToken);
+            if (rawItem == null)
+            {
+                return;
+            }
+
+            string itemName = NormalizeCurrentItemText(rawItem);
+            _dispatcher.Invoke(() =>
+            {
+                string currentItem = NormalizeCurrentItemText(InfoPanel.ItemValue.Text);
+                if (string.Equals(currentItem, itemName, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                InfoPanel.ItemValue.Text = itemName;
+                currentHeldItemName = itemName;
+                if (stateService.CurrentRound != null && !string.IsNullOrEmpty(itemName) && !stateService.CurrentRound.ItemNames.Contains(itemName))
+                {
+                    stateService.CurrentRound.ItemNames.Add(itemName);
+                }
+
+                TriggerCloudPlayerStateItemSync("CloudPlayerStateItemStats");
+            });
+        }
+
+        private static string? ExtractItemTextFromStatValue(JToken valueToken)
+        {
+            if (valueToken.Type == JTokenType.Null)
+            {
+                return string.Empty;
+            }
+
+            if (valueToken.Type == JTokenType.String)
+            {
+                return valueToken.Value<string>();
+            }
+
+            if (valueToken.Type == JTokenType.Object)
+            {
+                var nameToken = valueToken["Name"];
+                if (nameToken?.Type == JTokenType.String)
+                {
+                    return nameToken.Value<string>();
+                }
+
+                var valueTokenInner = valueToken["Value"];
+                if (valueTokenInner?.Type == JTokenType.String)
+                {
+                    return valueTokenInner.Value<string>();
+                }
+            }
+
+            return null;
+        }
+
+        private static string? ExtractItemTextFromEvent(JObject json)
+        {
+            // ToN's ITEM OSC events typically expose the item's user-facing label in DisplayName.
+            string? displayName = json.Value<string>("DisplayName");
+            if (!string.IsNullOrWhiteSpace(displayName))
+            {
+                return displayName;
+            }
+
+            string? directValue = json.Value<string>("Value");
+            if (!string.IsNullOrWhiteSpace(directValue))
+            {
+                return directValue;
+            }
+
+            string? nameValue = json.Value<string>("Name");
+            if (!string.IsNullOrWhiteSpace(nameValue) &&
+                !string.Equals(nameValue, "ITEM", StringComparison.OrdinalIgnoreCase))
+            {
+                return nameValue;
+            }
+
+            JToken? valueToken = json["Value"];
+            if (valueToken != null)
+            {
+                string? extracted = ExtractItemTextFromStatValue(valueToken);
+                if (!string.IsNullOrWhiteSpace(extracted))
+                {
+                    return extracted;
+                }
+            }
+
+            // Last resort: scan top-level string properties for a plausible item label.
+            foreach (var prop in json.Properties())
+            {
+                if (string.Equals(prop.Name, "Type", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(prop.Name, "Command", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(prop.Name, "Name", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(prop.Name, "Value", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                if (prop.Value?.Type == JTokenType.String)
+                {
+                    var s = prop.Value.Value<string>();
+                    if (!string.IsNullOrWhiteSpace(s) &&
+                        !string.Equals(s, "ITEM", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return s;
+                    }
+                }
+            }
+
+            return nameValue;
+        }
+
+        private static string NormalizeStatName(string statName)
+        {
+            var builder = new StringBuilder(statName.Length);
+            foreach (char c in statName)
+            {
+                if (char.IsLetterOrDigit(c))
+                {
+                    builder.Append(char.ToLowerInvariant(c));
+                }
+            }
+
+            return builder.ToString();
         }
 
         private void LoadTerrorInfo()
@@ -3167,14 +3525,15 @@ namespace ToNRoundCounter.UI
                 string exePath;
                 try
                 {
-                    exePath = process.MainModule.FileName;
+                    exePath = process.MainModule?.FileName
+                        ?? throw new InvalidOperationException("プロセスのメインモジュール情報を取得できませんでした。");
                 }
                 catch (Exception ex)
                 {
                     throw new InvalidOperationException("プロセスの実行ファイルパスを取得できませんでした。", ex);
                 }
 
-                string exeDirectory = Path.GetDirectoryName(exePath);
+                string? exeDirectory = Path.GetDirectoryName(exePath);
                 if (string.IsNullOrEmpty(exeDirectory))
                 {
                     throw new InvalidOperationException("実行ファイルのディレクトリが不正です。");
@@ -3577,25 +3936,31 @@ namespace ToNRoundCounter.UI
                 switch (message.Event)
                 {
                     case "player.state.updated":
-                        _logger?.LogEvent("CloudStream", $"Player state updated: {message.Data}", LogEventLevel.Debug);
+                        HandlePlayerStateUpdatedStream(message);
+                        break;
+
+                    case "coordinated.voting.started":
+                        HandleCoordinatedVotingStartedStream(message);
+                        break;
+
+                    case "coordinated.voting.resolved":
+                        HandleCoordinatedVotingResolvedStream(message);
+                        break;
+
+                    case "coordinated.autoSuicide.updated":
+                        HandleCoordinatedAutoSuicideUpdatedStream(message);
                         break;
 
                     case "instance.member.joined":
-                        _dispatcher.Invoke(() =>
-                        {
-                            _logger?.LogEvent("CloudStream", "Instance member joined");
-                        });
+                        HandleInstanceMemberJoinedStream(message);
                         break;
 
                     case "instance.member.left":
-                        _dispatcher.Invoke(() =>
-                        {
-                            _logger?.LogEvent("CloudStream", "Instance member left");
-                        });
+                        HandleInstanceMemberLeftStream(message);
                         break;
 
                     case "threat.announced":
-                        _logger?.LogEvent("CloudStream", $"Threat announced: {message.Data}", LogEventLevel.Information);
+                        HandleThreatAnnouncedStream(message);
                         break;
 
                     default:
@@ -3612,15 +3977,8 @@ namespace ToNRoundCounter.UI
         /// <summary>
         /// Updates the shortcut overlay state by delegating to OverlayManager.
         /// </summary>
-        private void UpdateShortcutOverlayState()
+        private void UpdateShortcutOverlayState_Removed_Duplicate()
         {
-            _overlayManager.UpdateShortcutOverlayState(
-                _settings.AutoSuicideEnabled,
-                _autoSuicideCoordinator.IsAllRoundsModeEnabled,
-                _settings.CoordinatedAutoSuicideBrainEnabled,
-                _settings.AfkSoundCancelEnabled,
-                overlayTemporarilyHidden,
-                autoSuicideService.HasScheduled);
         }
 
         /// <summary>
@@ -3652,35 +4010,28 @@ namespace ToNRoundCounter.UI
                 return;
             }
 
-            _ = Task.Run(async () =>
+            RunBackgroundOperation(async () =>
             {
-                try
-                {
-                    await _cloudClient.StartAsync();
-                    _logger?.LogEvent("CloudSync", "Cloud WebSocket client started successfully.");
+                await _cloudClient.StartAsync().ConfigureAwait(false);
+                _logger?.LogEvent("CloudSync", "Cloud WebSocket client started successfully.");
 
-                    if (!string.IsNullOrWhiteSpace(_settings.CloudPlayerName))
+                if (!string.IsNullOrWhiteSpace(_settings.CloudPlayerName))
+                {
+                    try
                     {
-                        try
-                        {
-                            await _cloudClient.LoginAsync(
-                                _settings.CloudPlayerName,
-                                "1.0.0",
-                                System.Threading.CancellationToken.None
-                            );
-                            _logger?.LogEvent("CloudSync", $"Logged in as: {_settings.CloudPlayerName}");
-                        }
-                        catch (Exception loginEx)
-                        {
-                            _logger?.LogEvent("CloudSync", $"Auto-login failed: {loginEx.Message}", LogEventLevel.Warning);
-                        }
+                        await _cloudClient.LoginAsync(
+                            _settings.CloudPlayerName,
+                            "1.0.0",
+                            _cancellation.Token
+                        ).ConfigureAwait(false);
+                        _logger?.LogEvent("CloudSync", $"Logged in as: {_settings.CloudPlayerName}");
+                    }
+                    catch (Exception loginEx)
+                    {
+                        _logger?.LogEvent("CloudSync", $"Auto-login failed: {loginEx.Message}", LogEventLevel.Warning);
                     }
                 }
-                catch (Exception ex)
-                {
-                    _logger?.LogEvent("CloudSync", $"Failed to start Cloud WebSocket client: {ex.Message}", LogEventLevel.Warning);
-                }
-            });
+            }, "CloudClientStartAndLogin", LogEventLevel.Warning);
         }
 
         /// <summary>
@@ -3690,17 +4041,7 @@ namespace ToNRoundCounter.UI
         /// <param name="operationName">The operation name for logging (e.g., "round end", "round start").</param>
         private void RunPresenterAsyncWithErrorHandling(Func<Task> operation, string operationName)
         {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await operation();
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogEvent("CloudSync", $"Failed to sync {operationName}: {ex.Message}", LogEventLevel.Warning);
-                }
-            });
+            RunBackgroundOperation(operation, $"PresenterSync:{operationName}", LogEventLevel.Warning);
         }
 
         /// <summary>
@@ -3715,37 +4056,37 @@ namespace ToNRoundCounter.UI
         /// <summary>
         /// Records round history by delegating to OverlayManager.
         /// </summary>
-        private void RecordRoundHistory(string? statusOverride, int? roundCycleForHistory = null)
+        private void RecordRoundHistory_Removed_Duplicate(string? statusOverride, int? roundCycleForHistory = null)
         {
-            string label = !string.IsNullOrWhiteSpace(lastRoundTypeForHistory)
-                ? lastRoundTypeForHistory
-                : InfoPanel?.NextRoundType?.Text ?? string.Empty;
-
-            if (string.IsNullOrWhiteSpace(label) && string.IsNullOrWhiteSpace(statusOverride))
-            {
-                return;
-            }
-
-            string status = statusOverride ?? GetDefaultRoundHistoryStatus(roundCycleForHistory ?? stateService.RoundCycle);
-            _overlayManager.RecordRoundHistory(label, status);
         }
 
         /// <summary>
         /// Gets the default round history status based on round cycle.
         /// </summary>
-        private static string GetDefaultRoundHistoryStatus(int roundCycle)
+        private static string GetDefaultRoundHistoryStatus_Removed_Duplicate(int roundCycle)
         {
-            if (roundCycle <= 0)
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// Syncs the current shortcut overlay toggle states to OverlayManager.
+        /// Called as a callback from AutoSuicideCoordinator, so it may fire
+        /// during construction before all fields are assigned.
+        /// </summary>
+        private void SyncShortcutOverlayState()
+        {
+            if (autoSuicideService == null || _settings == null)
             {
-                return "クラシック確定";
+                return;
             }
 
-            if (roundCycle == 1)
-            {
-                return "50/50";
-            }
-
-            return "特殊確定";
+            _overlayManager.UpdateShortcutOverlayState(
+                _settings.AutoSuicideEnabled,
+                issetAllSelfKillMode,
+                _settings.CoordinatedAutoSuicideBrainEnabled,
+                _settings.AfkSoundCancelEnabled,
+                overlayTemporarilyHidden,
+                autoSuicideService.HasScheduled);
         }
 
         /// <summary>
@@ -3762,7 +4103,7 @@ namespace ToNRoundCounter.UI
                     {
                         _autoSuicideCoordinator.Cancel();
                     }
-                    UpdateShortcutOverlayState();
+                    SyncShortcutOverlayState();
                     await _settings.SaveAsync();
                     break;
 
@@ -3774,7 +4115,7 @@ namespace ToNRoundCounter.UI
                     }
                     else
                     {
-                        UpdateShortcutOverlayState();
+                        SyncShortcutOverlayState();
                     }
                     break;
 
@@ -3786,35 +4127,40 @@ namespace ToNRoundCounter.UI
                     }
                     else
                     {
-                        UpdateShortcutOverlayState();
+                        SyncShortcutOverlayState();
                     }
                     break;
 
                 case ShortcutButton.ManualSuicide:
-                    _ = Task.Run(_autoSuicideCoordinator.Execute);
+                    RunBackgroundOperation(() => { _autoSuicideCoordinator.Execute(); return Task.CompletedTask; }, "ManualAutoSuicide", LogEventLevel.Debug);
                     break;
 
                 case ShortcutButton.AllRoundsModeToggle:
                     _autoSuicideCoordinator.ToggleAllRoundsMode();
-                    UpdateShortcutOverlayState();
+                    SyncShortcutOverlayState();
                     break;
 
                 case ShortcutButton.CoordinatedBrainToggle:
                     _settings.CoordinatedAutoSuicideBrainEnabled = !_settings.CoordinatedAutoSuicideBrainEnabled;
-                    UpdateShortcutOverlayState();
+                    SyncShortcutOverlayState();
                     await _settings.SaveAsync();
                     break;
 
                 case ShortcutButton.AfkDetectionToggle:
                     _settings.AfkSoundCancelEnabled = !_settings.AfkSoundCancelEnabled;
-                    UpdateShortcutOverlayState();
+                    SyncShortcutOverlayState();
                     await _settings.SaveAsync();
                     break;
 
                 case ShortcutButton.HideUntilRoundEnd:
                     _overlayManager.SetTemporarilyHidden(!overlayTemporarilyHidden);
                     overlayTemporarilyHidden = !overlayTemporarilyHidden;
-                    UpdateShortcutOverlayState();
+                    SyncShortcutOverlayState();
+                    break;
+
+                case ShortcutButton.EditModeToggle:
+                    _overlayManager.SetEditMode(!_overlayManager.IsEditMode);
+                    SyncShortcutOverlayState();
                     break;
             }
 

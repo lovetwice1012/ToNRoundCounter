@@ -8,6 +8,18 @@ import { getDatabase } from '../database/connection';
 import { StatusMonitoring, ErrorLog } from '../models/types';
 import { logger } from '../logger';
 
+// Defensive JSON parser: corrupted/legacy DB rows must not crash the handler.
+function safeJsonParse<T>(raw: any, fallback: T): T {
+    if (raw == null || raw === '') return fallback;
+    if (typeof raw === 'object') return raw as T;
+    try {
+        return JSON.parse(String(raw)) as T;
+    } catch (err) {
+        logger.warn({ err, raw }, 'safeJsonParse failed');
+        return fallback;
+    }
+}
+
 export class MonitoringService {
     private db = getDatabase();
     private wsHandler: any;
@@ -179,7 +191,7 @@ export class MonitoringService {
             severity: row.severity,
             message: row.message,
             stack: row.stack,
-            context: row.context ? JSON.parse(row.context) : undefined,
+            context: row.context ? safeJsonParse(row.context, undefined) : undefined,
             timestamp: new Date(row.timestamp),
             acknowledged: row.acknowledged === 1,
         }));

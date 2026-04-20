@@ -25,12 +25,25 @@ export class ProfileService {
             player_id: row.player_id,
             player_name: row.player_name,
             skill_level: row.skill_level,
-            terror_stats: JSON.parse(row.terror_stats),
+            // Defensive parse: corrupted/legacy rows must not crash profile.get for the user.
+            terror_stats: this.safeParseTerrorStats(row.terror_stats),
             total_rounds: row.total_rounds,
             total_survived: row.total_survived,
             last_active: new Date(row.last_active),
             created_at: new Date(row.created_at),
         };
+    }
+
+    private safeParseTerrorStats(raw: any): Record<string, TerrorStats> {
+        if (raw == null || raw === '') return {};
+        if (typeof raw === 'object') return raw as Record<string, TerrorStats>;
+        try {
+            const parsed = JSON.parse(String(raw));
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (err) {
+            logger.warn({ err, raw }, 'Failed to parse terror_stats JSON; falling back to {}');
+            return {};
+        }
     }
 
     async createDefaultProfile(playerId: string): Promise<PlayerProfile> {
@@ -117,11 +130,14 @@ export class ProfileService {
             survival_rate: 0,
             total_rounds: 0,
             survived: 0,
+            died: 0,
         };
 
         terrorStats.total_rounds += 1;
         if (survived) {
             terrorStats.survived += 1;
+        } else {
+            terrorStats.died = (terrorStats.died || 0) + 1;
         }
         terrorStats.survival_rate = terrorStats.survived / terrorStats.total_rounds;
 

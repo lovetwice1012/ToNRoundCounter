@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using ToNRoundCounter.Domain;
+using ToNRoundCounter.UI;
 
 namespace ToNRoundCounter.Application.Services
 {
@@ -71,6 +72,21 @@ namespace ToNRoundCounter.Application.Services
         void UpdateInstanceMembers(IReadOnlyList<string> members);
 
         /// <summary>
+        /// Updates the instance members overlay with detailed player state and desire player highlighting.
+        /// </summary>
+        void UpdateInstanceMembersDetailed(IReadOnlyList<InstanceMemberInfo> members, IReadOnlyList<string> desirePlayerIds);
+
+        /// <summary>
+        /// Updates the voting overlay with current voting status text.
+        /// </summary>
+        void UpdateVoting(string votingText);
+
+        /// <summary>
+        /// Clears the voting overlay when a voting campaign ends.
+        /// </summary>
+        void ClearVoting();
+
+        /// <summary>
         /// Captures current overlay positions and sizes to settings.
         /// </summary>
         void CapturePositions();
@@ -107,6 +123,16 @@ namespace ToNRoundCounter.Application.Services
         void ResetRoundScopedShortcutButtons();
 
         /// <summary>
+        /// Enables or disables overlay edit mode (drag/resize/snap).
+        /// </summary>
+        void SetEditMode(bool enabled);
+
+        /// <summary>
+        /// Returns whether edit mode is currently enabled.
+        /// </summary>
+        bool IsEditMode { get; }
+
+        /// <summary>
         /// Event raised when a shortcut button is clicked.
         /// </summary>
         event EventHandler<ShortcutButtonClickedEventArgs>? ShortcutButtonClicked;
@@ -137,6 +163,7 @@ namespace ToNRoundCounter.Application.Services
         AllRoundsModeToggle,
         CoordinatedBrainToggle,
         AfkDetectionToggle,
-        HideUntilRoundEnd
+        HideUntilRoundEnd,
+        EditModeToggle
     }
 }

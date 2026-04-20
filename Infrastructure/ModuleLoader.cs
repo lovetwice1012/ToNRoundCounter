@@ -53,7 +53,8 @@ namespace ToNRoundCounter.Infrastructure
                     {
                         LogReflectionTypeLoadException(rtle, file, logger);
                         modules = rtle.Types
-                            ?.Where(t => t != null && typeof(IModule).IsAssignableFrom(t) && !t.IsAbstract)
+                            ?.Where(t => t is not null && typeof(IModule).IsAssignableFrom(t) && !t.IsAbstract)
+                            .Cast<Type>()
                             ?? Enumerable.Empty<Type>();
                     }
                     logger.LogEvent("ModuleLoader", $"Loaded assembly '{Path.GetFileName(file)}'. Discovering modules.");
@@ -158,7 +159,9 @@ namespace ToNRoundCounter.Infrastructure
                 () =>
                 {
                     var details = string.Join(Environment.NewLine, loaderExceptions.Select((ex, index) =>
-                        $"[{index + 1}] {ex.GetType().Name}: {ex.Message}"));
+                        ex == null
+                            ? $"[{index + 1}] <null loader exception>"
+                            : $"[{index + 1}] {ex.GetType().Name}: {ex.Message}"));
                     return $"Failed to enumerate types from '{Path.GetFileName(assemblyPath)}'. Loader exceptions:{Environment.NewLine}{details}";
                 },
                 Serilog.Events.LogEventLevel.Error);

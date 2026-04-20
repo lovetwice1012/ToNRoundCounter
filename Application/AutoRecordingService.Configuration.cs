@@ -38,8 +38,6 @@ namespace ToNRoundCounter.Application
             "mov",
             "wmv",
             "mpg",
-            "mkv",
-            "flv",
             "asf",
             "vob",
             "gif",

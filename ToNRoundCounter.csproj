@@ -12,9 +12,11 @@
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <NoWarn>$(NoWarn);WFO1000;NU1701</NoWarn>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
@@ -32,7 +34,36 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Core dependencies - updated to .NET 9 compatible versions -->
+    <!-- Exclude sibling projects' sources from the main project compilation. The SDK
+         glob would otherwise pick up files in Updater/, ToNRoundCounter.Tests/, and
+         each Modules/* project, causing duplicate symbol / missing dependency errors. -->
+    <Compile Remove="Updater\**" />
+    <Compile Remove="ToNRoundCounter.Tests\**" />
+    <Compile Remove="Modules\AfkJumpModule\**" />
+    <Compile Remove="Modules\AfkSoundCancelModule\**" />
+    <Compile Remove="Modules\OscRepeaterDisablerModule\**" />
+    <Compile Remove="Modules\NetworkAnalyzerModule\**" />
+    <Compile Remove="cloud\**" />
+    <Compile Remove="packages\**" />
+    <EmbeddedResource Remove="Updater\**" />
+    <EmbeddedResource Remove="ToNRoundCounter.Tests\**" />
+    <EmbeddedResource Remove="Modules\AfkJumpModule\**" />
+    <EmbeddedResource Remove="Modules\AfkSoundCancelModule\**" />
+    <EmbeddedResource Remove="Modules\OscRepeaterDisablerModule\**" />
+    <EmbeddedResource Remove="Modules\NetworkAnalyzerModule\**" />
+    <EmbeddedResource Remove="cloud\**" />
+    <EmbeddedResource Remove="packages\**" />
+    <None Remove="Updater\**" />
+    <None Remove="ToNRoundCounter.Tests\**" />
+    <None Remove="Modules\AfkJumpModule\**" />
+    <None Remove="Modules\AfkSoundCancelModule\**" />
+    <None Remove="Modules\OscRepeaterDisablerModule\**" />
+    <None Remove="Modules\NetworkAnalyzerModule\**" />
+    <None Remove="cloud\**" />
+    <None Remove="packages\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
@@ -42,188 +73,48 @@
     <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
     <PackageReference Include="Rug.Osc" Version="1.2.5" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.10" />
-
-    <!-- Vortice.Windows - modern replacement for SharpDX -->
     <PackageReference Include="Vortice.Direct2D1" Version="3.5.0" />
     <PackageReference Include="Vortice.Direct3D11" Version="3.5.0" />
     <PackageReference Include="Vortice.DXGI" Version="3.5.0" />
-    <PackageReference Include="Vortice.Mathematics" Version="1.7.2" />
+    <PackageReference Include="Vortice.Mathematics" Version="1.7.8" />
+    <PackageReference Include="System.Management" Version="9.0.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="Application\Recording\AudioFormat.cs" />
-    <Compile Include="Application\Recording\CoreAudioInterop.cs" />
-    <Compile Include="Application\Recording\GifFrameWriter.cs" />
-    <Compile Include="Application\Recording\HardwareAccelerationApi.cs" />
-    <Compile Include="Application\Recording\HardwareEncoderSelection.cs" />
-    <Compile Include="Application\Recording\IMediaWriter.cs" />
-    <Compile Include="Application\Recording\InternalScreenRecorder.cs" />
-    <Compile Include="Application\Recording\MediaFoundationFrameWriter.cs" />
-    <Compile Include="Application\Recording\SimpleAviWriter.cs" />
-    <Compile Include="Application\Recording\WasapiAudioCapture.cs" />
-    <Compile Include="UI\MainForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\MainForm.Sound.cs">
-      <DependentUpon>MainForm.cs</DependentUpon>
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\MainForm.WebSocket.cs">
-      <DependentUpon>MainForm.cs</DependentUpon>
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\MainForm.Overlay.cs">
-      <DependentUpon>MainForm.cs</DependentUpon>
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\MainForm.Stats.cs">
-      <DependentUpon>MainForm.cs</DependentUpon>
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\MainForm.OSC.cs">
-      <DependentUpon>MainForm.cs</DependentUpon>
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\MainForm.Designer.cs">
-      <DependentUpon>MainForm.cs</DependentUpon>
-    </Compile>
-    <Compile Include="UI\MainForm.InstanceMembers.cs">
-      <DependentUpon>MainForm.cs</DependentUpon>
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\OverlaySectionForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\OverlayAngleForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\OverlayRoundHistoryForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\OverlayRoundStatsForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\OverlayShortcutForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\OverlayClockForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\OverlayVelocityForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\OverlayInstanceMembersForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\AutoSuicideConfirmationOverlay.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\DirectX\DirectXDeviceManager.cs" />
-    <Compile Include="UI\DirectX\DirectXOverlaySurface.cs">
-      <SubType>Component</SubType>
-    </Compile>
-    <Compile Include="UI\DirectX\DirectXSegmentRenderer.cs" />
-    <Compile Include="Program.cs" />
-    <Compile Include="IsExternalInit.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="UI\InfoPanel.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
-    <Compile Include="UI\TerrorInfoPanel.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
-    <Compile Include="UI\LogPanel.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
-    <Compile Include="UI\Theme.cs" />
-    <Compile Include="UI\SettingsForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\SettingsPanel.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
-    <Compile Include="UI\Forms\VotingPanelForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\Forms\ProfileManagerForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\Forms\SettingsSyncForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\Forms\BackupManagerForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="Domain\RoundAggregate.cs" />
-    <Compile Include="Domain\Round.cs" />
-    <Compile Include="Domain\RoundId.cs" />
-    <Compile Include="Domain\TerrorAggregate.cs" />
-    <Compile Include="Domain\TerrorAggregateCollection.cs" />
-    <Compile Include="Domain\TerrorMapNameCollection.cs" />
-    <Compile Include="Domain\AutoSuicideRule.cs" />
-    <Compile Include="Domain\AutoSuicidePreset.cs" />
-    <Compile Include="Domain\AutoLaunchEntry.cs" />
-    <Compile Include="Domain\ItemMusicEntry.cs" />
-    <Compile Include="Domain\RoundBgmEntry.cs" />
-    <Compile Include="Domain\RoundBgmItemConflictBehavior.cs" />
-    <Compile Include="Domain\UnboundRoundDefinitions.cs" />
-    <Compile Include="Application\AutoSuicideService.cs" />
-    <Compile Include="Application\AutoRecordingService.cs" />
-    <Compile Include="Application\AutoRecordingService.Configuration.cs" />
-    <Compile Include="Application\AutoRecordingService.Triggers.cs" />
-    <Compile Include="Application\StateService.cs" />
-    <Compile Include="Application\IMainView.cs" />
-    <Compile Include="Application\MainPresenter.cs" />
-    <Compile Include="Application\RoundLogExportOptions.cs" />
-    <Compile Include="Application\RoundLogExporter.cs" />
-    <Compile Include="Application\IEventLogger.cs" />
-    <Compile Include="Application\IEventLogRepository.cs" />
-    <Compile Include="Application\ICancellationProvider.cs" />
-    <Compile Include="Application\IEventBus.cs" />
-    <Compile Include="Application\Events.cs" />
-    <Compile Include="Application\IWebSocketClient.cs" />
-    <Compile Include="Application\IOSCListener.cs" />
-    <Compile Include="Application\IAppSettings.cs" />
-    <Compile Include="Application\IRoundDataRepository.cs" />
-    <Compile Include="Application\ISettingsRepository.cs" />
-    <Compile Include="Application\IInputSender.cs" />
-    <Compile Include="Application\IOscRepeaterPolicy.cs" />
-    <Compile Include="Application\IAfkWarningHandler.cs" />
-    <Compile Include="Application\IErrorReporter.cs" />
-    <Compile Include="Application\IUiDispatcher.cs" />
-    <Compile Include="Application\IModule.cs" />
-    <Compile Include="Application\IHttpClient.cs" />
-    <Compile Include="Infrastructure\EventBus.cs" />
-    <Compile Include="Infrastructure\WebSocketClient.cs" />
-    <Compile Include="Infrastructure\CloudWebSocketClient.cs" />
-    <Compile Include="Infrastructure\OSCListener.cs" />
-    <Compile Include="Infrastructure\AppSettings.cs" />
-    <Compile Include="Infrastructure\EventLogger.cs" />
-    <Compile Include="Infrastructure\Sqlite\SqliteEventLogRepository.cs" />
-    <Compile Include="Infrastructure\Sqlite\SqliteRoundDataRepository.cs" />
-    <Compile Include="Infrastructure\Sqlite\SqliteSettingsRepository.cs" />
-    <Compile Include="Infrastructure\CancellationProvider.cs" />
-    <Compile Include="Infrastructure\LanguageManager.cs" />
-    <Compile Include="Infrastructure\NativeInputSender.cs" />
-    <Compile Include="Infrastructure\Interop\WindowUtilities.cs" />
-    <Compile Include="Infrastructure\ErrorReporter.cs" />
-    <Compile Include="Infrastructure\WinFormsDispatcher.cs" />
-    <Compile Include="Infrastructure\ChannelReaderExtensions.cs" />
-    <Compile Include="Infrastructure\HttpClientWrapper.cs" />
-    <Compile Include="Infrastructure\SafeModeManager.cs" />
-    <Compile Include="Infrastructure\LanguageAssemblyResolver.cs" />
-    <Compile Include="Infrastructure\ModuleHost.cs" />
-    <Compile Include="Infrastructure\ModuleLoader.cs" />
-    <EmbeddedResource Include="Properties\Resources.resx">
+    <Compile Update="UI\MainForm.cs"><SubType>Form</SubType></Compile>
+    <Compile Update="UI\MainForm.WebSocket.cs"><DependentUpon>MainForm.cs</DependentUpon><SubType>Form</SubType></Compile>
+    <Compile Update="UI\MainForm.Overlay.cs"><DependentUpon>MainForm.cs</DependentUpon><SubType>Form</SubType></Compile>
+    <Compile Update="UI\MainForm.Stats.cs"><DependentUpon>MainForm.cs</DependentUpon><SubType>Form</SubType></Compile>
+    <Compile Update="UI\MainForm.OSC.cs"><DependentUpon>MainForm.cs</DependentUpon><SubType>Form</SubType></Compile>
+    <Compile Update="UI\MainForm.Designer.cs"><DependentUpon>MainForm.cs</DependentUpon></Compile>
+    <Compile Update="UI\MainForm.InstanceMembers.cs"><DependentUpon>MainForm.cs</DependentUpon><SubType>Form</SubType></Compile>
+    <Compile Update="UI\OverlaySectionForm.cs"><SubType>Form</SubType></Compile>
+    <Compile Update="UI\OverlayAngleForm.cs"><SubType>Form</SubType></Compile>
+    <Compile Update="UI\OverlayRoundHistoryForm.cs"><SubType>Form</SubType></Compile>
+    <Compile Update="UI\OverlayRoundStatsForm.cs"><SubType>Form</SubType></Compile>
+    <Compile Update="UI\OverlayShortcutForm.cs"><SubType>Form</SubType></Compile>
+    <Compile Update="UI\OverlayClockForm.cs"><SubType>Form</SubType></Compile>
+    <Compile Update="UI\OverlayVelocityForm.cs"><SubType>Form</SubType></Compile>
+    <Compile Update="UI\OverlayInstanceMembersForm.cs"><SubType>Form</SubType></Compile>
+    <Compile Update="UI\AutoSuicideConfirmationOverlay.cs"><SubType>Form</SubType></Compile>
+    <Compile Update="UI\DirectX\DirectXOverlaySurface.cs"><SubType>Component</SubType></Compile>
+    <Compile Update="UI\InfoPanel.cs"><SubType>UserControl</SubType></Compile>
+    <Compile Update="UI\TerrorInfoPanel.cs"><SubType>UserControl</SubType></Compile>
+    <Compile Update="UI\LogPanel.cs"><SubType>UserControl</SubType></Compile>
+    <Compile Update="UI\SettingsForm.cs"><SubType>Form</SubType></Compile>
+    <Compile Update="UI\SettingsPanel.cs"><SubType>UserControl</SubType></Compile>
+    <Compile Update="UI\Forms\VotingPanelForm.cs"><SubType>Form</SubType></Compile>
+    <Compile Update="UI\Forms\ProfileManagerForm.cs"><SubType>Form</SubType></Compile>
+    <Compile Update="UI\Forms\SettingsSyncForm.cs"><SubType>Form</SubType></Compile>
+    <Compile Update="UI\Forms\BackupManagerForm.cs"><SubType>Form</SubType></Compile>
+
+    <EmbeddedResource Update="Properties\Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>
     </EmbeddedResource>
-    <EmbeddedResource Include="Infrastructure\Resources\Strings.resx" />
-    <EmbeddedResource Include="Infrastructure\Resources\Strings.*.resx" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Generated files that need explicit inclusion -->
     <Compile Update="Properties\Resources.Designer.cs">
       <AutoGen>True</AutoGen>
       <DependentUpon>Resources.resx</DependentUpon>

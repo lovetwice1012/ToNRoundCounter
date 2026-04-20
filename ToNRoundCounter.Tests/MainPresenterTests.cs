@@ -140,6 +140,11 @@ namespace ToNRoundCounter.Tests
             public List<string> RoundTypeStats { get; set; } = new List<string>();
             public bool AutoSuicideEnabled { get; set; }
             public string ApiKey { get; set; } = string.Empty;
+            public string apikey
+            {
+                get => ApiKey;
+                set => ApiKey = value;
+            }
             public string ThemeKey { get; set; } = "default";
             public string Language { get; set; } = "ja-JP";
             public string LogFilePath { get; set; } = "logs/log-.txt";

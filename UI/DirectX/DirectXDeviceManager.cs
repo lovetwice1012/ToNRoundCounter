@@ -14,7 +14,7 @@ namespace ToNRoundCounter.UI.DirectX
 
         private DirectXDeviceManager()
         {
-            Direct2DFactory = D2D1.D2D1CreateFactory<ID2D1Factory1>(FactoryType.SingleThreaded);
+            Direct2DFactory = D2D1.D2D1CreateFactory<ID2D1Factory1>(Vortice.Direct2D1.FactoryType.SingleThreaded);
             DirectWriteFactory = DWrite.DWriteCreateFactory<IDWriteFactory>();
         }
 

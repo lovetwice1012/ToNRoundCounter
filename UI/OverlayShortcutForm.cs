@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -6,70 +6,113 @@ using System.Windows.Forms;
 
 namespace ToNRoundCounter.UI
 {
+    /// <summary>
+    /// Shortcut overlay redesigned to use clear iconography, tooltips,
+    /// and per-state coloring so that operators can see which actions
+    /// are active at a glance.
+    /// </summary>
     public class OverlayShortcutForm : OverlaySectionForm
     {
-        private readonly Dictionary<ShortcutButton, Button> buttons = new();
-        private readonly Color overlayBaseColor;
-        private readonly Color overlayTextColor = Color.White;
-        private readonly Color activeBackgroundColor = Color.White;
+        private readonly Dictionary<ShortcutButton, ShortcutButtonControl> buttons = new();
         private readonly Dictionary<ShortcutButton, bool> toggleStates = new();
         private readonly HashSet<ShortcutButton> pulsingButtons = new();
         private readonly Dictionary<ShortcutButton, Timer> pulseTimers = new();
+        private readonly ToolTip toolTip;
 
         public OverlayShortcutForm(string title)
             : base(title, CreateLayout())
         {
-            overlayBaseColor = MakeOpaque(BackColor);
+            toolTip = new ToolTip
+            {
+                AutoPopDelay = 8000,
+                InitialDelay = 350,
+                ReshowDelay = 200,
+                ShowAlways = true,
+                BackColor = OverlayTheme.SurfaceElevated,
+                ForeColor = OverlayTheme.TextPrimary,
+                OwnerDraw = false,
+            };
 
             if (ContentControl is TableLayoutPanel layout)
             {
-                layout.ColumnCount = 4;
-                layout.RowCount = 2;
-                layout.AutoSize = true;
-                layout.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-                layout.Dock = DockStyle.Fill;
-                layout.Margin = new Padding(0);
-                layout.Padding = new Padding(0);
-                layout.ColumnStyles.Clear();
-                layout.RowStyles.Clear();
-                for (int i = 0; i < 4; i++)
-                {
-                    layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-                }
-                for (int i = 0; i < 2; i++)
-                {
-                    layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-                }
+                ConfigureLayout(layout);
 
-                AddButton(layout, ShortcutButton.AutoSuicideToggle, "自動自殺\nオン/オフ");
-                AddButton(layout, ShortcutButton.AutoSuicideCancel, "自動自殺\nキャンセル\n(WIP)");
-                AddButton(layout, ShortcutButton.AutoSuicideDelay, "自動自殺\n遅延化\n(WIP)");
-                AddButton(layout, ShortcutButton.ManualSuicide, "手動自殺");
-                AddButton(layout, ShortcutButton.AllRoundsModeToggle, "全ラウンド\n自殺モード");
-                AddButton(layout, ShortcutButton.CoordinatedBrainToggle, "統率された\n自動自殺\n(WIP)");
-                AddButton(layout, ShortcutButton.AfkDetectionToggle, "AFK検知");
-                AddButton(layout, ShortcutButton.HideUntilRoundEnd, "ラウンド終了\nまで隠す");
+                AddButton(layout, ShortcutButton.AutoSuicideToggle,
+                    glyph: "\u2620",
+                    label: "自動自殺",
+                    tooltip: "自動自殺機能の有効/無効を切り替えます",
+                    kind: ButtonKind.Toggle);
+                AddButton(layout, ShortcutButton.AutoSuicideCancel,
+                    glyph: "\u2715",
+                    label: "キャンセル",
+                    tooltip: "予約中の自動自殺をキャンセルします (WIP)",
+                    kind: ButtonKind.Cancel);
+                AddButton(layout, ShortcutButton.AutoSuicideDelay,
+                    glyph: "\u29D6",
+                    label: "遅延化",
+                    tooltip: "予約中の自動自殺の発火を遅らせます (WIP)",
+                    kind: ButtonKind.Action);
+                AddButton(layout, ShortcutButton.ManualSuicide,
+                    glyph: "\u26A0",
+                    label: "手動自殺",
+                    tooltip: "今すぐ自殺操作を実行します",
+                    kind: ButtonKind.Danger);
+                AddButton(layout, ShortcutButton.AllRoundsModeToggle,
+                    glyph: "\u29BF",
+                    label: "全ラウンド",
+                    tooltip: "全ラウンドで自動自殺を有効化します",
+                    kind: ButtonKind.Toggle);
+                AddButton(layout, ShortcutButton.CoordinatedBrainToggle,
+                    glyph: "\u2699",
+                    label: "統率自殺",
+                    tooltip: "統率された自動自殺ロジックを使用します (WIP)",
+                    kind: ButtonKind.Toggle);
+                AddButton(layout, ShortcutButton.AfkDetectionToggle,
+                    glyph: "\u23F1",
+                    label: "AFK検知",
+                    tooltip: "AFK検知の有効/無効を切り替えます",
+                    kind: ButtonKind.Toggle);
+                AddButton(layout, ShortcutButton.HideUntilRoundEnd,
+                    glyph: "\u25D1",
+                    label: "ラウンド終了まで隠す",
+                    tooltip: "次のラウンド終了までオーバーレイを非表示にします",
+                    kind: ButtonKind.Toggle);
+                AddButton(layout, ShortcutButton.EditModeToggle,
+                    glyph: "\u270E",
+                    label: "編集モード",
+                    tooltip: "オーバーレイの位置・サイズを変更できる編集モードを切り替えます",
+                    kind: ButtonKind.Toggle);
             }
 
-            MinimumSize = new Size(520, 260);
+            MinimumSize = new Size(420, 220);
         }
 
         public event EventHandler<ShortcutButtonEventArgs>? ShortcutClicked;
 
         public void SetToggleState(ShortcutButton button, bool active)
         {
+            if (toggleStates.TryGetValue(button, out var current) && current == active)
+            {
+                return;
+            }
+
             toggleStates[button] = active;
             ApplyButtonVisuals(button);
         }
 
         public void SetButtonEnabled(ShortcutButton button, bool enabled)
         {
-            if (!buttons.TryGetValue(button, out var btn))
+            if (!buttons.TryGetValue(button, out var ctl))
             {
                 return;
             }
 
-            btn.Enabled = enabled;
+            if (ctl.Enabled == enabled)
+            {
+                return;
+            }
+
+            ctl.Enabled = enabled;
             ApplyButtonVisuals(button);
         }
 
@@ -107,97 +150,6 @@ namespace ToNRoundCounter.UI
             timer.Start();
         }
 
-        private static TableLayoutPanel CreateLayout()
-        {
-            return new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                BackColor = Color.Transparent,
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Margin = new Padding(0),
-                Padding = new Padding(0)
-            };
-        }
-
-        private void AddButton(TableLayoutPanel layout, ShortcutButton id, string text)
-        {
-            var button = new Button
-            {
-                Text = text,
-                Dock = DockStyle.Fill,
-                FlatStyle = FlatStyle.Flat,
-                BackColor = overlayBaseColor,
-                ForeColor = overlayTextColor,
-                Font = new Font(SystemFonts.DefaultFont.FontFamily, 11f, FontStyle.Bold),
-                Margin = new Padding(8),
-                Padding = new Padding(6),
-                AutoSize = false,
-                MinimumSize = new Size(110, 110),
-                Tag = id,
-                UseVisualStyleBackColor = false,
-            };
-            button.FlatAppearance.BorderSize = 2;
-            button.FlatAppearance.BorderColor = overlayTextColor;
-            button.Click += Button_Click;
-            button.Resize += (_, _) => UpdateButtonRegion(button);
-            layout.Controls.Add(button);
-            buttons[id] = button;
-            toggleStates[id] = false;
-            UpdateButtonRegion(button);
-            ApplyButtonVisuals(id);
-        }
-
-        private void UpdateButtonRegion(Button button)
-        {
-            int diameter = Math.Min(button.Width, button.Height);
-            if (diameter <= 0)
-            {
-                return;
-            }
-
-            var bounds = new Rectangle((button.Width - diameter) / 2, (button.Height - diameter) / 2, diameter, diameter);
-            using var path = new GraphicsPath();
-            path.AddEllipse(bounds);
-            button.Region?.Dispose();
-            button.Region = new Region(path);
-        }
-
-        private void Button_Click(object? sender, EventArgs e)
-        {
-            if (sender is not Button button || button.Tag is not ShortcutButton id)
-            {
-                return;
-            }
-
-            ShortcutClicked?.Invoke(this, new ShortcutButtonEventArgs(id));
-        }
-
-        private void ApplyButtonVisuals(ShortcutButton id)
-        {
-            if (!buttons.TryGetValue(id, out var button))
-            {
-                return;
-            }
-
-            bool isActive = pulsingButtons.Contains(id) || (toggleStates.TryGetValue(id, out var active) && active);
-            Color backgroundColor = isActive ? activeBackgroundColor : overlayBaseColor;
-            Color textColor = isActive ? overlayBaseColor : overlayTextColor;
-
-            if (!button.Enabled)
-            {
-                Color disabledBlendTarget = isActive ? overlayBaseColor : overlayTextColor;
-                backgroundColor = Blend(backgroundColor, disabledBlendTarget, 0.35f);
-                textColor = Blend(textColor, overlayTextColor, 0.4f);
-            }
-
-            button.BackColor = backgroundColor;
-            button.ForeColor = textColor;
-            button.FlatAppearance.BorderColor = textColor;
-            button.FlatAppearance.MouseOverBackColor = Blend(backgroundColor, textColor, 0.15f);
-            button.FlatAppearance.MouseDownBackColor = Blend(backgroundColor, textColor, 0.3f);
-        }
-
         public void ResetButtons(params ShortcutButton[] buttonIds)
         {
             foreach (var buttonId in buttonIds)
@@ -220,6 +172,72 @@ namespace ToNRoundCounter.UI
             }
         }
 
+        private static TableLayoutPanel CreateLayout()
+        {
+            return new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                AutoSize = false,
+                Margin = new Padding(0),
+                Padding = new Padding(0)
+            };
+        }
+
+        private static void ConfigureLayout(TableLayoutPanel layout)
+        {
+            layout.SuspendLayout();
+            layout.ColumnCount = 3;
+            layout.RowCount = 3;
+            layout.AutoSize = false;
+            layout.Dock = DockStyle.Fill;
+            layout.Margin = new Padding(0);
+            layout.Padding = new Padding(0);
+            layout.ColumnStyles.Clear();
+            layout.RowStyles.Clear();
+            for (int i = 0; i < 3; i++)
+            {
+                layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / 3f));
+            }
+            for (int i = 0; i < 3; i++)
+            {
+                layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / 3f));
+            }
+            layout.ResumeLayout(false);
+        }
+
+        private void AddButton(TableLayoutPanel layout, ShortcutButton id, string glyph, string label, string tooltip, ButtonKind kind)
+        {
+            var button = new ShortcutButtonControl(id, glyph, label, kind)
+            {
+                Margin = new Padding(4),
+                Dock = DockStyle.Fill,
+                MinimumSize = new Size(120, 56),
+            };
+            button.Click += (s, e) => OnButtonClicked(id);
+            layout.Controls.Add(button);
+            buttons[id] = button;
+            toggleStates[id] = false;
+            toolTip.SetToolTip(button, tooltip);
+            ApplyButtonVisuals(id);
+        }
+
+        private void OnButtonClicked(ShortcutButton id)
+        {
+            ShortcutClicked?.Invoke(this, new ShortcutButtonEventArgs(id));
+        }
+
+        private void ApplyButtonVisuals(ShortcutButton id)
+        {
+            if (!buttons.TryGetValue(id, out var btn))
+            {
+                return;
+            }
+
+            bool active = pulsingButtons.Contains(id) || (toggleStates.TryGetValue(id, out var on) && on);
+            btn.SetState(active);
+        }
+
         private void PulseTimer_Tick(object? sender, EventArgs e)
         {
             if (sender is not Timer timer || timer.Tag is not ShortcutButton id)
@@ -235,20 +253,6 @@ namespace ToNRoundCounter.UI
             ApplyButtonVisuals(id);
         }
 
-        private static Color Blend(Color from, Color to, float amount)
-        {
-            amount = Math.Max(0f, Math.Min(1f, amount));
-            int r = (int)Math.Round(from.R + (to.R - from.R) * amount);
-            int g = (int)Math.Round(from.G + (to.G - from.G) * amount);
-            int b = (int)Math.Round(from.B + (to.B - from.B) * amount);
-            return Color.FromArgb(255, r, g, b);
-        }
-
-        private static Color MakeOpaque(Color color)
-        {
-            return Color.FromArgb(255, color.R, color.G, color.B);
-        }
-
         public enum ShortcutButton
         {
             AutoSuicideToggle,
@@ -259,6 +263,15 @@ namespace ToNRoundCounter.UI
             CoordinatedBrainToggle,
             AfkDetectionToggle,
             HideUntilRoundEnd,
+            EditModeToggle,
+        }
+
+        private enum ButtonKind
+        {
+            Toggle,
+            Action,
+            Cancel,
+            Danger,
         }
 
         protected override void Dispose(bool disposing)
@@ -273,6 +286,7 @@ namespace ToNRoundCounter.UI
                 }
                 pulseTimers.Clear();
                 pulsingButtons.Clear();
+                toolTip.Dispose();
             }
 
             base.Dispose(disposing);
@@ -286,6 +300,205 @@ namespace ToNRoundCounter.UI
             }
 
             public ShortcutButton Button { get; }
+        }
+
+        /// <summary>
+        /// Custom owner-drawn shortcut button. Renders a glyph, label and a
+        /// state dot in the corner with state-driven theming.
+        /// </summary>
+        private sealed class ShortcutButtonControl : Control
+        {
+            private readonly ShortcutButton id;
+            private readonly string glyph;
+            private readonly string label;
+            private readonly ButtonKind kind;
+            private bool isHovered;
+            private bool isPressed;
+            private bool isActive;
+
+            public ShortcutButtonControl(ShortcutButton id, string glyph, string label, ButtonKind kind)
+            {
+                this.id = id;
+                this.glyph = glyph ?? string.Empty;
+                this.label = label ?? string.Empty;
+                this.kind = kind;
+                SetStyle(
+                    ControlStyles.AllPaintingInWmPaint |
+                    ControlStyles.OptimizedDoubleBuffer |
+                    ControlStyles.UserPaint |
+                    ControlStyles.ResizeRedraw |
+                    ControlStyles.SupportsTransparentBackColor,
+                    true);
+                BackColor = Color.Transparent;
+                Cursor = Cursors.Hand;
+                Font = new Font(SystemFonts.DefaultFont.FontFamily, 9.5f, FontStyle.Bold);
+            }
+
+            public ShortcutButton ButtonId => id;
+
+            public void SetState(bool active)
+            {
+                isActive = active;
+                Invalidate();
+            }
+
+            protected override void OnMouseEnter(EventArgs e)
+            {
+                base.OnMouseEnter(e);
+                isHovered = true;
+                Invalidate();
+            }
+
+            protected override void OnMouseLeave(EventArgs e)
+            {
+                base.OnMouseLeave(e);
+                isHovered = false;
+                isPressed = false;
+                Invalidate();
+            }
+
+            protected override void OnMouseDown(MouseEventArgs e)
+            {
+                base.OnMouseDown(e);
+                if (e.Button == MouseButtons.Left)
+                {
+                    isPressed = true;
+                    Invalidate();
+                }
+            }
+
+            protected override void OnMouseUp(MouseEventArgs e)
+            {
+                base.OnMouseUp(e);
+                if (isPressed)
+                {
+                    isPressed = false;
+                    Invalidate();
+                }
+            }
+
+            protected override void OnEnabledChanged(EventArgs e)
+            {
+                base.OnEnabledChanged(e);
+                Invalidate();
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                base.OnPaint(e);
+                if (Width <= 0 || Height <= 0)
+                {
+                    return;
+                }
+
+                Graphics g = e.Graphics;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
+                Color bg = GetBackgroundColor();
+                Color border = GetBorderColor();
+                Color textColor = GetTextColor();
+                Color glyphColor = GetAccentColor();
+
+                var bounds = new Rectangle(0, 0, Width - 1, Height - 1);
+                using (var path = OverlayTheme.CreateRoundedPath(bounds, 8))
+                using (var bgBrush = new SolidBrush(bg))
+                using (var borderPen = new Pen(border, isActive ? 1.6f : 1.0f))
+                {
+                    g.FillPath(bgBrush, path);
+                    g.DrawPath(borderPen, path);
+                }
+
+                using var glyphFont = new Font(SystemFonts.DefaultFont.FontFamily, 16f, FontStyle.Bold);
+                Font labelFont = Font ?? new Font(SystemFonts.DefaultFont.FontFamily, 9.5f, FontStyle.Bold);
+                using var glyphBrush = new SolidBrush(glyphColor);
+                using var textBrush = new SolidBrush(textColor);
+
+                var glyphSize = g.MeasureString(glyph, glyphFont);
+                float glyphX = 10f;
+                float glyphY = (Height - glyphSize.Height) / 2f;
+                g.DrawString(glyph, glyphFont, glyphBrush, glyphX, glyphY);
+
+                float labelX = glyphX + glyphSize.Width + 6f;
+                float labelMaxWidth = Math.Max(0f, Width - labelX - 18f);
+                using var format = new StringFormat
+                {
+                    Alignment = StringAlignment.Near,
+                    LineAlignment = StringAlignment.Center,
+                    Trimming = StringTrimming.EllipsisCharacter,
+                    FormatFlags = StringFormatFlags.LineLimit
+                };
+                var labelRect = new RectangleF(labelX, 4f, labelMaxWidth, Height - 8f);
+                g.DrawString(label, labelFont, textBrush, labelRect, format);
+
+                if (kind == ButtonKind.Toggle)
+                {
+                    var statusColor = isActive ? OverlayTheme.StateOn : OverlayTheme.StateOff;
+                    using var dotBrush = new SolidBrush(statusColor);
+                    g.FillEllipse(dotBrush, Width - 14, 6, 7, 7);
+                }
+                else if ((kind == ButtonKind.Cancel || kind == ButtonKind.Action) && Enabled)
+                {
+                    using var dotBrush = new SolidBrush(OverlayTheme.StatePending);
+                    g.FillEllipse(dotBrush, Width - 14, 6, 7, 7);
+                }
+            }
+
+            private Color GetBackgroundColor()
+            {
+                Color baseBg = isActive ? OverlayTheme.Blend(OverlayTheme.SurfaceElevated, GetAccentColor(), 0.18f)
+                                         : OverlayTheme.SurfaceElevated;
+                if (!Enabled)
+                {
+                    return OverlayTheme.Blend(baseBg, OverlayTheme.Surface, 0.4f);
+                }
+                if (isPressed)
+                {
+                    return OverlayTheme.Blend(baseBg, GetAccentColor(), 0.3f);
+                }
+                if (isHovered)
+                {
+                    return OverlayTheme.Blend(baseBg, GetAccentColor(), 0.12f);
+                }
+                return baseBg;
+            }
+
+            private Color GetBorderColor()
+            {
+                if (!Enabled)
+                {
+                    return OverlayTheme.WithAlpha(OverlayTheme.BorderLocked, 160);
+                }
+                if (isActive)
+                {
+                    return OverlayTheme.WithAlpha(GetAccentColor(), 230);
+                }
+                if (isHovered)
+                {
+                    return OverlayTheme.WithAlpha(GetAccentColor(), 150);
+                }
+                return OverlayTheme.WithAlpha(OverlayTheme.BorderSubtle, 200);
+            }
+
+            private Color GetTextColor()
+            {
+                if (!Enabled)
+                {
+                    return OverlayTheme.TextMuted;
+                }
+                return isActive ? OverlayTheme.TextPrimary : OverlayTheme.TextSecondary;
+            }
+
+            private Color GetAccentColor()
+            {
+                return kind switch
+                {
+                    ButtonKind.Danger => OverlayTheme.StateDanger,
+                    ButtonKind.Cancel => OverlayTheme.StatePending,
+                    ButtonKind.Action => OverlayTheme.StateInfo,
+                    _ => isActive ? OverlayTheme.StateOn : OverlayTheme.StateInfo,
+                };
+            }
         }
     }
 }

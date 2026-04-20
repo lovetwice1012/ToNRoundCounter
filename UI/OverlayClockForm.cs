@@ -2,11 +2,15 @@ using System;
 using System.Drawing;
 using System.Globalization;
 using System.Windows.Forms;
-using SharpDX.Direct2D1;
-using SharpDX.DirectWrite;
-using SharpDX.Mathematics.Interop;
+using Vortice;
+using Vortice.DCommon;
+using Vortice.Direct2D1;
+using Vortice.DirectWrite;
+using Vortice.Mathematics;
 using ToNRoundCounter.UI.DirectX;
-using DWFontStyle = SharpDX.DirectWrite.FontStyle;
+using DWFontStyle = Vortice.DirectWrite.FontStyle;
+using Color = System.Drawing.Color;
+using Size = System.Drawing.Size;
 
 namespace ToNRoundCounter.UI
 {
@@ -27,6 +31,9 @@ namespace ToNRoundCounter.UI
             string dateText = $"{timestamp:yyyy:MM:dd} ({dayName})";
             string timeText = timestamp.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
             clockSurface.SetClockText(dateText, timeText);
+            
+            // Adjust parent form size to content after updating time
+            AdjustSizeToContent();
         }
 
         private static string GetDayName(DateTimeOffset timestamp, CultureInfo culture)
@@ -49,22 +56,21 @@ namespace ToNRoundCounter.UI
         private sealed class ClockOverlaySurface : DirectXOverlaySurface
         {
             private readonly Color dateColor = Color.White;
-            private readonly Color timeOnColor = Color.FromArgb(255, 120, 200, 255);
-            private readonly Color timeOffColor = Color.FromArgb(60, 40, 70, 90);
-            private readonly float digitWidth = 34f;
-            private readonly float digitHeight = 58f;
-            private readonly float digitSpacing = 8f;
+            private readonly Color timeColor = Color.FromArgb(255, 120, 200, 255);
+            private readonly float dateTimeFontSize = 14f;
             private readonly float rowSpacing = 6f;
 
             private string dateText = string.Empty;
             private string timeText = "00:00:00";
             private float dateTextWidth;
             private float dateTextHeight;
+            private float timeTextWidth;
+            private float timeTextHeight;
 
-            private TextFormat? dateFormat;
-            private SolidColorBrush? dateBrush;
-            private SolidColorBrush? segmentOnBrush;
-            private SolidColorBrush? segmentOffBrush;
+            private IDWriteTextFormat? dateFormat;
+            private IDWriteTextFormat? timeFormat;
+            private ID2D1SolidColorBrush? dateBrush;
+            private ID2D1SolidColorBrush? timeBrush;
 
             public ClockOverlaySurface()
             {
@@ -76,8 +82,16 @@ namespace ToNRoundCounter.UI
 
             public void SetClockText(string date, string time)
             {
-                dateText = date ?? string.Empty;
-                timeText = time ?? string.Empty;
+                string nextDate = date ?? string.Empty;
+                string nextTime = time ?? string.Empty;
+                if (string.Equals(dateText, nextDate, StringComparison.Ordinal) &&
+                    string.Equals(timeText, nextTime, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                dateText = nextDate;
+                timeText = nextTime;
                 RecalculatePreferredSize();
                 Invalidate();
             }
@@ -89,16 +103,15 @@ namespace ToNRoundCounter.UI
                 RecalculatePreferredSize();
             }
 
-            protected override void RenderOverlay(WindowRenderTarget target)
+            protected override void RenderOverlay(ID2D1HwndRenderTarget target)
             {
-                if (dateFormat == null)
+                if (dateFormat == null || timeFormat == null)
                 {
                     EnsureTextFormat();
                 }
 
-                var textBrush = GetBrush(ref dateBrush, ToRawColor(dateColor));
-                var onBrush = GetBrush(ref segmentOnBrush, ToRawColor(timeOnColor));
-                var offBrush = GetBrush(ref segmentOffBrush, ToRawColor(timeOffColor));
+                var textBrush = GetBrush(ref dateBrush, ToColor4(dateColor));
+                var timeBrushLocal = GetBrush(ref timeBrush, ToColor4(timeColor));
 
                 float x = ContentPadding.Left;
                 float y = ContentPadding.Top;
@@ -106,12 +119,16 @@ namespace ToNRoundCounter.UI
 
                 if (!string.IsNullOrEmpty(dateText) && dateFormat != null && dateTextHeight > 0f)
                 {
-                    var textRect = new RawRectangleF(x, y, x + availableWidth, y + dateTextHeight);
+                    var textRect = new RawRectF(x, y, x + availableWidth, y + dateTextHeight);
                     target.DrawText(dateText, dateFormat, textRect, textBrush, DrawTextOptions.None, MeasuringMode.Natural);
                     y += dateTextHeight + rowSpacing;
                 }
 
-                DirectXSegmentRenderer.Draw(target, timeText, new RawVector2(x, y), digitWidth, digitHeight, digitSpacing, onBrush, offBrush);
+                if (!string.IsNullOrEmpty(timeText) && timeFormat != null && timeTextHeight > 0f)
+                {
+                    var timeRect = new RawRectF(x, y, x + availableWidth, y + timeTextHeight);
+                    target.DrawText(timeText, timeFormat, timeRect, timeBrushLocal, DrawTextOptions.None, MeasuringMode.Natural);
+                }
             }
 
             protected override void Dispose(bool disposing)
@@ -121,14 +138,14 @@ namespace ToNRoundCounter.UI
                     dateBrush?.Dispose();
                     dateBrush = null;
 
-                    segmentOnBrush?.Dispose();
-                    segmentOnBrush = null;
-
-                    segmentOffBrush?.Dispose();
-                    segmentOffBrush = null;
+                    timeBrush?.Dispose();
+                    timeBrush = null;
 
                     dateFormat?.Dispose();
                     dateFormat = null;
+
+                    timeFormat?.Dispose();
+                    timeFormat = null;
                 }
 
                 base.Dispose(disposing);
@@ -137,33 +154,44 @@ namespace ToNRoundCounter.UI
             private void EnsureTextFormat()
             {
                 dateFormat?.Dispose();
+                timeFormat?.Dispose();
                 string fontFamily = Font?.FontFamily?.Name ?? "Segoe UI";
-                dateFormat = new TextFormat(DirectWriteFactory, fontFamily, FontWeight.Regular, DWFontStyle.Normal, FontStretch.Normal, 12f)
-                {
-                    TextAlignment = TextAlignment.Leading,
-                    ParagraphAlignment = ParagraphAlignment.Near,
-                };
+                dateFormat = DirectWriteFactory.CreateTextFormat(fontFamily, FontWeight.Regular, DWFontStyle.Normal, FontStretch.Normal, dateTimeFontSize);
+                dateFormat.TextAlignment = TextAlignment.Leading;
+                dateFormat.ParagraphAlignment = ParagraphAlignment.Near;
+                timeFormat = DirectWriteFactory.CreateTextFormat(fontFamily, FontWeight.Regular, DWFontStyle.Normal, FontStretch.Normal, dateTimeFontSize);
+                timeFormat.TextAlignment = TextAlignment.Leading;
+                timeFormat.ParagraphAlignment = ParagraphAlignment.Near;
             }
 
             private void RecalculatePreferredSize()
             {
                 dateTextWidth = 0f;
                 dateTextHeight = 0f;
+                timeTextWidth = 0f;
+                timeTextHeight = 0f;
 
                 if (dateFormat != null && !string.IsNullOrEmpty(dateText))
                 {
-                    using var layout = new TextLayout(DirectWriteFactory, dateText, dateFormat, float.MaxValue, float.MaxValue);
+                    using var layout = DirectWriteFactory.CreateTextLayout(dateText, dateFormat, float.MaxValue, float.MaxValue);
                     var metrics = layout.Metrics;
                     dateTextWidth = metrics.WidthIncludingTrailingWhitespace;
                     dateTextHeight = metrics.Height;
                 }
 
-                float timeWidth = DirectXSegmentRenderer.Measure(timeText, digitWidth, digitSpacing);
-                float contentWidth = Math.Max(dateTextWidth, timeWidth);
-                float contentHeight = digitHeight;
+                if (timeFormat != null && !string.IsNullOrEmpty(timeText))
+                {
+                    using var layout = DirectWriteFactory.CreateTextLayout(timeText, timeFormat, float.MaxValue, float.MaxValue);
+                    var metrics = layout.Metrics;
+                    timeTextWidth = metrics.WidthIncludingTrailingWhitespace;
+                    timeTextHeight = metrics.Height;
+                }
+
+                float contentWidth = Math.Max(dateTextWidth, timeTextWidth);
+                float contentHeight = timeTextHeight;
                 if (dateTextHeight > 0f)
                 {
-                    contentHeight = dateTextHeight + rowSpacing + digitHeight;
+                    contentHeight = dateTextHeight + rowSpacing + timeTextHeight;
                 }
 
                 int width = (int)Math.Ceiling(contentWidth + ContentPadding.Horizontal);

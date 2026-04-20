@@ -52,10 +52,11 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
                 Log.Warning(ex, "Failed to initialize event log database.");
             }
 
-            _logChannel = Channel.CreateUnbounded<LogEntry>(new UnboundedChannelOptions
+            _logChannel = Channel.CreateBounded<LogEntry>(new BoundedChannelOptions(10000)
             {
                 SingleReader = true,
-                SingleWriter = false
+                SingleWriter = false,
+                FullMode = BoundedChannelFullMode.DropOldest
             });
             _cts = new CancellationTokenSource();
             _processingTask = Task.Run(() => ProcessQueueAsync(_cts.Token));
@@ -195,7 +196,31 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
 
         public void Dispose()
         {
-            DisposeAsync().AsTask().GetAwaiter().GetResult();
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            _logChannel.Writer.TryComplete();
+            _cts.Cancel();
+
+            try
+            {
+                if (!_processingTask.Wait(TimeSpan.FromSeconds(3)))
+                {
+                    Log.Warning("Event log processing task did not complete within dispose timeout.");
+                }
+            }
+            catch (AggregateException ex)
+            {
+                ex.Handle(e => e is OperationCanceledException);
+            }
+            finally
+            {
+                _cts.Dispose();
+                _connection.Close();
+                _connection.Dispose();
+            }
         }
 
         public async ValueTask DisposeAsync()

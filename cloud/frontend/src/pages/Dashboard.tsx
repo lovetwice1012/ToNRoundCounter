@@ -2,7 +2,7 @@
  * Main Dashboard Component
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/appStore';
 import { ConnectionStatus } from '../components/ConnectionStatus';
@@ -10,6 +10,7 @@ import { InstanceList } from '../components/InstanceList';
 import { PlayerStates } from '../components/PlayerStates';
 import { VotingPanel } from '../components/VotingPanel';
 import { StatisticsPanel } from '../components/StatisticsPanel';
+import { CoordinatedAutoSuicidePanel } from '../components/CoordinatedAutoSuicidePanel';
 import { WishedTerrorPanel } from '../components/WishedTerrorPanel';
 import { createRestClient } from '../lib/rest-client';
 
@@ -17,7 +18,6 @@ export const Dashboard: React.FC = () => {
     const navigate = useNavigate();
     const {
         client,
-        restClient,
         connected,
         connectionState,
         currentInstance,
@@ -27,10 +27,42 @@ export const Dashboard: React.FC = () => {
         setRestClient,
         setConnected,
         setConnectionState,
+        setCurrentInstance,
+        setInstances,
+        setWsLatencyMs,
+        touchSyncTime,
+        lastSyncAt,
+        pushToast,
         logout,
     } = useAppStore();
 
     const [activeTab, setActiveTab] = useState<'overview' | 'instances' | 'players' | 'stats' | 'settings'>('overview');
+
+    // Ref so subscription callbacks can read the latest currentInstance without
+    // being listed in the subscription useEffect's dependency array.  Adding
+    // the full object would cause every refreshSnapshot() → setCurrentInstance()
+    // call to tear down and rebuild all subscriptions and reset the polling timer.
+    const currentInstanceRef = useRef(currentInstance);
+    useEffect(() => {
+        currentInstanceRef.current = currentInstance;
+    }, [currentInstance]);
+
+    const refreshSnapshot = useCallback(async (targetClient: any) => {
+        if (!targetClient) {
+            return;
+        }
+
+        const startedAt = performance.now();
+        const [instance, instances] = await Promise.all([
+            targetClient.getCurrentInstance().catch(() => null),
+            targetClient.listInstances().catch(() => []),
+        ]);
+
+        setCurrentInstance(instance || null);
+        setInstances(Array.isArray(instances) ? instances : []);
+        setWsLatencyMs(Math.round(performance.now() - startedAt));
+        touchSyncTime();
+    }, [setCurrentInstance, setInstances, setWsLatencyMs, touchSyncTime]);
 
     // セッションからの自動再接続
     useEffect(() => {
@@ -46,31 +78,46 @@ export const Dashboard: React.FC = () => {
                     const wsUrl = (import.meta as any).env?.VITE_WS_URL || 'ws://localhost:8080/ws';
                     const { ToNRoundCloudClient } = await import('../lib/websocket-client');
                     const newClient = new ToNRoundCloudClient(wsUrl);
-                    
+
                     newClient.onConnectionStateChange((state) => {
                         setConnectionState(state);
                         setConnected(state === 'connected');
+                        // WS クライアントが再認証不可と判断した場合、ログイン画面へ遷移
+                        if (state === 'auth-required') {
+                            logout();
+                            navigate('/login');
+                            pushToast({ type: 'error', message: 'セッションの有効期限が切れました。再ログインしてください。' });
+                        }
                     });
-                    
+
                     await newClient.connect();
-                    
+
                     // セッションを検証して認証
-                    await newClient.validateSession(sessionToken, playerId);
-                    
+                    const validated = await newClient.validateSession(sessionToken, playerId);
+
+                    // validateSession may rotate the session token — persist
+                    // the freshly-issued token so subsequent REST/WS calls use
+                    // the current value instead of the (possibly expired) one
+                    // we started the reconnect with.
+                    useAppStore.getState().setSession(validated.session_token, validated.player_id, validated.user_id);
+                    newRestClient.setSessionToken(validated.session_token);
+
                     setClient(newClient);
-                    
-                    console.log('自動再接続に成功しました');
+
+                    await refreshSnapshot(newClient);
+                    pushToast({ type: 'success', message: '接続を復元しました。' });
                 } catch (error) {
                     console.error('自動再接続に失敗しました:', error);
                     // セッションが無効な場合はログアウト
                     logout();
                     navigate('/login');
+                    pushToast({ type: 'error', message: 'セッションを復元できませんでした。再ログインしてください。' });
                 }
             };
-            
+
             reconnect();
         }
-    }, [sessionToken, playerId, client, setClient, setRestClient, setConnected, setConnectionState, logout, navigate]);
+    }, [sessionToken, playerId, client, setClient, setRestClient, setConnected, setConnectionState, logout, navigate, refreshSnapshot, pushToast]);
 
     const handleLogout = async () => {
         if (client) {
@@ -81,89 +128,66 @@ export const Dashboard: React.FC = () => {
             }
         }
         logout();
+        pushToast({ type: 'info', message: 'ログアウトしました。' });
         navigate('/login');
     };
 
     useEffect(() => {
         // Auto-refresh data when connected
         if (connected && client) {
-            console.log('[Dashboard] Connected, loading initial data...');
-            console.log('[Dashboard] PlayerId:', playerId);
-            console.log('[Dashboard] SessionToken:', sessionToken ? 'present' : 'missing');
-            
-            // 初回データ取得
-            const loadInitialData = async () => {
-                try {
-                    console.log('[Dashboard] Calling getCurrentInstance...');
-                    // 現在のインスタンスを取得
-                    const instance = await client.getCurrentInstance();
-                    console.log('[Dashboard] Current instance:', instance);
-                    useAppStore.getState().setCurrentInstance(instance);
-
-                    console.log('[Dashboard] Calling listInstances...');
-                    // インスタンス一覧を取得
-                    const instances = await client.listInstances();
-                    console.log('[Dashboard] Instances:', instances);
-                    useAppStore.getState().setInstances(Array.isArray(instances) ? instances : []);
-                } catch (error) {
-                    console.error('[Dashboard] Failed to load initial data:', error);
-                    // エラー詳細をログ出力
-                    if (error instanceof Error) {
-                        console.error('[Dashboard] Error message:', error.message);
-                        console.error('[Dashboard] Error stack:', error.stack);
-                    }
-                }
-            };
-
-            loadInitialData();
+            refreshSnapshot(client).catch((error) => {
+                console.error('[Dashboard] Failed to load initial data:', error);
+            });
 
             // WebSocketイベントを購読
+            // Callbacks read currentInstanceRef.current (not the closed-over
+            // `currentInstance`) so the effect does not depend on currentInstance.
             const unsubscribeJoined = client.onInstanceMemberJoined((data) => {
-                console.log('Member joined:', data);
-                // 現在のインスタンスを更新
-                if (currentInstance && data.instance_id === currentInstance.instance_id) {
-                    loadInitialData();
+                if (currentInstanceRef.current && data.instance_id === currentInstanceRef.current.instance_id) {
+                    refreshSnapshot(client).catch(() => undefined);
                 }
             });
 
             const unsubscribeLeft = client.onInstanceMemberLeft((data) => {
-                console.log('Member left:', data);
-                // 現在のインスタンスを更新
-                if (currentInstance && data.instance_id === currentInstance.instance_id) {
-                    loadInitialData();
-                } else if (data.player_id === playerId) {
+                if (currentInstanceRef.current && data.instance_id === currentInstanceRef.current.instance_id) {
+                    refreshSnapshot(client).catch(() => undefined);
+                } else if (data.player_id === client.userId) {
                     // 自分が退出した場合
-                    useAppStore.getState().setCurrentInstance(null);
+                    // サーバーは ws.userId（内部 DB ID）を player_id として broadcast するため
+                    // store の playerId（VRChat プレイヤー ID）ではなく client.userId で照合する。
+                    setCurrentInstance(null);
                 }
             });
 
-            const unsubscribeUpdated = client.onInstanceUpdated((data) => {
-                console.log('Instance updated:', data);
-                loadInitialData();
+            const unsubscribeUpdated = client.onInstanceUpdated(() => {
+                refreshSnapshot(client).catch(() => undefined);
             });
 
             const unsubscribeDeleted = client.onInstanceDeleted((data) => {
-                console.log('Instance deleted:', data);
-                // 削除されたインスタンスが現在のインスタンスの場合
-                if (currentInstance && data.instance_id === currentInstance.instance_id) {
-                    useAppStore.getState().setCurrentInstance(null);
+                if (currentInstanceRef.current && data.instance_id === currentInstanceRef.current.instance_id) {
+                    setCurrentInstance(null);
                 }
-                loadInitialData();
+                refreshSnapshot(client).catch(() => undefined);
             });
 
-            // 定期的なポーリング（フォールバック）
+            // 定期的なポーリング（フォールバック）— currentInstance も含めて更新する
             const interval = setInterval(async () => {
                 try {
-                    // Refresh instances
-                    const instances = await client.listInstances();
-                    // 配列であることを保証
-                    useAppStore.getState().setInstances(Array.isArray(instances) ? instances : []);
+                    const startedAt = performance.now();
+                    const [instance, instances] = await Promise.all([
+                        client.getCurrentInstance().catch(() => null),
+                        client.listInstances().catch(() => []),
+                    ]);
+                    setCurrentInstance(instance || null);
+                    setInstances(Array.isArray(instances) ? instances : []);
+                    setWsLatencyMs(Math.round(performance.now() - startedAt));
+                    touchSyncTime();
                 } catch (error) {
                     console.error('Failed to refresh data:', error);
-                    // エラー時も空配列をセット
-                    useAppStore.getState().setInstances([]);
+                    setInstances([]);
+                    setWsLatencyMs(null);
                 }
-            }, 10000); // 10秒ごと
+            }, 8000);
 
             return () => {
                 clearInterval(interval);
@@ -173,70 +197,86 @@ export const Dashboard: React.FC = () => {
                 unsubscribeDeleted();
             };
         }
-    }, [connected, client, currentInstance, playerId]);
+    }, [
+        connected,
+        client,
+        // currentInstance is intentionally NOT in this dep array — callbacks
+        // read it via currentInstanceRef.current to prevent subscription churn.
+        // playerId is also omitted — self-left check uses client.userId directly.
+        refreshSnapshot,
+        setCurrentInstance,
+        setInstances,
+        setWsLatencyMs,
+        touchSyncTime,
+    ]);
+
+    const syncLabel = useMemo(() => {
+        if (!lastSyncAt) {
+            return '未同期';
+        }
+        return new Date(lastSyncAt).toLocaleTimeString();
+    }, [lastSyncAt]);
+
+    const navItems: Array<{ key: typeof activeTab; label: string; desc: string }> = [
+        { key: 'overview', label: 'Overview', desc: '現在の状況を監視' },
+        { key: 'instances', label: 'Instances', desc: 'インスタンス一覧' },
+        { key: 'players', label: 'Players', desc: '状態と更新時刻' },
+        { key: 'stats', label: 'Analytics', desc: '統計と推移' },
+        { key: 'settings', label: 'Preferences', desc: '希望テラー管理' },
+    ];
 
     return (
-        <div className="dashboard-page">
-            <header className="dashboard-header">
-                <h1>ToNRoundCounter Cloud Dashboard</h1>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                    <ConnectionStatus />
-                    <button 
-                        onClick={handleLogout} 
-                        className="btn-logout"
-                        style={{
-                            padding: '8px 16px',
-                            backgroundColor: '#f44336',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '6px',
-                            fontWeight: 500,
-                            cursor: 'pointer',
-                            fontSize: '14px',
-                            transition: 'all 0.2s ease'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#da190b'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f44336'}
-                    >
-                        ログアウト
-                    </button>
+        <div className="dashboard-page nebula-bg">
+            <aside className="dashboard-sidebar glass-panel">
+                <div className="brand-block">
+                    <p className="eyebrow">Cloud Mission Control</p>
+                    <h1>ToNRoundCounter</h1>
+                    <p className="brand-sub">リアルタイム同期の監視センター</p>
                 </div>
-            </header>
 
-            <nav className="dashboard-nav">
-                <button
-                    className={activeTab === 'overview' ? 'active' : ''}
-                    onClick={() => setActiveTab('overview')}
-                >
-                    概要
+                <div className="sidebar-metrics">
+                    <div className="metric-tile">
+                        <span>Connection</span>
+                        <strong>{connectionState}</strong>
+                    </div>
+                    <div className="metric-tile">
+                        <span>Session</span>
+                        <strong>{playerId || 'anonymous'}</strong>
+                    </div>
+                    <div className="metric-tile">
+                        <span>Last Sync</span>
+                        <strong>{syncLabel}</strong>
+                    </div>
+                </div>
+
+                <nav className="dashboard-nav-side">
+                    {navItems.map((item) => (
+                        <button
+                            key={item.key}
+                            className={`nav-tile ${activeTab === item.key ? 'active' : ''}`}
+                            onClick={() => setActiveTab(item.key)}
+                            type="button"
+                        >
+                            <span>{item.label}</span>
+                            <small>{item.desc}</small>
+                        </button>
+                    ))}
+                </nav>
+
+                <button onClick={handleLogout} className="btn-logout" type="button">
+                    ログアウト
                 </button>
-                <button
-                    className={activeTab === 'instances' ? 'active' : ''}
-                    onClick={() => setActiveTab('instances')}
-                >
-                    インスタンス
-                </button>
-                <button
-                    className={activeTab === 'players' ? 'active' : ''}
-                    onClick={() => setActiveTab('players')}
-                >
-                    プレイヤー
-                </button>
-                <button
-                    className={activeTab === 'stats' ? 'active' : ''}
-                    onClick={() => setActiveTab('stats')}
-                >
-                    統計
-                </button>
-                <button
-                    className={activeTab === 'settings' ? 'active' : ''}
-                    onClick={() => setActiveTab('settings')}
-                >
-                    設定
-                </button>
-            </nav>
+            </aside>
 
             <main className="dashboard-content">
+                <header className="dashboard-header glass-panel">
+                    <div>
+                        <p className="eyebrow">Dashboard</p>
+                        <h2>Operations Overview</h2>
+                    </div>
+                    <ConnectionStatus />
+                </header>
+
                 {!connected && (
                     <div className="connection-warning">
                         <p>サーバーに接続されていません。</p>
@@ -253,15 +293,17 @@ export const Dashboard: React.FC = () => {
                                     <p><strong>インスタンスID:</strong> {currentInstance.instance_id}</p>
                                     <p><strong>プレイヤー数:</strong> {currentInstance.member_count || currentInstance.current_player_count || 0}/{currentInstance.max_players}</p>
                                     <p><strong>ステータス:</strong> {currentInstance.status || 'ACTIVE'}</p>
-                                    {currentInstance.members && currentInstance.members.length > 0 && (
+                                    {Array.isArray(currentInstance.members) && currentInstance.members.length > 0 && (
                                         <div>
                                             <p><strong>メンバー:</strong></p>
                                             <ul>
-                                                {currentInstance.members.map((member: any) => (
+                                                {currentInstance.members
+                                                    .filter((member: any) => member && member.player_id)
+                                                    .map((member: any) => (
                                                     <li key={member.player_id}>
-                                                        {member.player_name || member.player_id}
+                                                        {member.player_name || member.player_id || '不明なプレイヤー'}
                                                         <span style={{ marginLeft: '10px', color: '#888', fontSize: '0.9em' }}>
-                                                            (参加: {new Date(member.joined_at).toLocaleString()})
+                                                            (参加: {member.joined_at ? new Date(member.joined_at).toLocaleString() : '不明'})
                                                         </span>
                                                     </li>
                                                 ))}
@@ -270,7 +312,7 @@ export const Dashboard: React.FC = () => {
                                     )}
                                 </div>
                             ) : (
-                                <p>インスタンスに参加していません</p>
+                                <p className="empty-message">インスタンスに参加していません</p>
                             )}
                         </section>
 
@@ -299,6 +341,7 @@ export const Dashboard: React.FC = () => {
 
                 {activeTab === 'settings' && (
                     <div className="settings-tab">
+                        <CoordinatedAutoSuicidePanel />
                         <WishedTerrorPanel />
                     </div>
                 )}

@@ -25,7 +25,16 @@ namespace ToNRoundCounter.Domain
         }
 
         public bool TryGetRound(string round, out Dictionary<string, TerrorAggregate> terrorDict)
-            => _data.TryGetValue(round, out terrorDict);
+        {
+            if (_data.TryGetValue(round, out var found))
+            {
+                terrorDict = found;
+                return true;
+            }
+
+            terrorDict = null!;
+            return false;
+        }
 
         public void Clear() => _data.Clear();
     }

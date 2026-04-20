@@ -58,8 +58,8 @@ namespace ToNRoundCounter.Application
                     return;
                 }
 
-                var roundTriggers = NormalizeTriggers(_settings.AutoRecordingRoundTypes);
-                var terrorTriggers = NormalizeTriggers(_settings.AutoRecordingTerrors);
+                var roundTriggers = GetCachedRoundTriggers();
+                var terrorTriggers = GetCachedTerrorTriggers();
                 bool hasRoundTriggers = roundTriggers.Count > 0;
                 bool hasTerrorTriggers = terrorTriggers.Count > 0;
 

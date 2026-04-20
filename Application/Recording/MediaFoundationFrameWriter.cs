@@ -9,6 +9,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 
 using RecordingCodecInfo = ToNRoundCounter.Application.AutoRecordingService.RecordingCodecInfo;
 
@@ -38,23 +39,9 @@ namespace ToNRoundCounter.Application.Recording
                     { "vp9", new FormatDescriptor("vp9", "AutoRecording_CodecOption_VP9", MediaFoundationInterop.MFVideoFormat_VP9, MediaFoundationInterop.MFTranscodeContainerType_MPEG4, MediaFoundationInterop.MFAudioFormat_AAC, true, 0, 192000) },
                 }
             },
-            {
-                "mkv",
-                new Dictionary<string, FormatDescriptor>(StringComparer.OrdinalIgnoreCase)
-                {
-                    { "h264", new FormatDescriptor("h264", "AutoRecording_CodecOption_H264", MediaFoundationInterop.MFVideoFormat_H264, MediaFoundationInterop.MFTranscodeContainerType_MPEG4, MediaFoundationInterop.MFAudioFormat_AAC, true, 0, 192000) },
-                    { "hevc", new FormatDescriptor("hevc", "AutoRecording_CodecOption_HEVC", MediaFoundationInterop.MFVideoFormat_HEVC, MediaFoundationInterop.MFTranscodeContainerType_MPEG4, MediaFoundationInterop.MFAudioFormat_AAC, true, 0, 192000) },
-                    { "av1", new FormatDescriptor("av1", "AutoRecording_CodecOption_AV1", MediaFoundationInterop.MFVideoFormat_AV1, MediaFoundationInterop.MFTranscodeContainerType_MPEG4, MediaFoundationInterop.MFAudioFormat_AAC, true, 0, 192000) },
-                    { "vp9", new FormatDescriptor("vp9", "AutoRecording_CodecOption_VP9", MediaFoundationInterop.MFVideoFormat_VP9, MediaFoundationInterop.MFTranscodeContainerType_MPEG4, MediaFoundationInterop.MFAudioFormat_AAC, true, 0, 192000) },
-                }
-            },
-            {
-                "flv",
-                new Dictionary<string, FormatDescriptor>(StringComparer.OrdinalIgnoreCase)
-                {
-                    { "h264", new FormatDescriptor("h264", "AutoRecording_CodecOption_H264", MediaFoundationInterop.MFVideoFormat_H264, MediaFoundationInterop.MFTranscodeContainerType_MPEG4, MediaFoundationInterop.MFAudioFormat_AAC, true, 0, 160000) },
-                }
-            },
+            // NOTE: Do not re-add "mkv" or "flv" entries that point at MFTranscodeContainerType_MPEG4.
+            // Media Foundation has no native MKV or FLV muxer, so doing so would write a raw MP4
+            // bitstream into a file with the wrong extension and most players cannot decode it.
             {
                 "wmv",
                 new Dictionary<string, FormatDescriptor>(StringComparer.OrdinalIgnoreCase)
@@ -188,7 +175,10 @@ namespace ToNRoundCounter.Application.Recording
                 MediaFoundationInterop.SetAttributeRatio(outputType, MediaFoundationInterop.MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
                 MediaFoundationInterop.CheckHr(outputType.SetUINT32(MediaFoundationInterop.MF_MT_INTERLACE_MODE, (int)MediaFoundationInterop.MFVideoInterlaceMode.Progressive), "MF_MT_INTERLACE_MODE");
                 MediaFoundationInterop.CheckHr(outputType.SetUINT32(MediaFoundationInterop.MF_MT_AVG_BITRATE, effectiveVideoBitrate), "MF_MT_AVG_BITRATE");
-                MediaFoundationInterop.CheckHr(outputType.SetUINT32(MediaFoundationInterop.MF_MT_ALL_SAMPLES_INDEPENDENT, 1), "MF_MT_ALL_SAMPLES_INDEPENDENT");
+                // NOTE: Do NOT set MF_MT_ALL_SAMPLES_INDEPENDENT on the compressed output type.
+                // Doing so would force intra-only encoding, which hardware H.264/HEVC encoders
+                // (NVENC, Intel QSV, AMD VCE) typically reject, causing SetInputMediaType to fail
+                // with MF_E_INVALIDMEDIATYPE (0xC00D36B4) because no encoder MFT can satisfy it.
 
                 MediaFoundationInterop.CheckHr(writer.AddStream(outputType, out _streamIndex), "IMFSinkWriter.AddStream");
 
@@ -205,8 +195,9 @@ namespace ToNRoundCounter.Application.Recording
                 MediaFoundationInterop.CheckHr(inputType.SetUINT32(MediaFoundationInterop.MF_MT_ALL_SAMPLES_INDEPENDENT, 1), "Input MF_MT_ALL_SAMPLES_INDEPENDENT");
 
                 MediaFoundationInterop.CheckHr(writer.SetInputMediaType(_streamIndex, inputType, null), "IMFSinkWriter.SetInputMediaType");
-                MediaFoundationInterop.CheckHr(writer.BeginWriting(), "IMFSinkWriter.BeginWriting");
 
+                // Audio stream must be added BEFORE BeginWriting.
+                // IMFSinkWriter::AddStream is not allowed after BeginWriting has been called.
                 if (audioFormat.HasValue)
                 {
                     if (!descriptor.SupportsAudio)
@@ -218,6 +209,8 @@ namespace ToNRoundCounter.Application.Recording
                     configuredAudioFormat = audioFormat;
                 }
 
+                MediaFoundationInterop.CheckHr(writer.BeginWriting(), "IMFSinkWriter.BeginWriting");
+
                 _sinkWriter = writer;
                 writer = null;
                 _hardwareContext = hardwareContext;
@@ -228,7 +221,7 @@ namespace ToNRoundCounter.Application.Recording
             {
                 if (writer != null)
                 {
-                    Marshal.ReleaseComObject(writer);
+                    writer.Dispose();
                 }
 
                 throw;
@@ -273,24 +266,67 @@ namespace ToNRoundCounter.Application.Recording
                 outputAudioType = MediaFoundationInterop.CreateMediaType();
                 MediaFoundationInterop.CheckHr(outputAudioType.SetGUID(MediaFoundationInterop.MF_MT_MAJOR_TYPE, MediaFoundationInterop.MFMediaType_Audio), "Audio MF_MT_MAJOR_TYPE");
                 MediaFoundationInterop.CheckHr(outputAudioType.SetGUID(MediaFoundationInterop.MF_MT_SUBTYPE, descriptor.AudioSubtype), "Audio MF_MT_SUBTYPE");
-                MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_NUM_CHANNELS, format.Channels), "Audio channels");
-                MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_SAMPLES_PER_SECOND, format.SampleRate), "Audio sample rate");
 
+                bool outputIsAac = descriptor.AudioSubtype == MediaFoundationInterop.MFAudioFormat_AAC;
                 bool outputIsPcm = descriptor.AudioSubtype == MediaFoundationInterop.MFAudioFormat_PCM || descriptor.AudioSubtype == MediaFoundationInterop.MFAudioFormat_Float;
+
                 int resolvedAudioBitrate = ResolveAudioBitrate(requestedAudioBitrate, descriptor.DefaultAudioBitrate, format);
+
+                // The Windows built-in AAC encoder MFT enforces a very small set of valid output
+                // media types. AddStream returns MF_E_INVALIDMEDIATYPE (0xC00D36B2) unless the
+                // output type matches one of the enumerated configurations:
+                //   - SamplesPerSecond  : 44100 or 48000
+                //   - NumChannels       : 1, 2, or 6
+                //   - BitsPerSample     : 16
+                //   - BlockAlignment    : 1
+                //   - AvgBytesPerSecond : 12000 / 16000 / 20000 / 24000
+                //                          (= 96 / 128 / 160 / 192 kbps)
+                //   - AAC payload type  : 0 (raw AAC)
+                int outChannels;
+                int outSampleRate;
                 int averageBytes;
-                if (resolvedAudioBitrate > 0)
+                if (outputIsAac)
                 {
-                    int requestedAverageBytes = Math.Max(1, resolvedAudioBitrate / 8);
-                    averageBytes = outputIsPcm ? Math.Max(format.BytesPerSecond, requestedAverageBytes) : requestedAverageBytes;
+                    outChannels = format.Channels switch
+                    {
+                        1 => 1,
+                        2 => 2,
+                        6 => 6,
+                        _ => 2,
+                    };
+                    outSampleRate = (format.SampleRate == 44100 || format.SampleRate == 48000)
+                        ? format.SampleRate
+                        : 48000;
+                    averageBytes = SnapAacAverageBytesPerSecond(resolvedAudioBitrate, outChannels);
                 }
                 else
                 {
-                    averageBytes = format.BytesPerSecond;
+                    outChannels = format.Channels;
+                    outSampleRate = format.SampleRate;
+                    if (resolvedAudioBitrate > 0)
+                    {
+                        int requestedAverageBytes = Math.Max(1, resolvedAudioBitrate / 8);
+                        averageBytes = outputIsPcm ? Math.Max(format.BytesPerSecond, requestedAverageBytes) : requestedAverageBytes;
+                    }
+                    else
+                    {
+                        averageBytes = format.BytesPerSecond;
+                    }
                 }
 
+                MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_NUM_CHANNELS, outChannels), "Audio channels");
+                MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_SAMPLES_PER_SECOND, outSampleRate), "Audio sample rate");
                 MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_AVG_BYTES_PER_SECOND, averageBytes), "Audio average bytes");
-                if (outputIsPcm)
+
+                if (outputIsAac)
+                {
+                    // Required by the AAC encoder MFT.
+                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BITS_PER_SAMPLE, 16), "AAC bits per sample");
+                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BLOCK_ALIGNMENT, 1), "AAC block alignment");
+                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AAC_PAYLOAD_TYPE, 0), "Audio AAC payload");
+                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AAC_AUDIO_PROFILE_LEVEL_INDICATION, 0x29), "Audio AAC profile");
+                }
+                else if (outputIsPcm)
                 {
                     MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BLOCK_ALIGNMENT, format.BlockAlign), "Audio block alignment");
                     MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BITS_PER_SAMPLE, format.BitsPerSample), "Audio bits per sample");
@@ -300,66 +336,28 @@ namespace ToNRoundCounter.Application.Recording
                     }
                 }
 
-                if (descriptor.AudioSubtype == MediaFoundationInterop.MFAudioFormat_AAC)
-                {
-                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AAC_PAYLOAD_TYPE, 0), "Audio AAC payload");
-                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AAC_AUDIO_PROFILE_LEVEL_INDICATION, 0x29), "Audio AAC profile");
-                }
-
                 MediaFoundationInterop.CheckHr(writer.AddStream(outputAudioType, out int streamIndex), "IMFSinkWriter.AddStream(Audio)");
 
 
-                // Create input audio type - CORRECTED VERSION
+                // Create input audio type.
+                //
+                // We deliberately rely on WasapiAudioCapture having already converted
+                // every captured packet to interleaved PCM 16-bit stereo at 44100 or
+                // 48000 Hz. That format is the canonical input the Windows AAC encoder
+                // MFT (and the WMA / MPEG audio encoders) accept directly, with no
+                // SinkWriter-inserted converter MFT required. Declaring exactly that
+                // here avoids the environment-dependent SetInputMediaType(Audio)
+                // negotiation failures that occur when raw WASAPI float / 5.1
+                // formats are exposed to MF.
                 inputAudioType = MediaFoundationInterop.CreateMediaType();
                 MediaFoundationInterop.CheckHr(inputAudioType.SetGUID(MediaFoundationInterop.MF_MT_MAJOR_TYPE, MediaFoundationInterop.MFMediaType_Audio), "Audio input MF_MT_MAJOR_TYPE");
-
-                // Use the actual format from WASAPI capture
-                Guid inputSubtype = format.IsFloat ? MediaFoundationInterop.MFAudioFormat_Float : MediaFoundationInterop.MFAudioFormat_PCM;
-                MediaFoundationInterop.CheckHr(inputAudioType.SetGUID(MediaFoundationInterop.MF_MT_SUBTYPE, inputSubtype), "Audio input MF_MT_SUBTYPE");
-
-                // Set essential audio format properties
+                MediaFoundationInterop.CheckHr(inputAudioType.SetGUID(MediaFoundationInterop.MF_MT_SUBTYPE, MediaFoundationInterop.MFAudioFormat_PCM), "Audio input MF_MT_SUBTYPE");
                 MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_NUM_CHANNELS, format.Channels), "Audio input channels");
                 MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_SAMPLES_PER_SECOND, format.SampleRate), "Audio input sample rate");
+                MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BITS_PER_SAMPLE, format.BitsPerSample), "Audio input bits per sample");
                 MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BLOCK_ALIGNMENT, format.BlockAlign), "Audio input block alignment");
                 MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_AVG_BYTES_PER_SECOND, format.BytesPerSecond), "Audio input average bytes");
-                MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BITS_PER_SAMPLE, format.BitsPerSample), "Audio input bits per sample");
-
-                // Set valid bits per sample (important for non-float formats)
-                if (!format.IsFloat && format.BitsPerSample > 0)
-                {
-                    int validBits = format.ValidBitsPerSample > 0 && format.ValidBitsPerSample <= format.BitsPerSample
-                        ? format.ValidBitsPerSample
-                        : format.BitsPerSample;
-                    MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_VALID_BITS_PER_SAMPLE, validBits), "Audio valid bits");
-                }
-
-                // Set channel mask with proper defaults
-                uint channelMask = format.ChannelMask;
-                if (channelMask == 0 && format.Channels > 0)
-                {
-                    // Provide default channel masks for common configurations
-                    channelMask = format.Channels switch
-                    {
-                        1 => 0x4,      // SPEAKER_FRONT_CENTER
-                        2 => 0x3,      // SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT
-                        4 => 0x33,     // Quad
-                        6 => 0x3F,     // 5.1
-                        8 => 0x63F,    // 7.1
-                        _ => 0
-                    };
-                }
-
-                if (channelMask != 0)
-                {
-                    MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_CHANNEL_MASK, unchecked((int)channelMask)), "Audio input channel mask");
-                }
-
-                // Set WAVEFORMATEX preference for better encoder compatibility
-                var preferWaveFormatExGuid = MediaFoundationInterop.MF_MT_AUDIO_PREFER_WAVEFORMATEX;
-                MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(ref preferWaveFormatExGuid, 1), "Audio prefer WAVEFORMATEX");
-
-                // Set this flag for better encoder compatibility
-                MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_ALL_SAMPLES_INDEPENDENT, 1), "Audio all samples independent");
+                MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_ALL_SAMPLES_INDEPENDENT, 1), "Audio input MF_MT_ALL_SAMPLES_INDEPENDENT");
 
                 MediaFoundationInterop.CheckHr(writer.SetInputMediaType(streamIndex, inputAudioType, null), "IMFSinkWriter.SetInputMediaType(Audio)");
 
@@ -658,11 +656,11 @@ namespace ToNRoundCounter.Application.Recording
                 {
                     try
                     {
-                        MediaFoundationInterop.CheckHr(_sinkWriter.Finalize(), "IMFSinkWriter.Finalize");
+                        MediaFoundationInterop.CheckHr(_sinkWriter.FinalizeWriter(), "IMFSinkWriter.Finalize");
                     }
                     finally
                     {
-                        Marshal.ReleaseComObject(_sinkWriter);
+                        _sinkWriter.Dispose();
                     }
                 }
             }
@@ -1034,7 +1032,7 @@ namespace ToNRoundCounter.Application.Recording
                 try
                 {
                     Guid multithreadGuid = typeof(ID3D11Multithread).GUID;
-                    int hr = Marshal.QueryInterface(context, ref multithreadGuid, out multithreadPtr);
+                    int hr = Marshal.QueryInterface(context, in multithreadGuid, out multithreadPtr);
                     if (hr < 0)
                     {
                         return;
@@ -1285,18 +1283,65 @@ namespace ToNRoundCounter.Application.Recording
             return fallback;
         }
 
+        // Windows AAC encoder MFT only accepts these AvgBytesPerSecond values
+        // (== 96 / 128 / 160 / 192 kbps respectively). For 6-channel output it
+        // additionally accepts the same set; pick the closest valid value.
+        private static int SnapAacAverageBytesPerSecond(int requestedBitsPerSecond, int channels)
+        {
+            int[] allowed = channels >= 6
+                ? new[] { 20000, 24000 } // 5.1 streams: 160k/192k are the documented valid values
+                : new[] { 12000, 16000, 20000, 24000 };
+
+            int requestedBytesPerSecond = requestedBitsPerSecond > 0 ? requestedBitsPerSecond / 8 : 0;
+            if (requestedBytesPerSecond <= 0)
+            {
+                return channels >= 6 ? 24000 : 16000; // sensible defaults: 192k / 128k
+            }
+
+            int best = allowed[0];
+            int bestDelta = Math.Abs(requestedBytesPerSecond - best);
+            for (int i = 1; i < allowed.Length; i++)
+            {
+                int delta = Math.Abs(requestedBytesPerSecond - allowed[i]);
+                if (delta < bestDelta)
+                {
+                    best = allowed[i];
+                    bestDelta = delta;
+                }
+            }
+
+            return best;
+        }
+
         private static int CalculateBitrate(int width, int height, int frameRate)
         {
-            long pixelsPerSecond = (long)Math.Max(1, width) * Math.Max(1, height) * Math.Max(1, frameRate);
-            long bitRate = pixelsPerSecond * 8L;
+            // Use a perceptual bits-per-pixel coefficient instead of treating every pixel as 8 bits.
+            // The previous formula produced ~2 Gbps for 4K30, which exceeds the bitrate limits of all
+            // common hardware H.264/HEVC encoders (NVENC, QSV, AMD VCE) and caused the SinkWriter to
+            // reject the output media type (HRESULT 0xC00D36B4 / MF_E_INVALIDMEDIATYPE).
+            //
+            // 0.1 bits/pixel is a widely used heuristic for high-quality H.264/HEVC capture and lands
+            // around 25 Mbps for 4K30 / 50 Mbps for 4K60, well inside hardware encoder limits.
+            long w = Math.Max(1, width);
+            long h = Math.Max(1, height);
+            long fps = Math.Max(1, frameRate);
+            long pixelsPerSecond = w * h * fps;
+            long bitRate = pixelsPerSecond / 10L; // == pixelsPerSecond * 0.1 bits/pixel
+
+            // Floor: never go below 1 Mbps so very small windows still get usable quality.
             if (bitRate < 1_000_000L)
             {
                 bitRate = 1_000_000L;
             }
 
-            if (bitRate > int.MaxValue)
+            // Ceiling: cap below typical hardware encoder limits.
+            // NVENC H.264 absolute max is ~800 Mbps and HEVC ~800 Mbps, but practical CBR limits
+            // are far lower. 200 Mbps comfortably fits 4K60 high-bitrate captures while remaining
+            // accepted by every modern HW encoder.
+            const long MaxAutoBitrate = 200_000_000L;
+            if (bitRate > MaxAutoBitrate)
             {
-                bitRate = int.MaxValue;
+                bitRate = MaxAutoBitrate;
             }
 
             return (int)bitRate;
@@ -1462,33 +1507,38 @@ namespace ToNRoundCounter.Application.Recording
             public static IMFSinkWriter CreateSinkWriter(string path, IMFAttributes? attributes)
             {
                 IntPtr rawPtr = IntPtr.Zero;
-                IntPtr sinkWriterPtr = IntPtr.Zero;
+                bool ownershipTransferred = false;
                 try
                 {
-                    CheckHr(MFCreateSinkWriterFromURL(path, IntPtr.Zero, attributes, out rawPtr), nameof(MFCreateSinkWriterFromURL));
-
-                    Guid iid = IMFSinkWriterGuid;
-                    int hr = Marshal.QueryInterface(rawPtr, ref iid, out sinkWriterPtr);
-                    if (hr < 0)
+                    int createHr = MFCreateSinkWriterFromURL(path, IntPtr.Zero, attributes, out rawPtr);
+                    if (createHr < 0)
                     {
-                        if (hr == E_NOINTERFACE)
+                        if (createHr == E_NOINTERFACE)
                         {
                             throw new NotSupportedException("Media Foundation sink writer is not available on this system. Install the Media Feature Pack or enable the Media Foundation optional Windows feature.");
                         }
 
-                        CheckHr(hr, "Marshal.QueryInterface(IMFSinkWriter)");
+                        CheckHr(createHr, nameof(MFCreateSinkWriterFromURL));
                     }
 
-                    return (IMFSinkWriter)Marshal.GetObjectForIUnknown(sinkWriterPtr);
+                    if (rawPtr == IntPtr.Zero)
+                    {
+                        throw new InvalidOperationException("MFCreateSinkWriterFromURL returned a null sink writer pointer.");
+                    }
+
+                    // Wrap the raw IMFSinkWriter* directly. We deliberately avoid
+                    // Marshal.GetObjectForIUnknown + cast to a [ComImport] interface here:
+                    // the canonical IUnknown of MF's aggregated sink writer object does not
+                    // always honor QI(IID_IMFSinkWriter) on a re-entry, which surfaces as
+                    // an InvalidCastException with E_NOINTERFACE. The wrapper class owns
+                    // exactly one ref on rawPtr from this point and dispatches via vtable.
+                    var writer = new IMFSinkWriter(rawPtr);
+                    ownershipTransferred = true;
+                    return writer;
                 }
                 finally
                 {
-                    if (sinkWriterPtr != IntPtr.Zero)
-                    {
-                        Marshal.Release(sinkWriterPtr);
-                    }
-
-                    if (rawPtr != IntPtr.Zero)
+                    if (!ownershipTransferred && rawPtr != IntPtr.Zero)
                     {
                         Marshal.Release(rawPtr);
                     }
@@ -1539,8 +1589,6 @@ namespace ToNRoundCounter.Application.Recording
             private static extern int MFShutdown();
 
             private const int E_NOINTERFACE = unchecked((int)0x80004002);
-
-            private static readonly Guid IMFSinkWriterGuid = new Guid("3137F1CD-FE5E-4805-A5D8-FB477448CB3D");
 
             [DllImport("mfreadwrite.dll", CharSet = CharSet.Unicode)]
             private static extern int MFCreateSinkWriterFromURL(string? pwszOutputURL, IntPtr pUnkSink, IMFAttributes? pAttributes, out IntPtr ppSinkWriter);
@@ -1597,11 +1645,49 @@ namespace ToNRoundCounter.Application.Recording
                 [PreserveSig] int CopyAllItems(IMFAttributes destination);
             }
 
+            // NOTE: IMFMediaType inherits IMFAttributes in C++. .NET COM interop does NOT
+            // walk managed interface inheritance to build a derived COM vtable, so every
+            // IMFAttributes slot must be redeclared here in the exact MIDL order before
+            // the IMFMediaType-specific methods. Otherwise calls hit the wrong vtable
+            // slot (manifesting as MF_E_ATTRIBUTENOTFOUND or random failures).
             [ComImport]
             [Guid("44ae0fa8-ea31-4109-8d2e-4cae4997c555")]
             [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-            public interface IMFMediaType : IMFAttributes
+            public interface IMFMediaType
             {
+                // IMFAttributes (30 methods) - must match IMFAttributes vtable exactly.
+                [PreserveSig] int GetItem([In] ref Guid guidKey, IntPtr pValue);
+                [PreserveSig] int GetItemType([In] ref Guid guidKey, out MF_ATTRIBUTE_TYPE pType);
+                [PreserveSig] int CompareItem([In] ref Guid guidKey, [In] ref PropVariant value, out bool result);
+                [PreserveSig] int Compare(IMFAttributes pTheirs, MF_ATTRIBUTES_MATCH_TYPE matchType, out bool result);
+                [PreserveSig] int GetUINT32([In] ref Guid guidKey, out int value);
+                [PreserveSig] int GetUINT64([In] ref Guid guidKey, out long value);
+                [PreserveSig] int GetDouble([In] ref Guid guidKey, out double value);
+                [PreserveSig] int GetGUID([In] ref Guid guidKey, out Guid value);
+                [PreserveSig] int GetStringLength([In] ref Guid guidKey, out int length);
+                [PreserveSig] int GetString([In] ref Guid guidKey, [Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder value, int size, out int length);
+                [PreserveSig] int GetAllocatedString([In] ref Guid guidKey, out IntPtr value, out int length);
+                [PreserveSig] int GetBlobSize([In] ref Guid guidKey, out int size);
+                [PreserveSig] int GetBlob([In] ref Guid guidKey, [Out] byte[] buffer, int bufferSize, out int size);
+                [PreserveSig] int GetAllocatedBlob([In] ref Guid guidKey, out IntPtr buffer, out int size);
+                [PreserveSig] int GetUnknown([In] ref Guid guidKey, [In] ref Guid riid, out IntPtr ppv);
+                [PreserveSig] int SetItem([In] ref Guid guidKey, [In] ref PropVariant value);
+                [PreserveSig] int DeleteItem([In] ref Guid guidKey);
+                [PreserveSig] int DeleteAllItems();
+                [PreserveSig] int SetUINT32([In] ref Guid guidKey, int value);
+                [PreserveSig] int SetUINT64([In] ref Guid guidKey, long value);
+                [PreserveSig] int SetDouble([In] ref Guid guidKey, double value);
+                [PreserveSig] int SetGUID([In] ref Guid guidKey, [In] ref Guid value);
+                [PreserveSig] int SetString([In] ref Guid guidKey, [In, MarshalAs(UnmanagedType.LPWStr)] string value);
+                [PreserveSig] int SetBlob([In] ref Guid guidKey, [In] byte[] buffer, int size);
+                [PreserveSig] int SetUnknown([In] ref Guid guidKey, [MarshalAs(UnmanagedType.IUnknown)] object value);
+                [PreserveSig] int LockStore();
+                [PreserveSig] int UnlockStore();
+                [PreserveSig] int GetCount(out int count);
+                [PreserveSig] int GetItemByIndex(int index, out Guid guidKey, IntPtr value);
+                [PreserveSig] int CopyAllItems(IMFAttributes destination);
+
+                // IMFMediaType-specific methods.
                 [PreserveSig] int GetMajorType(out Guid guid);
                 [PreserveSig] int IsCompressedFormat([MarshalAs(UnmanagedType.Bool)] out bool compressed);
                 [PreserveSig] int IsEqual(IMFMediaType type, out MF_MEDIATYPE_EQUAL matchFlags);
@@ -1609,22 +1695,172 @@ namespace ToNRoundCounter.Application.Recording
                 [PreserveSig] int FreeRepresentation(Guid guid, IntPtr representation);
             }
 
-            [ComImport]
-            [Guid("3137F1CD-FE5E-4805-A5D8-FB477448CB3D")]
-            [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-            public interface IMFSinkWriter
+            // NOTE: IMFSinkWriter is intentionally NOT a [ComImport] interface here.
+            //
+            // MFCreateSinkWriterFromURL returns an aggregated/wrapped COM object whose
+            // canonical IUnknown does not reliably honor QueryInterface for IID_IMFSinkWriter
+            // ({3137F1CD-FE5E-4805-A5D8-FB477448CB3D}) on every Windows configuration. Going
+            // through Marshal.GetObjectForIUnknown (which canonicalizes via QI(IUnknown))
+            // and then casting to a [ComImport] IMFSinkWriter triggers a second QI for
+            // IID_IMFSinkWriter on that canonical IUnknown, which intermittently fails with
+            // E_NOINTERFACE (0x80004002) - manifesting as
+            //   "Unable to cast COM object of type 'System.__ComObject' to interface type
+            //    'IMFSinkWriter'."
+            //
+            // To bypass the .NET RCW re-QI dance entirely, we hold the interface pointer
+            // returned by MFCreateSinkWriterFromURL directly and dispatch each method via
+            // the COM vtable. The C++ vtable layout is (after the 3 IUnknown slots):
+            //   [3]  AddStream
+            //   [4]  SetInputMediaType
+            //   [5]  BeginWriting
+            //   [6]  WriteSample
+            //   [7]  SendStreamTick
+            //   [8]  PlaceMarker
+            //   [9]  NotifyEndOfSegment
+            //   [10] Flush
+            //   [11] Finalize
+            //   [12] GetServiceForStream
+            //   [13] GetStatistics
+            public sealed class IMFSinkWriter : IDisposable
             {
-                [PreserveSig] int AddStream(IMFMediaType targetMediaType, out int streamIndex);
-                [PreserveSig] int SetInputMediaType(int streamIndex, IMFMediaType inputMediaType, IMFAttributes? encodingParameters);
-                [PreserveSig] int BeginWriting();
-                [PreserveSig] int WriteSample(int streamIndex, IMFSample sample);
-                [PreserveSig] int SendStreamTick(int streamIndex, long timestamp);
-                [PreserveSig] int PlaceMarker(int streamIndex, IntPtr context);
-                [PreserveSig] int NotifyEndOfSegment(int streamIndex);
-                [PreserveSig] int Flush(int streamIndex);
-                [PreserveSig] int Finalize();
-                [PreserveSig] int GetServiceForStream(int streamIndex, ref Guid guidService, ref Guid riid, out IntPtr service);
-                [PreserveSig] int GetStatistics(int streamIndex, out MF_SINK_WRITER_STATISTICS statistics);
+                private IntPtr _ptr;
+
+                public IMFSinkWriter(IntPtr ptr)
+                {
+                    if (ptr == IntPtr.Zero)
+                    {
+                        throw new ArgumentNullException(nameof(ptr));
+                    }
+
+                    _ptr = ptr;
+                }
+
+                ~IMFSinkWriter()
+                {
+                    DisposeCore();
+                }
+
+                public void Dispose()
+                {
+                    DisposeCore();
+                    GC.SuppressFinalize(this);
+                }
+
+                private void DisposeCore()
+                {
+                    IntPtr ptr = Interlocked.Exchange(ref _ptr, IntPtr.Zero);
+                    if (ptr != IntPtr.Zero)
+                    {
+                        Marshal.Release(ptr);
+                    }
+                }
+
+                private IntPtr GetPtrOrThrow()
+                {
+                    IntPtr ptr = _ptr;
+                    if (ptr == IntPtr.Zero)
+                    {
+                        throw new ObjectDisposedException(nameof(IMFSinkWriter));
+                    }
+                    return ptr;
+                }
+
+                public unsafe int AddStream(IMFMediaType targetMediaType, out int streamIndex)
+                {
+                    if (targetMediaType == null)
+                    {
+                        throw new ArgumentNullException(nameof(targetMediaType));
+                    }
+
+                    IntPtr ptr = GetPtrOrThrow();
+                    IntPtr typePtr = Marshal.GetComInterfaceForObject(targetMediaType, typeof(IMFMediaType));
+                    try
+                    {
+                        void** vtbl = *(void***)ptr;
+                        var fn = (delegate* unmanaged[Stdcall]<IntPtr, IntPtr, int*, int>)vtbl[3];
+                        int idx;
+                        int hr = fn(ptr, typePtr, &idx);
+                        streamIndex = idx;
+                        return hr;
+                    }
+                    finally
+                    {
+                        Marshal.Release(typePtr);
+                    }
+                }
+
+                public unsafe int SetInputMediaType(int streamIndex, IMFMediaType inputMediaType, IMFAttributes? encodingParameters)
+                {
+                    if (inputMediaType == null)
+                    {
+                        throw new ArgumentNullException(nameof(inputMediaType));
+                    }
+
+                    IntPtr ptr = GetPtrOrThrow();
+                    IntPtr typePtr = Marshal.GetComInterfaceForObject(inputMediaType, typeof(IMFMediaType));
+                    IntPtr attrPtr = encodingParameters != null
+                        ? Marshal.GetComInterfaceForObject(encodingParameters, typeof(IMFAttributes))
+                        : IntPtr.Zero;
+                    try
+                    {
+                        void** vtbl = *(void***)ptr;
+                        var fn = (delegate* unmanaged[Stdcall]<IntPtr, int, IntPtr, IntPtr, int>)vtbl[4];
+                        return fn(ptr, streamIndex, typePtr, attrPtr);
+                    }
+                    finally
+                    {
+                        if (attrPtr != IntPtr.Zero)
+                        {
+                            Marshal.Release(attrPtr);
+                        }
+                        Marshal.Release(typePtr);
+                    }
+                }
+
+                public unsafe int BeginWriting()
+                {
+                    IntPtr ptr = GetPtrOrThrow();
+                    void** vtbl = *(void***)ptr;
+                    var fn = (delegate* unmanaged[Stdcall]<IntPtr, int>)vtbl[5];
+                    return fn(ptr);
+                }
+
+                public unsafe int WriteSample(int streamIndex, IMFSample sample)
+                {
+                    if (sample == null)
+                    {
+                        throw new ArgumentNullException(nameof(sample));
+                    }
+
+                    IntPtr ptr = GetPtrOrThrow();
+                    IntPtr samplePtr = Marshal.GetComInterfaceForObject(sample, typeof(IMFSample));
+                    try
+                    {
+                        void** vtbl = *(void***)ptr;
+                        var fn = (delegate* unmanaged[Stdcall]<IntPtr, int, IntPtr, int>)vtbl[6];
+                        return fn(ptr, streamIndex, samplePtr);
+                    }
+                    finally
+                    {
+                        Marshal.Release(samplePtr);
+                    }
+                }
+
+                public unsafe int Flush(int streamIndex)
+                {
+                    IntPtr ptr = GetPtrOrThrow();
+                    void** vtbl = *(void***)ptr;
+                    var fn = (delegate* unmanaged[Stdcall]<IntPtr, int, int>)vtbl[10];
+                    return fn(ptr, streamIndex);
+                }
+
+                public unsafe int FinalizeWriter()
+                {
+                    IntPtr ptr = GetPtrOrThrow();
+                    void** vtbl = *(void***)ptr;
+                    var fn = (delegate* unmanaged[Stdcall]<IntPtr, int>)vtbl[11];
+                    return fn(ptr);
+                }
             }
 
             [ComImport]
@@ -1641,11 +1877,48 @@ namespace ToNRoundCounter.Application.Recording
                 [PreserveSig] int GetVideoService(IntPtr hDevice, Guid riid, out IntPtr ppService);
             }
 
+            // NOTE: IMFSample inherits IMFAttributes in C++. See the IMFMediaType comment
+            // above - the IMFAttributes vtable slots must be redeclared here in order so
+            // calls like AddBuffer land on the correct slot instead of an IMFAttributes
+            // method (which would surface as MF_E_ATTRIBUTENOTFOUND).
             [ComImport]
             [Guid("c40a00f2-b93a-4d80-ae8c-5a1c634f58e4")]
             [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-            public interface IMFSample : IMFAttributes
+            public interface IMFSample
             {
+                // IMFAttributes (30 methods) - must match IMFAttributes vtable exactly.
+                [PreserveSig] int GetItem([In] ref Guid guidKey, IntPtr pValue);
+                [PreserveSig] int GetItemType([In] ref Guid guidKey, out MF_ATTRIBUTE_TYPE pType);
+                [PreserveSig] int CompareItem([In] ref Guid guidKey, [In] ref PropVariant value, out bool result);
+                [PreserveSig] int Compare(IMFAttributes pTheirs, MF_ATTRIBUTES_MATCH_TYPE matchType, out bool result);
+                [PreserveSig] int GetUINT32([In] ref Guid guidKey, out int value);
+                [PreserveSig] int GetUINT64([In] ref Guid guidKey, out long value);
+                [PreserveSig] int GetDouble([In] ref Guid guidKey, out double value);
+                [PreserveSig] int GetGUID([In] ref Guid guidKey, out Guid value);
+                [PreserveSig] int GetStringLength([In] ref Guid guidKey, out int length);
+                [PreserveSig] int GetString([In] ref Guid guidKey, [Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder value, int size, out int length);
+                [PreserveSig] int GetAllocatedString([In] ref Guid guidKey, out IntPtr value, out int length);
+                [PreserveSig] int GetBlobSize([In] ref Guid guidKey, out int size);
+                [PreserveSig] int GetBlob([In] ref Guid guidKey, [Out] byte[] buffer, int bufferSize, out int size);
+                [PreserveSig] int GetAllocatedBlob([In] ref Guid guidKey, out IntPtr buffer, out int size);
+                [PreserveSig] int GetUnknown([In] ref Guid guidKey, [In] ref Guid riid, out IntPtr ppv);
+                [PreserveSig] int SetItem([In] ref Guid guidKey, [In] ref PropVariant value);
+                [PreserveSig] int DeleteItem([In] ref Guid guidKey);
+                [PreserveSig] int DeleteAllItems();
+                [PreserveSig] int SetUINT32([In] ref Guid guidKey, int value);
+                [PreserveSig] int SetUINT64([In] ref Guid guidKey, long value);
+                [PreserveSig] int SetDouble([In] ref Guid guidKey, double value);
+                [PreserveSig] int SetGUID([In] ref Guid guidKey, [In] ref Guid value);
+                [PreserveSig] int SetString([In] ref Guid guidKey, [In, MarshalAs(UnmanagedType.LPWStr)] string value);
+                [PreserveSig] int SetBlob([In] ref Guid guidKey, [In] byte[] buffer, int size);
+                [PreserveSig] int SetUnknown([In] ref Guid guidKey, [MarshalAs(UnmanagedType.IUnknown)] object value);
+                [PreserveSig] int LockStore();
+                [PreserveSig] int UnlockStore();
+                [PreserveSig] int GetCount(out int count);
+                [PreserveSig] int GetItemByIndex(int index, out Guid guidKey, IntPtr value);
+                [PreserveSig] int CopyAllItems(IMFAttributes destination);
+
+                // IMFSample-specific methods.
                 [PreserveSig] int GetSampleFlags(out int sampleFlags);
                 [PreserveSig] int SetSampleFlags(int sampleFlags);
                 [PreserveSig] int GetSampleTime(out long sampleTime);
@@ -1663,7 +1936,7 @@ namespace ToNRoundCounter.Application.Recording
             }
 
             [ComImport]
-            [Guid("045fa593-8799-42b8-9737-8464f7cbfc8d")]
+            [Guid("045FA593-8799-42b8-BC8D-8968C6453507")]
             [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
             public interface IMFMediaBuffer
             {

@@ -124,7 +124,7 @@ unsubscribe();
 - `startVoting(instanceId, terrorName, expiresAt)` - 投票開始
 - `submitVote(campaignId, playerId, decision)` - 投票
 
-#### 希望テロール
+#### 希望テラー
 - `updateWishedTerrors(playerId, wishedTerrors)` - 更新
 - `getWishedTerrors(playerId)` - 取得
 
@@ -148,7 +148,7 @@ unsubscribe();
 
 #### 分析
 - `getPlayerAnalytics(playerId, timeRange?)` - プレイヤー統計
-- `getTerrorAnalytics(terrorName?, timeRange?)` - テロール統計
+- `getTerrorAnalytics(terrorName?, timeRange?)` - テラー統計
 - `getAnalyticsTrends(groupBy, limit)` - トレンド分析
 - `exportAnalytics(format, dataType, filters?)` - データエクスポート
 

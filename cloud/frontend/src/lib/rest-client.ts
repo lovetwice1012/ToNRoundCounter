@@ -3,6 +3,14 @@
  * Handles HTTP requests to the backend REST API
  */
 
+// BUG FIX #6 (HIGH): Custom error class to distinguish auth errors from other errors
+export class AuthError extends Error {
+    constructor(message: string, public statusCode: number) {
+        super(message);
+        this.name = 'AuthError';
+    }
+}
+
 export interface RestClientConfig {
     baseUrl: string;
     sessionToken?: string;
@@ -59,6 +67,9 @@ export class RestApiClient {
 
     /**
      * Make HTTP request
+     * BUG FIX #6 (HIGH): Distinguish auth errors (401/403) from other errors.
+     * Previously: All errors thrown as generic Error, no way to detect session expiration.
+     * Now: Throw AuthError for 401/403, allowing callers to handle re-authentication.
      */
     private async request<T>(
         method: string,
@@ -80,13 +91,26 @@ export class RestApiClient {
         });
 
         if (!response.ok) {
-            const error = await response.json().catch(() => ({
+            // Extract error details from response
+            const errorData = await response.json().catch(() => ({
                 error: {
                     code: 'UNKNOWN_ERROR',
                     message: response.statusText,
                 },
             }));
-            throw new Error(error.error?.message || 'Request failed');
+
+            const errorMessage = errorData.error?.message || response.statusText || 'Request failed';
+
+            // BUG FIX #6: Detect authentication errors (401 Unauthorized, 403 Forbidden)
+            // and throw AuthError so callers can handle session expiration/refresh
+            if (response.status === 401 || response.status === 403) {
+                throw new AuthError(errorMessage, response.status);
+            }
+
+            // For other errors, throw generic Error with status code context
+            const error = new Error(errorMessage);
+            (error as any).statusCode = response.status;
+            throw error;
         }
 
         return response.json();

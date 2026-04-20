@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Text;
 using System.Windows.Forms;
 
 namespace ToNRoundCounter.UI
@@ -80,6 +81,7 @@ namespace ToNRoundCounter.UI
 
         private readonly FlowLayoutPanel statsPanel;
         private readonly Label totalRoundsLabel;
+        private string lastStatsSignature = string.Empty;
 
         public OverlayRoundStatsForm(string title)
             : base(title, CreateLayout(out FlowLayoutPanel panel, out Label summaryLabel))
@@ -134,8 +136,19 @@ namespace ToNRoundCounter.UI
 
         public void SetStats(IReadOnlyList<RoundStatEntry> entries, int totalRounds)
         {
+            entries ??= Array.Empty<RoundStatEntry>();
+            string signature = BuildSignature(entries, totalRounds);
+            if (string.Equals(lastStatsSignature, signature, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            lastStatsSignature = signature;
             totalRoundsLabel.Text = $"Total Rounds: {Math.Max(0, totalRounds)}";
 
+            SuspendDrawing(this);
+            try
+            {
             statsPanel.SuspendLayout();
             statsPanel.Controls.Clear();
 
@@ -165,6 +178,33 @@ namespace ToNRoundCounter.UI
 
             statsPanel.ResumeLayout(true);
             AdjustSizeToContent();
+            }
+            finally
+            {
+                ResumeDrawing(this);
+            }
+        }
+
+        private static string BuildSignature(IReadOnlyList<RoundStatEntry> entries, int totalRounds)
+        {
+            var sb = new StringBuilder(entries.Count * 36 + 16);
+            sb.Append(totalRounds);
+            sb.Append('#');
+            sb.Append(entries.Count);
+            for (int i = 0; i < entries.Count; i++)
+            {
+                var e = entries[i];
+                sb.Append('|');
+                sb.Append(e.RoundName);
+                sb.Append(':');
+                sb.Append(e.Total);
+                sb.Append(':');
+                sb.Append(e.Survival);
+                sb.Append(':');
+                sb.Append(e.Death);
+            }
+
+            return sb.ToString();
         }
 
         private Control CreateStatCard(RoundStatEntry entry)

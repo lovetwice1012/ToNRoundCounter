@@ -127,6 +127,8 @@ namespace ToNRoundCounter.Application.Recording
                 return false;
             }
 
+            targetResolution = NormalizeTargetSizeForWriter(extension, targetResolution);
+
             IMediaWriter? writer = null;
             WasapiAudioCapture? audioCapture = null;
             WasapiAudioCapture? audioCaptureToTransfer = null;
@@ -150,6 +152,13 @@ namespace ToNRoundCounter.Application.Recording
                 int frameRate = AutoRecordingService.ApplyFrameRateLimits(codecId, hardwareSelection, requestedFrameRate, targetResolution);
                 actualFrameRate = frameRate;
                 writer = CreateWriter(extension, codecId, outputPath, targetResolution.Width, targetResolution.Height, frameRate, audioFormat, videoBitrate, audioBitrate, hardwareSelection);
+
+                if (audioCapture != null && !writer.SupportsAudio)
+                {
+                    audioCapture.Dispose();
+                    audioCapture = null;
+                }
+
                 audioCaptureToTransfer = audioCapture;
                 audioCapture = null;
                 recorder = new InternalScreenRecorder(handle, frameRate, targetResolution, includeOverlay, writer, audioCaptureToTransfer);
@@ -168,6 +177,33 @@ namespace ToNRoundCounter.Application.Recording
                 targetResolution = Size.Empty;
                 return false;
             }
+        }
+
+        private static Size NormalizeTargetSizeForWriter(string extension, Size targetSize)
+        {
+            string normalizedExtension = (extension ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
+
+            // Media Foundation encoders commonly require even frame dimensions.
+            // Keep AVI/GIF unchanged because they are handled by custom writers.
+            if (normalizedExtension == "avi" || normalizedExtension == "gif")
+            {
+                return targetSize;
+            }
+
+            int normalizedWidth = targetSize.Width;
+            int normalizedHeight = targetSize.Height;
+
+            if ((normalizedWidth & 1) != 0)
+            {
+                normalizedWidth = Math.Max(16, normalizedWidth - 1);
+            }
+
+            if ((normalizedHeight & 1) != 0)
+            {
+                normalizedHeight = Math.Max(16, normalizedHeight - 1);
+            }
+
+            return new Size(normalizedWidth, normalizedHeight);
         }
 
         private static IMediaWriter CreateWriter(string extension, string codecId, string outputPath, int width, int height, int frameRate, AudioFormat? audioFormat, int videoBitrate, int audioBitrate, HardwareEncoderSelection hardwareSelection)
@@ -191,8 +227,45 @@ namespace ToNRoundCounter.Application.Recording
 
                     return new SimpleAviWriter(outputPath, width, height, frameRate);
                 default:
-                    return MediaFoundationFrameWriter.Create(normalizedExtension, codecId, outputPath, width, height, frameRate, audioFormat, videoBitrate, audioBitrate, hardwareSelection);
+                    if (audioFormat.HasValue)
+                    {
+                        try
+                        {
+                            return MediaFoundationFrameWriter.Create(normalizedExtension, codecId, outputPath, width, height, frameRate, audioFormat, videoBitrate, audioBitrate, hardwareSelection);
+                        }
+                        catch (Exception ex) when (IsAudioMediaTypeNegotiationFailure(ex))
+                        {
+                            // Some Windows audio endpoint formats cannot be connected to encoder MFTs
+                            // through SinkWriter's automatic topology. Fall back to video-only capture
+                            // instead of aborting the entire recording start sequence.
+                            return MediaFoundationFrameWriter.Create(normalizedExtension, codecId, outputPath, width, height, frameRate, null, videoBitrate, audioBitrate, hardwareSelection);
+                        }
+                    }
+
+                    return MediaFoundationFrameWriter.Create(normalizedExtension, codecId, outputPath, width, height, frameRate, null, videoBitrate, audioBitrate, hardwareSelection);
             }
+        }
+
+        private static bool IsAudioMediaTypeNegotiationFailure(Exception exception)
+        {
+            if (exception == null)
+            {
+                return false;
+            }
+
+            for (Exception? current = exception; current != null; current = current.InnerException)
+            {
+                string message = current.Message ?? string.Empty;
+                if (message.IndexOf("SetInputMediaType(Audio)", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    message.IndexOf("AddStream(Audio)", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    message.IndexOf("0xC00D36B4", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    message.IndexOf("0xC00D36B2", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         public void Stop(string reason)
@@ -212,7 +285,10 @@ namespace ToNRoundCounter.Application.Recording
 
             try
             {
-                _completionTask.Wait();
+                if (!_completionTask.Wait(TimeSpan.FromSeconds(10)))
+                {
+                    SetStopReason("Stop timeout exceeded", true);
+                }
             }
             catch (AggregateException ex)
             {

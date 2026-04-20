@@ -149,6 +149,11 @@ namespace Updater
 
         private static bool IsFileLocked(string path)
         {
+            if (!File.Exists(path))
+            {
+                return false;
+            }
+
             try
             {
                 using (File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))

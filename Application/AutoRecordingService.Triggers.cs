@@ -10,6 +10,34 @@ namespace ToNRoundCounter.Application
 {
     public sealed partial class AutoRecordingService
     {
+        // Cache normalized trigger lists keyed by source list reference to avoid re-allocating per StateChanged.
+        private List<string>? _cachedRoundTriggers;
+        private object? _cachedRoundTriggersSource;
+        private List<string>? _cachedTerrorTriggers;
+        private object? _cachedTerrorTriggersSource;
+
+        private List<string> GetCachedRoundTriggers()
+        {
+            var source = _settings.AutoRecordingRoundTypes;
+            if (!ReferenceEquals(source, _cachedRoundTriggersSource) || _cachedRoundTriggers == null)
+            {
+                _cachedRoundTriggers = NormalizeTriggers(source);
+                _cachedRoundTriggersSource = source;
+            }
+            return _cachedRoundTriggers;
+        }
+
+        private List<string> GetCachedTerrorTriggers()
+        {
+            var source = _settings.AutoRecordingTerrors;
+            if (!ReferenceEquals(source, _cachedTerrorTriggersSource) || _cachedTerrorTriggers == null)
+            {
+                _cachedTerrorTriggers = NormalizeTriggers(source);
+                _cachedTerrorTriggersSource = source;
+            }
+            return _cachedTerrorTriggers;
+        }
+
         private static List<string> NormalizeTriggers(IEnumerable<string>? values)
         {
             if (values == null)

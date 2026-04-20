@@ -102,6 +102,53 @@ export class ToNRoundCounterCloudServer {
   }
 
   /**
+   * Middleware to validate REST API session from Authorization header
+   * Extracts Bearer token and looks up corresponding session (if implemented)
+   * For now, REST endpoints are public; future: validate token against sessionManager
+   * SECURITY FIX: Extract userId from validated session instead of trusting client headers
+   */
+  private async requireAuthMiddleware(req: any, res: any, next: any): Promise<void> {
+    const authHeader = req.headers.authorization || '';
+    const match = authHeader.match(/^Bearer\s+(\S+)$/);
+    const token = match ? match[1] : null;
+
+    if (!token) {
+      return res.status(401).json({ error: { code: 'AUTH_REQUIRED', message: 'Missing authorization token' } });
+    }
+
+    try {
+      const session = await this.authService.validateSession(token);
+      if (!session) {
+        return res.status(401).json({ error: { code: 'INVALID_SESSION', message: 'Session is invalid or expired' } });
+      }
+
+      req.authToken = token;
+      req.session = session;
+      req.userId = session.user_id;
+      req.playerId = session.player_id;
+
+      next();
+    } catch (error: any) {
+      logError(`Failed to validate REST session: ${error?.message || error}`, error);
+      return res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'Failed to validate session' } });
+    }
+  }
+
+  private requireInstanceOwnership(instance: any, req: any, res: any): boolean {
+    if (!instance) {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Instance not found' } });
+      return false;
+    }
+
+    if (instance.creator_id !== req.userId) {
+      res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only the instance owner can modify this instance' } });
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
    * Setup Express middleware and routes
    */
   private setupExpress(): void {
@@ -127,6 +174,10 @@ export class ToNRoundCounterCloudServer {
     });
 
     // REST API v1 routes
+    // SECURITY: All /api/v1/* endpoints should be protected; for now use requireAuthMiddleware
+    // NOTE: Currently REST routes are public for backward compatibility. 
+    // Clients using WebSocket are authenticated at WS layer; REST clients should be issued session tokens.
+    
     // Instance Management
     this.app.get('/api/v1/instances', async (req: any, res: any) => {
       try {
@@ -141,34 +192,25 @@ export class ToNRoundCounterCloudServer {
       }
     });
 
-    this.app.get('/api/v1/instances/:instanceId', async (req: any, res: any) => {
-      try {
-        const instance = await this.instanceService.getInstanceWithMembers(req.params.instanceId);
-        if (!instance) {
-          return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Instance not found' } });
-        }
-        res.json(instance);
-      } catch (error: any) {
-        res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: error.message } });
-      }
-    });
-
-    this.app.post('/api/v1/instances', async (req: any, res: any) => {
+    this.app.post('/api/v1/instances', this.requireAuthMiddleware.bind(this), async (req: any, res: any) => {
       try {
         const { max_players = 6, settings = { auto_suicide_mode: 'Individual', voting_timeout: 30 } } = req.body;
-        const userId = req.headers['x-user-id'] || 'anonymous';
-        
+
         // Generate a unique instance ID
         const instanceId = `inst_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-        const instance = await this.instanceService.createInstance(instanceId, userId, max_players, settings);
+        const instance = await this.instanceService.createInstance(instanceId, req.userId, max_players, settings);
         res.json({ instance_id: instance.instance_id, created_at: instance.created_at });
       } catch (error: any) {
         res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: error.message } });
       }
     });
 
-    this.app.put('/api/v1/instances/:instanceId', async (req: any, res: any) => {
+    this.app.put('/api/v1/instances/:instanceId', this.requireAuthMiddleware.bind(this), async (req: any, res: any) => {
       try {
+        const instance = await this.instanceService.getInstance(req.params.instanceId);
+        if (!this.requireInstanceOwnership(instance, req, res)) {
+          return;
+        }
         await this.instanceService.updateInstance(req.params.instanceId, req.body);
         res.json({ instance_id: req.params.instanceId, updated_at: new Date().toISOString() });
       } catch (error: any) {
@@ -176,8 +218,31 @@ export class ToNRoundCounterCloudServer {
       }
     });
 
-    this.app.delete('/api/v1/instances/:instanceId', async (req: any, res: any) => {
+    this.app.get('/api/v1/instances/:instanceId', this.requireAuthMiddleware.bind(this), async (req: any, res: any) => {
       try {
+        const instance = await this.instanceService.getInstanceWithMembers(req.params.instanceId);
+        if (!instance) {
+          return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Instance not found' } });
+        }
+
+        const isMember = await this.instanceService.isMemberInInstance(req.params.instanceId, req.userId);
+        const isOwner = instance.creator_id === req.userId;
+        if (!isMember && !isOwner) {
+          return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Not authorized to view this instance' } });
+        }
+
+        res.json(instance);
+      } catch (error: any) {
+        res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: error.message } });
+      }
+    });
+
+    this.app.delete('/api/v1/instances/:instanceId', this.requireAuthMiddleware.bind(this), async (req: any, res: any) => {
+      try {
+        const instance = await this.instanceService.getInstance(req.params.instanceId);
+        if (!this.requireInstanceOwnership(instance, req, res)) {
+          return;
+        }
         await this.instanceService.deleteInstance(req.params.instanceId);
         res.json({ success: true });
       } catch (error: any) {
@@ -186,8 +251,11 @@ export class ToNRoundCounterCloudServer {
     });
 
     // Profile Management
-    this.app.get('/api/v1/profiles/:playerId', async (req: any, res: any) => {
+    this.app.get('/api/v1/profiles/:playerId', this.requireAuthMiddleware.bind(this), async (req: any, res: any) => {
       try {
+        if (req.params.playerId !== req.playerId) {
+          return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Users can only view their own profile' } });
+        }
         const profile = await this.profileService.getProfile(req.params.playerId);
         if (!profile) {
           return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Profile not found' } });
@@ -198,9 +266,19 @@ export class ToNRoundCounterCloudServer {
       }
     });
 
-    this.app.put('/api/v1/profiles/:playerId', async (req: any, res: any) => {
+    this.app.put('/api/v1/profiles/:playerId', this.requireAuthMiddleware.bind(this), async (req: any, res: any) => {
       try {
-        const profile = await this.profileService.updateProfile(req.params.playerId, req.body);
+        const targetPlayerId = req.params.playerId;
+
+        // OWNERSHIP CHECK: Users can only update their own profile
+        if (req.playerId !== targetPlayerId) {
+          logInfo(`Unauthorized profile update attempt: user ${req.playerId} tried to modify ${targetPlayerId}`);
+          return res.status(403).json({ 
+            error: { code: 'FORBIDDEN', message: 'Users can only update their own profile' } 
+          });
+        }
+        
+        const profile = await this.profileService.updateProfile(targetPlayerId, req.body);
         res.json({ 
           player_id: profile.player_id, 
           player_name: profile.player_name, 
@@ -211,12 +289,32 @@ export class ToNRoundCounterCloudServer {
       }
     });
 
-    // Statistics
-    this.app.get('/api/v1/stats/terrors', async (req: any, res: any) => {
+    this.app.get('/api/v1/stats/terrors', this.requireAuthMiddleware.bind(this), async (req: any, res: any) => {
       try {
-        const playerId = req.query.player_id as string | undefined;
+        const requestedPlayerId = req.query.player_id as string | undefined;
+
+        if (requestedPlayerId && requestedPlayerId !== req.playerId) {
+          logInfo(`Unauthorized stats request: user ${req.playerId} tried to fetch stats for ${requestedPlayerId}`);
+          return res.status(403).json({ 
+            error: { code: 'FORBIDDEN', message: 'Users can only view their own statistics' } 
+          });
+        }
+
+        if (requestedPlayerId || req.playerId) {
+          const profile = await this.profileService.getProfile(requestedPlayerId || req.playerId);
+          if (!profile) {
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Profile not found' } });
+          }
+
+          return res.json({
+            player_id: profile.player_id,
+            terror_stats: profile.terror_stats,
+            total_rounds: profile.total_rounds,
+            total_survived: profile.total_survived,
+          });
+        }
+
         const terrorStats = await this.analyticsService.getTerrorStatistics();
-        
         res.json({ terror_stats: terrorStats });
       } catch (error: any) {
         res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: error.message } });
@@ -318,7 +416,7 @@ export class ToNRoundCounterCloudServer {
     this.rpcRouter.register('instance.join', async (req) => {
       const params = req.message.params as any;
       const instanceId = params.instanceId;
-      const playerId = params.playerId || req.session.userId;
+      const playerId = req.session.userId;
       const playerName = params.playerName || playerId;
 
       // Check if instance exists, if not create it
@@ -552,8 +650,8 @@ export class ToNRoundCounterCloudServer {
       const playerState = params.player_state || params;
       
       const state = {
-        player_id: playerState.player_id || params.player_id || req.session.userId,
-        player_name: playerState.player_name || playerState.player_id || params.player_id || req.session.userId,
+        player_id: req.session.userId,
+        player_name: playerState.player_name || req.session.userId,
         velocity: Number(playerState.velocity) || 0,
         afk_duration: Math.floor(Number(playerState.afk_duration) || 0), // Convert to integer
         items: Array.isArray(playerState.items) ? playerState.items : [],
@@ -565,19 +663,26 @@ export class ToNRoundCounterCloudServer {
       
       // Only broadcast if state actually changed
       if (stateChanged) {
+        const timestamp = new Date().toISOString();
+        const currentItem = state.items.length > 0 ? state.items[state.items.length - 1] : '';
         this.wsHandler.broadcastToInstance(instanceId, {
           type: 'stream',
           event: 'player.state.updated',
           data: {
             instance_id: instanceId,
-            player_id: state.player_id,
-            velocity: state.velocity,
-            afk_duration: state.afk_duration,
-            items: state.items,
-            damage: state.damage,
-            is_alive: state.is_alive,
+            player_state: {
+              player_id: state.player_id,
+              player_name: state.player_name,
+              velocity: state.velocity,
+              afk_duration: state.afk_duration,
+              items: state.items,
+              current_item: currentItem,
+              damage: state.damage,
+              is_alive: state.is_alive,
+              timestamp,
+            },
           },
-          timestamp: new Date().toISOString(),
+          timestamp,
         });
       }
       
@@ -588,7 +693,7 @@ export class ToNRoundCounterCloudServer {
       const params = req.message.params as any;
       const state = await this.playerStateService.getPlayerState(
         params.instance_id,
-        params.player_id || req.session.userId
+        req.session.userId
       );
       return state;
     });
@@ -602,7 +707,10 @@ export class ToNRoundCounterCloudServer {
     // Get player states with member info for an instance
     this.rpcRouter.register('player.states.get', async (req) => {
       const params = req.message.params as any;
-      const instanceId = params.instanceId;
+      const instanceId = params.instanceId || params.instance_id;
+      if (!instanceId) {
+        throw new Error('instanceId or instance_id is required');
+      }
       
       // Get player states
       const states = await this.playerStateService.getAllPlayerStates(instanceId);
@@ -618,10 +726,13 @@ export class ToNRoundCounterCloudServer {
         player_id: state.player_id,
         player_name: memberMap.get(state.player_id) || 'Unknown',
         damage: state.damage,
+        items: Array.isArray(state.items) ? state.items : [],
         current_item: state.items && state.items.length > 0 ? state.items[state.items.length - 1] : 'None',
+        is_alive: state.is_alive,
         is_dead: !state.is_alive,
         velocity: state.velocity,
         afk_duration: state.afk_duration,
+        timestamp: state.timestamp,
       }));
       
       return { player_states: playerStates };
@@ -643,7 +754,7 @@ export class ToNRoundCounterCloudServer {
       const params = req.message.params as any;
       await this.threatService.recordThreatResponse(
         params.threat_id,
-        params.player_id || req.session.userId,
+        req.session.userId,
         params.decision || params.response
       );
       return { success: true };
@@ -658,7 +769,8 @@ export class ToNRoundCounterCloudServer {
         campaignId,
         params.instance_id,
         params.terror_name,
-        expiresAt
+        expiresAt,
+        params.round_key
       );
       return result;
     });
@@ -667,8 +779,8 @@ export class ToNRoundCounterCloudServer {
       const params = req.message.params as any;
       await this.votingService.submitVote(
         params.campaign_id || params.voting_id,
-        params.player_id || req.session.userId,
-        params.decision || params.option || 'Proceed'
+        req.session.userId,
+        params.decision || params.option || 'Continue'
       );
       return { success: true };
     });
@@ -677,6 +789,12 @@ export class ToNRoundCounterCloudServer {
       const params = req.message.params as any;
       const campaign = await this.votingService.getCampaign(params.campaign_id);
       return campaign;
+    });
+
+    this.rpcRouter.register('coordinated.voting.getActive', async (req) => {
+      const params = req.message.params as any;
+      const campaign = await this.votingService.getActiveCampaignForInstance(params.instance_id);
+      return { campaign: campaign || null };
     });
 
     this.rpcRouter.register('coordinated.voting.getVotes', async (req) => {
@@ -689,15 +807,14 @@ export class ToNRoundCounterCloudServer {
     this.rpcRouter.register('wished.terrors.update', async (req) => {
       const params = req.message.params as any;
       await this.wishedTerrorService.updateWishedTerrors(
-        params.player_id || req.session.userId,
+        req.session.userId,
         params.wished_terrors
       );
       return { success: true };
     });
 
     this.rpcRouter.register('wished.terrors.get', async (req) => {
-      const params = req.message.params as any;
-      const result = await this.wishedTerrorService.getWishedTerrors(params.player_id);
+      const result = await this.wishedTerrorService.getWishedTerrors(req.session.userId);
       return { wished_terrors: result };
     });
 
@@ -713,14 +830,13 @@ export class ToNRoundCounterCloudServer {
 
     // ========== Profile handlers ==========
     this.rpcRouter.register('profile.get', async (req) => {
-      const params = req.message.params as any;
-      const profile = await this.profileService.getProfile(params.player_id);
+      const profile = await this.profileService.getProfile(req.session.userId);
       return profile;
     });
 
     this.rpcRouter.register('profile.update', async (req) => {
       const params = req.message.params as any;
-      const profile = await this.profileService.updateProfile(params.player_id, {
+      const profile = await this.profileService.updateProfile(req.session.userId, {
         player_name: params.player_name,
         skill_level: params.skill_level,
         terror_stats: params.terror_stats,
@@ -732,33 +848,30 @@ export class ToNRoundCounterCloudServer {
 
     // ========== Settings handlers ==========
     this.rpcRouter.register('settings.get', async (req) => {
-      const params = req.message.params as any;
-      const settings = await this.settingsService.getSettings(params.user_id);
+      const settings = await this.settingsService.getSettings(req.session.userId);
       return settings;
     });
 
     this.rpcRouter.register('settings.update', async (req) => {
       const params = req.message.params as any;
-      const result = await this.settingsService.updateSettings(params.user_id, params.settings);
+      const result = await this.settingsService.updateSettings(req.session.userId, params.settings);
       return result;
     });
 
     this.rpcRouter.register('settings.sync', async (req) => {
       const params = req.message.params as any;
-      // Get remote settings
-      const remoteSettings = await this.settingsService.getSettings(params.user_id);
-      const result = await this.settingsService.mergeSettings(
-        params.user_id,
-        params.local_settings,
-        remoteSettings?.categories || {}
+      const result = await this.settingsService.syncSettings(
+        req.session.userId,
+        params.local_settings || {},
+        params.local_version || 0
       );
-      return { merged_settings: result, remote_version: remoteSettings?.version || 0 };
+      return result;
     });
 
     this.rpcRouter.register('settings.history', async (req) => {
       const params = req.message.params as any;
       const history = await this.settingsService.getSettingsHistory(
-        params.user_id || req.session.userId,
+        req.session.userId,
         params.limit || 10
       );
       return { history };
@@ -789,14 +902,14 @@ export class ToNRoundCounterCloudServer {
 
     this.rpcRouter.register('monitoring.status', async (req) => {
       const params = req.message.params as any;
-      const result = await this.monitoringService.getStatusHistory(params.user_id, params.limit || 10);
+      const result = await this.monitoringService.getStatusHistory(req.session.userId, params.limit || 10);
       return { statuses: result };
     });
 
     this.rpcRouter.register('monitoring.errors', async (req) => {
       const params = req.message.params as any;
       const result = await this.monitoringService.getErrors(
-        params.user_id,
+        req.session.userId,
         params.severity,
         params.limit || 50
       );
@@ -853,7 +966,8 @@ export class ToNRoundCounterCloudServer {
       const result = await this.analyticsService.exportData(
         params.format,
         params.data_type,
-        params.filters
+        params.filters,
+        req.session.userId
       );
       return result;
     });
@@ -880,15 +994,24 @@ export class ToNRoundCounterCloudServer {
         { 
           validateBeforeRestore: params.validate_before_restore !== false,
           createBackupBeforeRestore: params.create_backup_before_restore !== false,
-        }
+        },
+        req.session.userId
       );
       return { success: true };
     });
 
     this.rpcRouter.register('backup.list', async (req) => {
-      const params = req.message.params as any;
-      const result = await this.backupService.listBackups(params.user_id);
+      const result = await this.backupService.listBackups(req.session.userId);
       return { backups: result };
+    });
+
+    this.rpcRouter.register('backup.delete', async (req) => {
+      const params = req.message.params as any;
+      if (!params.backup_id) {
+        throw new Error('backup_id is required');
+      }
+      await this.backupService.deleteBackup(params.backup_id, req.session.userId);
+      return { success: true };
     });
   }
 

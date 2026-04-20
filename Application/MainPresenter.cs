@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Net.Http;
 using Newtonsoft.Json;
@@ -22,17 +23,20 @@ namespace ToNRoundCounter.Application
         private readonly IEventLogger _logger;
         private readonly IHttpClient _httpClient;
         private readonly CloudWebSocketClient? _cloudClient;
+        private readonly CancellationToken _shutdownToken;
         private IMainView? _view;
         private string? _currentRoundId;
+        private string? _currentInstanceId;
         private DateTime _currentRoundStartTime;
 
-        public MainPresenter(StateService stateService, IAppSettings settings, IEventLogger logger, IHttpClient httpClient, CloudWebSocketClient? cloudClient = null)
+        public MainPresenter(StateService stateService, IAppSettings settings, IEventLogger logger, IHttpClient httpClient, CloudWebSocketClient? cloudClient = null, ICancellationProvider? cancellationProvider = null)
         {
             _stateService = stateService;
             _settings = settings;
             _logger = logger;
             _httpClient = httpClient;
             _cloudClient = cloudClient;
+            _shutdownToken = cancellationProvider?.Token ?? CancellationToken.None;
             _stateService.RoundLogAdded += OnRoundLogAdded;
         }
 
@@ -97,6 +101,7 @@ namespace ToNRoundCounter.Application
             {
                 try
                 {
+                    _currentInstanceId = instanceId;
                     var playerName = string.IsNullOrWhiteSpace(_settings.CloudPlayerName) 
                         ? Environment.UserName 
                         : _settings.CloudPlayerName;
@@ -107,7 +112,7 @@ namespace ToNRoundCounter.Application
                         playerName,
                         round.RoundType ?? "Unknown",
                         round.MapName,
-                        System.Threading.CancellationToken.None
+                        _shutdownToken
                     ).ConfigureAwait(false);
                     
                     _logger.LogEvent("CloudSync", $"Round started on cloud: {_currentRoundId} (Instance: {instanceId ?? "None"})");
@@ -119,41 +124,96 @@ namespace ToNRoundCounter.Application
             }
         }
 
-        public async Task OnRoundEndAsync(Round round, string status)
+        public async Task OnRoundEndAsync(Round round, string status, string? instanceId = null)
         {
-            if (_cloudClient != null && _settings.CloudSyncEnabled && _cloudClient.IsConnected && !string.IsNullOrEmpty(_currentRoundId))
+            if (_cloudClient == null || !_settings.CloudSyncEnabled || !_cloudClient.IsConnected)
             {
-                try
+                return;
+            }
+
+            var survived = status != "死亡" && !round.IsDeath;
+            var duration = (int)(DateTime.Now - _currentRoundStartTime).TotalSeconds;
+            var initialPlayerCount = Math.Max(0, round.InstancePlayersCount);
+            var survivorCount = initialPlayerCount > 0
+                ? (survived ? initialPlayerCount : Math.Max(0, initialPlayerCount - 1))
+                : (survived ? 1 : 0);
+
+            var resolvedInstanceId = !string.IsNullOrWhiteSpace(instanceId)
+                ? instanceId
+                : _currentInstanceId;
+
+            var startTime = _currentRoundStartTime == default
+                ? DateTime.UtcNow.AddSeconds(-Math.Max(0, duration))
+                : _currentRoundStartTime;
+
+            try
+            {
+                var sent = false;
+
+                if (!string.IsNullOrEmpty(_currentRoundId))
                 {
-                    var survived = status != "死亡" && !round.IsDeath;
-                    var duration = (int)(DateTime.Now - _currentRoundStartTime).TotalSeconds;
-                    
-                    var result = await _cloudClient.GameRoundEndAsync(
-                        _currentRoundId!,
-                        survived,
-                        duration,
-                        round.Damage,
-                        round.ItemNames?.ToArray(),
+                    try
+                    {
+                        var result = await _cloudClient.GameRoundEndAsync(
+                            _currentRoundId!,
+                            survived,
+                            duration,
+                            round.Damage,
+                            round.ItemNames?.ToArray(),
+                            round.TerrorKey,
+                            initialPlayerCount,
+                            _shutdownToken
+                        ).ConfigureAwait(false);
+
+                        // Log the returned stats from cloud
+                        if (result.ContainsKey("stats"))
+                        {
+                            _logger.LogEvent("CloudSync", $"Round ended on cloud: {_currentRoundId} | Stats updated on server");
+                        }
+                        else
+                        {
+                            _logger.LogEvent("CloudSync", $"Round ended on cloud: {_currentRoundId}");
+                        }
+
+                        sent = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogEvent("CloudSync", () => $"GameRoundEndAsync failed, falling back to round.report: {ex.Message}", LogEventLevel.Warning);
+                    }
+                }
+
+                if (!sent)
+                {
+                    if (string.IsNullOrWhiteSpace(resolvedInstanceId))
+                    {
+                        _logger.LogEvent("CloudSync", "Skipped round.report fallback: instance_id is empty.", LogEventLevel.Warning);
+                        return;
+                    }
+
+                    await _cloudClient.ReportRoundAsync(
+                        resolvedInstanceId,
+                        round.RoundType ?? "Unknown",
                         round.TerrorKey,
-                        System.Threading.CancellationToken.None
+                        round.TerrorKey,
+                        startTime,
+                        DateTime.UtcNow,
+                        initialPlayerCount,
+                        survivorCount,
+                        survived ? "COMPLETED" : "FAILED",
+                        _shutdownToken
                     ).ConfigureAwait(false);
-                    
-                    // Log the returned stats from cloud
-                    if (result.ContainsKey("stats"))
-                    {
-                        _logger.LogEvent("CloudSync", $"Round ended on cloud: {_currentRoundId} | Stats updated on server");
-                    }
-                    else
-                    {
-                        _logger.LogEvent("CloudSync", $"Round ended on cloud: {_currentRoundId}");
-                    }
-                    
-                    _currentRoundId = null;
+
+                    _logger.LogEvent("CloudSync", $"Round reported via fallback: {resolvedInstanceId} ({round.RoundType ?? "Unknown"})");
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogEvent("CloudSync", () => $"Failed to end round on cloud: {ex.Message}", LogEventLevel.Warning);
-                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogEvent("CloudSync", () => $"Failed to end round on cloud: {ex.Message}", LogEventLevel.Warning);
+            }
+            finally
+            {
+                _currentRoundId = null;
             }
         }
 
@@ -167,46 +227,13 @@ namespace ToNRoundCounter.Application
 
         private async Task TryUploadRoundLogToCloudAsync(Round round, string status)
         {
-            if (string.IsNullOrEmpty(_settings.ApiKey))
+            if (_cloudClient != null && _settings.CloudSyncEnabled && _cloudClient.IsConnected)
             {
-                _logger.LogEvent("RoundLogUpload", "APIキーが設定されていません。アップロードをスキップします。");
+                _logger.LogEvent("RoundLogUpload", "Round log upload is handled by integrated cloud sync (round.report). Skipping legacy REST upload.");
                 return;
             }
 
-            var terrors = (round.TerrorKey ?? string.Empty).Split(TerrorSeparators, StringSplitOptions.None);
-            var payload = new
-            {
-                roundType = round.RoundType,
-                terror1 = terrors.ElementAtOrDefault(0)?.Trim(),
-                terror2 = terrors.ElementAtOrDefault(1)?.Trim(),
-                terror3 = terrors.ElementAtOrDefault(2)?.Trim(),
-                map = round.MapName,
-                item = round.ItemNames.Count > 0 ? string.Join("、", round.ItemNames) : "アイテム未使用",
-                damage = round.Damage,
-                isAlive = !round.IsDeath,
-                instanceSize = round.InstancePlayersCount
-            };
-
-            using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
-            try
-            {
-                var url = "https://toncloud.sprink.cloud/api/roundlogs/create/" + _settings.ApiKey;
-                using var response = await _httpClient.PostAsync(url, content, System.Threading.CancellationToken.None).ConfigureAwait(false);
-                if (response.IsSuccessStatusCode)
-                {
-                    _logger.LogEvent("RoundLogUpload", "ラウンドログのアップロードに成功しました。");
-                }
-                else
-                {
-                    _logger.LogEvent("RoundLogUploadError", () => $"ラウンドログのアップロードに失敗しました: {response.StatusCode}");
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogEvent("RoundLogUploadError", () => $"ラウンドログアップロード中にエラーが発生しました: {ex.Message}");
-            }
-
-            _logger.LogEvent("RoundLogUpload", () => $"Round: {round.RoundType}, Status: {status}, Map: {round.MapName}");
+            _logger.LogEvent("RoundLogUpload", "Cloud sync is disabled or disconnected. Legacy external REST upload is retired, so round log upload was skipped.");
         }
 
         private async Task SendDiscordWebhookAsync(Round round, string status)
@@ -262,7 +289,7 @@ namespace ToNRoundCounter.Application
             using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
             try
             {
-                using var response = await _httpClient.PostAsync(_settings.DiscordWebhookUrl, content, System.Threading.CancellationToken.None).ConfigureAwait(false);
+                using var response = await _httpClient.PostAsync(_settings.DiscordWebhookUrl, content, _shutdownToken).ConfigureAwait(false);
                 if (response.IsSuccessStatusCode)
                 {
                     _logger.LogEvent("DiscordWebhook", "Discordへのラウンドログ送信に成功しました。");

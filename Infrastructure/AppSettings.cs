@@ -9,6 +9,7 @@ using ToNRoundCounter.Application;
 using ToNRoundCounter.Domain;
 using ToNRoundCounter.UI;
 using Newtonsoft.Json.Linq;
+using ToNRoundCounter.Infrastructure.Security;
 
 namespace ToNRoundCounter.Infrastructure
 {
@@ -56,7 +57,8 @@ namespace ToNRoundCounter.Infrastructure
         public bool OverlayShowAngle { get; set; } = true;
         public bool OverlayShowClock { get; set; } = true;
         public bool OverlayShowInstanceTimer { get; set; } = true;
-        public bool OverlayShowInstanceMembers { get; set; } = false;
+        public bool OverlayShowInstanceMembers { get; set; } = true;
+        public bool OverlayShowVoting { get; set; } = true;
         public bool OverlayShowUnboundTerrorDetails { get; set; } = true;
         public double OverlayOpacity { get; set; } = 0.95d;
         public int OverlayRoundHistoryLength { get; set; } = 3;
@@ -81,6 +83,12 @@ namespace ToNRoundCounter.Infrastructure
         /// </summary>
         [JsonProperty("apikey")]
         public string ApiKey { get; set; } = string.Empty;
+
+        public string apikey
+        {
+            get => ApiKey;
+            set => ApiKey = value ?? string.Empty;
+        }
 
         public string ThemeKey { get; set; } = Theme.DefaultThemeKey;
         public string Language { get; set; } = LanguageManager.DefaultCulture;
@@ -186,7 +194,201 @@ namespace ToNRoundCounter.Infrastructure
                             // Ignore malformed theme information and fall back to defaults.
                         }
 
-                        JsonConvert.PopulateObject(jsonContent, this);
+                        // Deserialize to AppSettingsData first, then copy to AppSettings
+                        var settingsData = JsonConvert.DeserializeObject<AppSettingsData>(jsonContent);
+                        if (settingsData != null)
+                        {
+                            // Copy all properties from AppSettingsData to AppSettings
+                            OSCPort = settingsData.OSCPort;
+                            OSCPortChanged = settingsData.OSCPortChanged;
+                            BackgroundColor_InfoPanel = ColorTranslator.FromHtml(settingsData.BackgroundColor_InfoPanel);
+                            BackgroundColor_Stats = ColorTranslator.FromHtml(settingsData.BackgroundColor_Stats);
+                            BackgroundColor_Log = ColorTranslator.FromHtml(settingsData.BackgroundColor_Log);
+                            FixedTerrorColor = string.IsNullOrEmpty(settingsData.FixedTerrorColor) ? Color.Empty : ColorTranslator.FromHtml(settingsData.FixedTerrorColor);
+                            ShowStats = settingsData.ShowStats;
+                            ShowDebug = settingsData.ShowDebug;
+                            ShowRoundLog = settingsData.ShowRoundLog;
+                            Filter_RoundType = settingsData.Filter_RoundType;
+                            Filter_Terror = settingsData.Filter_Terror;
+                            Filter_Appearance = settingsData.Filter_Appearance;
+                            Filter_Survival = settingsData.Filter_Survival;
+                            Filter_Death = settingsData.Filter_Death;
+                            Filter_SurvivalRate = settingsData.Filter_SurvivalRate;
+                            OverlayShowVelocity = settingsData.OverlayShowVelocity;
+                            OverlayShowTerror = settingsData.OverlayShowTerror;
+                            OverlayShowDamage = settingsData.OverlayShowDamage;
+                            OverlayShowNextRound = settingsData.OverlayShowNextRound;
+                            OverlayShowRoundStatus = settingsData.OverlayShowRoundStatus;
+                            OverlayShowRoundHistory = settingsData.OverlayShowRoundHistory;
+                            OverlayShowRoundStats = settingsData.OverlayShowRoundStats;
+                            OverlayShowTerrorInfo = settingsData.OverlayShowTerrorInfo;
+                            OverlayShowShortcuts = settingsData.OverlayShowShortcuts;
+                            OverlayShowAngle = settingsData.OverlayShowAngle;
+                            OverlayShowClock = settingsData.OverlayShowClock;
+                            OverlayShowInstanceTimer = settingsData.OverlayShowInstanceTimer;
+                            OverlayShowInstanceMembers = settingsData.OverlayShowInstanceMembers;
+                            OverlayShowVoting = settingsData.OverlayShowVoting;
+                            OverlayShowUnboundTerrorDetails = settingsData.OverlayShowUnboundTerrorDetails;
+                            OverlayOpacity = settingsData.OverlayOpacity;
+                            OverlayRoundHistoryLength = settingsData.OverlayRoundHistoryLength;
+                            OverlayPositions = settingsData.OverlayPositions;
+                            OverlayScaleFactors = settingsData.OverlayScaleFactors;
+                            OverlaySizes = settingsData.OverlaySizes;
+                            RoundTypeStats = settingsData.RoundTypeStats;
+                            AutoSuicideEnabled = settingsData.AutoSuicideEnabled;
+                            AutoSuicideRoundTypes = settingsData.AutoSuicideRoundTypes;
+                            AutoSuicidePresets = settingsData.AutoSuicidePresets;
+                            AutoSuicideDetailCustom = settingsData.AutoSuicideDetailCustom;
+                            AutoSuicideFuzzyMatch = settingsData.AutoSuicideFuzzyMatch;
+                            AutoSuicideUseDetail = settingsData.AutoSuicideUseDetail;
+                            ApiKey = settingsData.ApiKey ?? string.Empty;
+                            ThemeKey = settingsData.ThemeKey ?? Theme.DefaultThemeKey;
+                            Language = settingsData.Language ?? LanguageManager.DefaultCulture;
+                            LogFilePath = settingsData.LogFilePath ?? "logs/log-.txt";
+                            WebSocketIp = settingsData.WebSocketIp ?? "127.0.0.1";
+                            CloudWebSocketUrl = settingsData.CloudWebSocketUrl ?? string.Empty;
+                            CloudSyncEnabled = settingsData.CloudSyncEnabled;
+                            CloudPlayerName = settingsData.CloudPlayerName ?? string.Empty;
+                            CloudApiKey = settingsData.CloudApiKey ?? string.Empty;
+                            AutoLaunchEnabled = settingsData.AutoLaunchEnabled;
+                            AutoLaunchEntries = settingsData.AutoLaunchEntries;
+                            AutoLaunchExecutablePath = settingsData.AutoLaunchExecutablePath ?? string.Empty;
+                            AutoLaunchArguments = settingsData.AutoLaunchArguments ?? string.Empty;
+                            ItemMusicEnabled = settingsData.ItemMusicEnabled;
+                            ItemMusicEntries = settingsData.ItemMusicEntries;
+                            ItemMusicItemName = settingsData.ItemMusicItemName ?? string.Empty;
+                            ItemMusicSoundPath = settingsData.ItemMusicSoundPath ?? string.Empty;
+                            ItemMusicMinSpeed = settingsData.ItemMusicMinSpeed;
+                            ItemMusicMaxSpeed = settingsData.ItemMusicMaxSpeed;
+                            RoundBgmEnabled = settingsData.RoundBgmEnabled;
+                            RoundBgmEntries = settingsData.RoundBgmEntries;
+                            RoundBgmItemConflictBehavior = settingsData.RoundBgmItemConflictBehavior;
+                            AutoRecordingEnabled = settingsData.AutoRecordingEnabled;
+                            AutoRecordingWindowTitle = settingsData.AutoRecordingWindowTitle ?? "VRChat";
+                            AutoRecordingCommand = settingsData.AutoRecordingCommand ?? string.Empty;
+                            AutoRecordingFrameRate = settingsData.AutoRecordingFrameRate;
+                            AutoRecordingResolution = settingsData.AutoRecordingResolution ?? AutoRecordingService.DefaultResolutionOptionId;
+                            AutoRecordingArguments = settingsData.AutoRecordingArguments ?? string.Empty;
+                            AutoRecordingOutputDirectory = settingsData.AutoRecordingOutputDirectory ?? "recordings";
+                            AutoRecordingOutputExtension = settingsData.AutoRecordingOutputExtension ?? "avi";
+                            AutoRecordingVideoCodec = settingsData.AutoRecordingVideoCodec ?? AutoRecordingService.DefaultCodec;
+                            AutoRecordingVideoBitrate = settingsData.AutoRecordingVideoBitrate;
+                            AutoRecordingAudioBitrate = settingsData.AutoRecordingAudioBitrate;
+                            AutoRecordingHardwareEncoder = settingsData.AutoRecordingHardwareEncoder ?? AutoRecordingService.DefaultHardwareEncoderOptionId;
+                            AutoRecordingIncludeOverlay = settingsData.AutoRecordingIncludeOverlay;
+                            AutoRecordingRoundTypes = settingsData.AutoRecordingRoundTypes;
+                            AutoRecordingTerrors = settingsData.AutoRecordingTerrors;
+                            DiscordWebhookUrl = settingsData.DiscordWebhookUrl ?? string.Empty;
+                            LastSaveCode = settingsData.LastSaveCode ?? string.Empty;
+                            AfkSoundCancelEnabled = settingsData.AfkSoundCancelEnabled;
+                            CoordinatedAutoSuicideBrainEnabled = settingsData.CoordinatedAutoSuicideBrainEnabled;
+                            NetworkAnalyzerConsentGranted = settingsData.NetworkAnalyzerConsentGranted;
+                            NetworkAnalyzerConsentTimestamp = settingsData.NetworkAnalyzerConsentTimestamp;
+                            NetworkAnalyzerConsentMarkerId = settingsData.NetworkAnalyzerConsentMarkerId;
+                            NetworkAnalyzerProxyPort = settingsData.NetworkAnalyzerProxyPort;
+                        }
+                        else
+                        {
+                            // Fallback to old PopulateObject method if deserialization fails
+                            JsonConvert.PopulateObject(jsonContent, this);
+                        }
+                        // settingsData is already defined above; no need to redefine
+                        if (settingsData != null)
+                        {
+                            // Copy all properties from AppSettingsData to AppSettings
+                            OSCPort = settingsData.OSCPort;
+                            OSCPortChanged = settingsData.OSCPortChanged;
+                            BackgroundColor_InfoPanel = ColorTranslator.FromHtml(settingsData.BackgroundColor_InfoPanel);
+                            BackgroundColor_Stats = ColorTranslator.FromHtml(settingsData.BackgroundColor_Stats);
+                            BackgroundColor_Log = ColorTranslator.FromHtml(settingsData.BackgroundColor_Log);
+                            FixedTerrorColor = string.IsNullOrEmpty(settingsData.FixedTerrorColor) ? Color.Empty : ColorTranslator.FromHtml(settingsData.FixedTerrorColor);
+                            ShowStats = settingsData.ShowStats;
+                            ShowDebug = settingsData.ShowDebug;
+                            ShowRoundLog = settingsData.ShowRoundLog;
+                            Filter_RoundType = settingsData.Filter_RoundType;
+                            Filter_Terror = settingsData.Filter_Terror;
+                            Filter_Appearance = settingsData.Filter_Appearance;
+                            Filter_Survival = settingsData.Filter_Survival;
+                            Filter_Death = settingsData.Filter_Death;
+                            Filter_SurvivalRate = settingsData.Filter_SurvivalRate;
+                            OverlayShowVelocity = settingsData.OverlayShowVelocity;
+                            OverlayShowTerror = settingsData.OverlayShowTerror;
+                            OverlayShowDamage = settingsData.OverlayShowDamage;
+                            OverlayShowNextRound = settingsData.OverlayShowNextRound;
+                            OverlayShowRoundStatus = settingsData.OverlayShowRoundStatus;
+                            OverlayShowRoundHistory = settingsData.OverlayShowRoundHistory;
+                            OverlayShowRoundStats = settingsData.OverlayShowRoundStats;
+                            OverlayShowTerrorInfo = settingsData.OverlayShowTerrorInfo;
+                            OverlayShowShortcuts = settingsData.OverlayShowShortcuts;
+                            OverlayShowAngle = settingsData.OverlayShowAngle;
+                            OverlayShowClock = settingsData.OverlayShowClock;
+                            OverlayShowInstanceTimer = settingsData.OverlayShowInstanceTimer;
+                            OverlayShowInstanceMembers = settingsData.OverlayShowInstanceMembers;
+                            OverlayShowVoting = settingsData.OverlayShowVoting;
+                            OverlayShowUnboundTerrorDetails = settingsData.OverlayShowUnboundTerrorDetails;
+                            OverlayOpacity = settingsData.OverlayOpacity;
+                            OverlayRoundHistoryLength = settingsData.OverlayRoundHistoryLength;
+                            OverlayPositions = settingsData.OverlayPositions;
+                            OverlayScaleFactors = settingsData.OverlayScaleFactors;
+                            OverlaySizes = settingsData.OverlaySizes;
+                            RoundTypeStats = settingsData.RoundTypeStats;
+                            AutoSuicideEnabled = settingsData.AutoSuicideEnabled;
+                            AutoSuicideRoundTypes = settingsData.AutoSuicideRoundTypes;
+                            AutoSuicidePresets = settingsData.AutoSuicidePresets;
+                            AutoSuicideDetailCustom = settingsData.AutoSuicideDetailCustom;
+                            AutoSuicideFuzzyMatch = settingsData.AutoSuicideFuzzyMatch;
+                            AutoSuicideUseDetail = settingsData.AutoSuicideUseDetail;
+                            ApiKey = settingsData.ApiKey ?? string.Empty;
+                            ThemeKey = settingsData.ThemeKey ?? Theme.DefaultThemeKey;
+                            Language = settingsData.Language ?? LanguageManager.DefaultCulture;
+                            LogFilePath = settingsData.LogFilePath ?? "logs/log-.txt";
+                            WebSocketIp = settingsData.WebSocketIp ?? "127.0.0.1";
+                            CloudWebSocketUrl = settingsData.CloudWebSocketUrl ?? string.Empty;
+                            CloudSyncEnabled = settingsData.CloudSyncEnabled;
+                            CloudPlayerName = settingsData.CloudPlayerName ?? string.Empty;
+                            CloudApiKey = settingsData.CloudApiKey ?? string.Empty;
+                            AutoLaunchEnabled = settingsData.AutoLaunchEnabled;
+                            AutoLaunchEntries = settingsData.AutoLaunchEntries;
+                            AutoLaunchExecutablePath = settingsData.AutoLaunchExecutablePath ?? string.Empty;
+                            AutoLaunchArguments = settingsData.AutoLaunchArguments ?? string.Empty;
+                            ItemMusicEnabled = settingsData.ItemMusicEnabled;
+                            ItemMusicEntries = settingsData.ItemMusicEntries;
+                            ItemMusicItemName = settingsData.ItemMusicItemName ?? string.Empty;
+                            ItemMusicSoundPath = settingsData.ItemMusicSoundPath ?? string.Empty;
+                            ItemMusicMinSpeed = settingsData.ItemMusicMinSpeed;
+                            ItemMusicMaxSpeed = settingsData.ItemMusicMaxSpeed;
+                            RoundBgmEnabled = settingsData.RoundBgmEnabled;
+                            RoundBgmEntries = settingsData.RoundBgmEntries;
+                            RoundBgmItemConflictBehavior = settingsData.RoundBgmItemConflictBehavior;
+                            AutoRecordingEnabled = settingsData.AutoRecordingEnabled;
+                            AutoRecordingWindowTitle = settingsData.AutoRecordingWindowTitle ?? "VRChat";
+                            AutoRecordingCommand = settingsData.AutoRecordingCommand ?? string.Empty;
+                            AutoRecordingFrameRate = settingsData.AutoRecordingFrameRate;
+                            AutoRecordingResolution = settingsData.AutoRecordingResolution ?? AutoRecordingService.DefaultResolutionOptionId;
+                            AutoRecordingArguments = settingsData.AutoRecordingArguments ?? string.Empty;
+                            AutoRecordingOutputDirectory = settingsData.AutoRecordingOutputDirectory ?? "recordings";
+                            AutoRecordingOutputExtension = settingsData.AutoRecordingOutputExtension ?? "avi";
+                            AutoRecordingVideoCodec = settingsData.AutoRecordingVideoCodec ?? AutoRecordingService.DefaultCodec;
+                            AutoRecordingVideoBitrate = settingsData.AutoRecordingVideoBitrate;
+                            AutoRecordingAudioBitrate = settingsData.AutoRecordingAudioBitrate;
+                            AutoRecordingHardwareEncoder = settingsData.AutoRecordingHardwareEncoder ?? AutoRecordingService.DefaultHardwareEncoderOptionId;
+                            AutoRecordingIncludeOverlay = settingsData.AutoRecordingIncludeOverlay;
+                            AutoRecordingRoundTypes = settingsData.AutoRecordingRoundTypes;
+                            AutoRecordingTerrors = settingsData.AutoRecordingTerrors;
+                            DiscordWebhookUrl = settingsData.DiscordWebhookUrl ?? string.Empty;
+                            LastSaveCode = settingsData.LastSaveCode ?? string.Empty;
+                            AfkSoundCancelEnabled = settingsData.AfkSoundCancelEnabled;
+                            CoordinatedAutoSuicideBrainEnabled = settingsData.CoordinatedAutoSuicideBrainEnabled;
+                            NetworkAnalyzerConsentGranted = settingsData.NetworkAnalyzerConsentGranted;
+                            NetworkAnalyzerConsentTimestamp = settingsData.NetworkAnalyzerConsentTimestamp;
+                            NetworkAnalyzerConsentMarkerId = settingsData.NetworkAnalyzerConsentMarkerId;
+                            NetworkAnalyzerProxyPort = settingsData.NetworkAnalyzerProxyPort;
+                        }
+                        else
+                        {
+                            // Fallback to old PopulateObject method if deserialization fails
+                            JsonConvert.PopulateObject(jsonContent, this);
+                        }
 
                         // Decrypt sensitive settings if they are encrypted
                         if (!string.IsNullOrEmpty(ApiKey))
@@ -686,6 +888,9 @@ namespace ToNRoundCounter.Infrastructure
                 OverlayShowAngle = OverlayShowAngle,
                 OverlayShowClock = OverlayShowClock,
                 OverlayShowInstanceTimer = OverlayShowInstanceTimer,
+                OverlayShowInstanceMembers = OverlayShowInstanceMembers,
+                OverlayShowVoting = OverlayShowVoting,
+                OverlayShowUnboundTerrorDetails = OverlayShowUnboundTerrorDetails,
                 OverlayOpacity = OverlayOpacity,
                 OverlayRoundHistoryLength = OverlayRoundHistoryLength,
                 OverlayPositions = OverlayPositions,
@@ -706,11 +911,17 @@ namespace ToNRoundCounter.Infrastructure
                 CloudWebSocketUrl = CloudWebSocketUrl,
                 CloudSyncEnabled = CloudSyncEnabled,
                 CloudPlayerName = CloudPlayerName,
-                CloudApiKey = CloudApiKey,
+                CloudApiKey = ApiKey,
                 AutoLaunchEnabled = AutoLaunchEnabled,
                 AutoLaunchEntries = AutoLaunchEntries,
+                AutoLaunchExecutablePath = AutoLaunchExecutablePath,
+                AutoLaunchArguments = AutoLaunchArguments,
                 ItemMusicEnabled = ItemMusicEnabled,
                 ItemMusicEntries = ItemMusicEntries,
+                ItemMusicItemName = ItemMusicItemName,
+                ItemMusicSoundPath = ItemMusicSoundPath,
+                ItemMusicMinSpeed = ItemMusicMinSpeed,
+                ItemMusicMaxSpeed = ItemMusicMaxSpeed,
                 RoundBgmEnabled = RoundBgmEnabled,
                 RoundBgmEntries = RoundBgmEntries,
                 RoundBgmItemConflictBehavior = RoundBgmItemConflictBehavior,
@@ -796,6 +1007,9 @@ namespace ToNRoundCounter.Infrastructure
         public bool OverlayShowAngle { get; set; }
         public bool OverlayShowClock { get; set; }
         public bool OverlayShowInstanceTimer { get; set; }
+        public bool OverlayShowInstanceMembers { get; set; }
+        public bool OverlayShowVoting { get; set; } = true;
+        public bool OverlayShowUnboundTerrorDetails { get; set; }
         public double OverlayOpacity { get; set; }
         public int OverlayRoundHistoryLength { get; set; }
         public Dictionary<string, Point> OverlayPositions { get; set; } = new Dictionary<string, Point>();
@@ -808,7 +1022,12 @@ namespace ToNRoundCounter.Infrastructure
         public List<string> AutoSuicideDetailCustom { get; set; } = new List<string>();
         public bool AutoSuicideFuzzyMatch { get; set; }
         public bool AutoSuicideUseDetail { get; set; }
-        public string apikey { get; set; } = string.Empty;
+        public string ApiKey { get; set; } = string.Empty;
+        public string apikey
+        {
+            get => ApiKey;
+            set => ApiKey = value ?? string.Empty;
+        }
         public string ThemeKey { get; set; } = Theme.DefaultThemeKey;
         public string Language { get; set; } = LanguageManager.DefaultCulture;
         public string LogFilePath { get; set; } = string.Empty;
@@ -819,8 +1038,16 @@ namespace ToNRoundCounter.Infrastructure
         public string CloudApiKey { get; set; } = string.Empty;
         public bool AutoLaunchEnabled { get; set; }
         public List<AutoLaunchEntry> AutoLaunchEntries { get; set; } = new List<AutoLaunchEntry>();
+        // Legacy properties retained for migration of single-entry settings
+        public string AutoLaunchExecutablePath { get; set; } = string.Empty;
+        public string AutoLaunchArguments { get; set; } = string.Empty;
         public bool ItemMusicEnabled { get; set; }
         public List<ItemMusicEntry> ItemMusicEntries { get; set; } = new List<ItemMusicEntry>();
+        // Legacy properties retained for migration of single-entry settings
+        public string ItemMusicItemName { get; set; } = string.Empty;
+        public string ItemMusicSoundPath { get; set; } = string.Empty;
+        public double ItemMusicMinSpeed { get; set; }
+        public double ItemMusicMaxSpeed { get; set; }
         public bool RoundBgmEnabled { get; set; }
         public List<RoundBgmEntry> RoundBgmEntries { get; set; } = new List<RoundBgmEntry>();
         public RoundBgmItemConflictBehavior RoundBgmItemConflictBehavior { get; set; } = RoundBgmItemConflictBehavior.PlayBoth;

@@ -16,7 +16,7 @@ namespace ToNRoundCounter.Domain
 
         public bool Equals(RoundId other) => Value.Equals(other.Value);
 
-        public override bool Equals(object obj) => obj is RoundId other && Equals(other);
+        public override bool Equals(object? obj) => obj is RoundId other && Equals(other);
 
         public override int GetHashCode() => Value.GetHashCode();
 

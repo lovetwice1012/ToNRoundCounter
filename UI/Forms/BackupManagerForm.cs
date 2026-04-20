@@ -17,6 +17,7 @@ namespace ToNRoundCounter.UI
     {
         private readonly CloudWebSocketClient? _cloudClient;
         private readonly string _userId;
+        private readonly CancellationTokenSource _lifetimeCts = new CancellationTokenSource();
         private List<Dictionary<string, object>>? _backups;
 
         // UI Controls
@@ -47,7 +48,25 @@ namespace ToNRoundCounter.UI
             InitializeComponent();
             InitializeCustomComponents();
             
-            this.Load += async (s, e) => await LoadBackupsAsync();
+            // BUG FIX #7 (MEDIUM): Wrap async Load handler with proper exception handling.
+            // Previously: Fire-and-forget async void would silently fail; form loads in broken state without error feedback.
+            // Now: Catch exceptions and show error dialog to user.
+            this.Load += async (s, e) => {
+                try
+                {
+                    await LoadBackupsAsync();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(
+                        $"バックアップ一覧の読み込みに失敗しました: {ex.Message}",
+                        "エラー",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error
+                    );
+                    statusLabel.Text = "読み込み失敗";
+                }
+            };
         }
 
         private void InitializeComponent()
@@ -275,33 +294,66 @@ namespace ToNRoundCounter.UI
 
             try
             {
-                _backups = await _cloudClient.ListBackupsAsync(_userId, CancellationToken.None);
+                _backups = await _cloudClient.ListBackupsAsync(_userId, _lifetimeCts.Token);
+
+                if (IsDisposed || Disposing || _lifetimeCts.IsCancellationRequested)
+                {
+                    return;
+                }
 
                 backupsListView.Items.Clear();
 
-                if (_backups != null && _backups.Count > 0)
-                {
-                    foreach (var backup in _backups)
-                    {
-                        var name = backup.TryGetValue("backup_name", out var n) ? n?.ToString() : "Unknown";
-                        var createdAt = backup.TryGetValue("created_at", out var ca) ? ca?.ToString() : "";
-                        var size = backup.TryGetValue("size_bytes", out var sz) ? FormatFileSize(Convert.ToInt64(sz)) : "N/A";
-                        var type = backup.TryGetValue("backup_type", out var bt) ? bt?.ToString() : "Full";
-
-                        var item = new ListViewItem(name ?? "Unknown");
-                        item.SubItems.Add(createdAt);
-                        item.SubItems.Add(size);
-                        item.SubItems.Add(type);
-                        item.Tag = backup; // Store full backup data
-                        backupsListView.Items.Add(item);
-                    }
-
-                    statusLabel.Text = $"{_backups.Count}個のバックアップが見つかりました";
-                }
-                else
+                // BUG FIX #8 (MEDIUM): Add null check BEFORE foreach loop iteration.
+                // Previously: Only checked inside the loop; async operation could set _backups to null
+                // between assignment and iteration. Now: Verify non-null before starting iteration.
+                if (_backups == null || _backups.Count == 0)
                 {
                     statusLabel.Text = "バックアップがありません";
+                    return;
                 }
+
+                // SAFETY: Null-check each backup in the loop as well in case collection mutation occurs
+                foreach (var backup in _backups)
+                {
+                    if (backup == null) continue;  // Skip null entries (defensive)
+
+                    var name = backup.TryGetValue("backup_name", out var n)
+                        ? GetStringValue(n, "Unknown")
+                        : backup.TryGetValue("description", out var description)
+                            ? GetStringValue(description, "Unknown")
+                            : backup.TryGetValue("backup_id", out var backupId)
+                                ? GetStringValue(backupId, "Unknown")
+                                : "Unknown";
+
+                    var createdAtRaw = backup.TryGetValue("created_at", out var ca)
+                        ? GetStringValue(ca, string.Empty)
+                        : string.Empty;
+                    var createdAt = DateTimeOffset.TryParse(createdAtRaw, out var createdAtValue)
+                        ? createdAtValue.LocalDateTime.ToString("yyyy/MM/dd HH:mm:ss")
+                        : createdAtRaw;
+
+                    var sizeValue = backup.TryGetValue("size_bytes", out var sz)
+                        ? GetInt64Value(sz)
+                        : backup.TryGetValue("file_size", out var fs) ? GetInt64Value(fs) : null;
+                    var size = sizeValue.HasValue ? FormatFileSize(sizeValue.Value) : "N/A";
+
+                    var type = backup.TryGetValue("backup_type", out var bt)
+                        ? GetStringValue(bt, "FULL")
+                        : "FULL";
+
+                    var item = new ListViewItem(name ?? "Unknown");
+                    item.SubItems.Add(createdAt);
+                    item.SubItems.Add(size);
+                    item.SubItems.Add(type);
+                    item.Tag = backup; // Store full backup data
+                    backupsListView.Items.Add(item);
+                }
+
+                statusLabel.Text = $"{_backups.Count}個のバックアップが見つかりました";
+            }
+            catch (OperationCanceledException)
+            {
+                // Ignore cancellation while closing the form.
             }
             catch (Exception ex)
             {
@@ -336,15 +388,23 @@ namespace ToNRoundCounter.UI
                 if (includeStatsCheckBox.Checked) includes.Add("stats");
                 if (includeRoundsCheckBox.Checked) includes.Add("rounds");
 
-                var backupType = includes.Count == 3 ? "FULL" : "PARTIAL";
+                if (includes.Count == 0)
+                {
+                    MessageBox.Show("少なくとも1つのバックアップ対象を選択してください", "入力エラー", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // Backend currently supports FULL / DIFFERENTIAL / INCREMENTAL.
+                // This UI's include-options are metadata-only for now, so always create FULL backups.
+                var backupType = "FULL";
                 var description = $"{backupNameTextBox.Text} - {string.Join(", ", includes)}";
 
-                var result = await _cloudClient.CreateBackupAsync(
+                await _cloudClient.CreateBackupAsync(
                     backupType,
                     compress: true,
                     encrypt: false,
                     description: description,
-                    cancellationToken: CancellationToken.None
+                    cancellationToken: _lifetimeCts.Token
                 );
 
                 MessageBox.Show("バックアップを作成しました", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -354,6 +414,10 @@ namespace ToNRoundCounter.UI
                 backupNameTextBox.Text = $"Backup_{DateTime.Now:yyyyMMdd_HHmmss}";
 
                 await LoadBackupsAsync();
+            }
+            catch (OperationCanceledException)
+            {
+                // Ignore cancellation while closing the form.
             }
             catch (Exception ex)
             {
@@ -374,7 +438,9 @@ namespace ToNRoundCounter.UI
             var selectedBackup = backupsListView.SelectedItems[0].Tag as Dictionary<string, object>;
             if (selectedBackup == null) return;
 
-            var backupId = selectedBackup.TryGetValue("backup_id", out var bid) ? bid?.ToString() : null;
+            var backupId = selectedBackup.TryGetValue("backup_id", out var bid)
+                ? GetStringValue(bid, string.Empty)
+                : string.Empty;
             if (string.IsNullOrEmpty(backupId))
             {
                 MessageBox.Show("バックアップIDが無効です", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -400,11 +466,15 @@ namespace ToNRoundCounter.UI
                     backupId!, // Non-null assertion since we checked above
                     validateBeforeRestore: true,
                     createBackupBeforeRestore: true,
-                    cancellationToken: CancellationToken.None
+                    cancellationToken: _lifetimeCts.Token
                 );
                 
                 MessageBox.Show("バックアップから復元しました", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 statusLabel.Text = "復元完了";
+            }
+            catch (OperationCanceledException)
+            {
+                // Ignore cancellation while closing the form.
             }
             catch (Exception ex)
             {
@@ -418,9 +488,26 @@ namespace ToNRoundCounter.UI
             }
         }
 
-        private void DeleteButton_Click(object? sender, EventArgs e)
+        private async void DeleteButton_Click(object? sender, EventArgs e)
         {
-            if (backupsListView.SelectedItems.Count == 0) return;
+            if (_cloudClient == null || backupsListView.SelectedItems.Count == 0)
+            {
+                return;
+            }
+
+            var selectedBackup = backupsListView.SelectedItems[0].Tag as Dictionary<string, object>;
+            if (selectedBackup == null || !selectedBackup.TryGetValue("backup_id", out var backupIdValue))
+            {
+                MessageBox.Show("バックアップIDが取得できません", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            var backupId = GetStringValue(backupIdValue, string.Empty);
+            if (string.IsNullOrWhiteSpace(backupId))
+            {
+                MessageBox.Show("バックアップIDが無効です", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
 
             var result = MessageBox.Show(
                 "選択したバックアップを削除します。この操作は元に戻せません。\n続行しますか?",
@@ -429,9 +516,34 @@ namespace ToNRoundCounter.UI
                 MessageBoxIcon.Warning
             );
 
-            if (result == DialogResult.Yes)
+            if (result != DialogResult.Yes)
             {
-                MessageBox.Show("バックアップ削除機能は未実装です", "情報", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            progressBar.Visible = true;
+            deleteButton.Enabled = false;
+            statusLabel.Text = "バックアップを削除中...";
+
+            try
+            {
+                await _cloudClient.DeleteBackupAsync(backupId, _lifetimeCts.Token);
+                statusLabel.Text = "バックアップ削除完了";
+                await LoadBackupsAsync();
+            }
+            catch (OperationCanceledException)
+            {
+                // Ignore cancellation while closing the form.
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"削除に失敗しました: {ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                statusLabel.Text = "バックアップ削除失敗";
+            }
+            finally
+            {
+                progressBar.Visible = false;
+                deleteButton.Enabled = backupsListView.SelectedItems.Count > 0;
             }
         }
 
@@ -481,6 +593,74 @@ namespace ToNRoundCounter.UI
                 len = len / 1024;
             }
             return $"{len:0.##} {sizes[order]}";
+        }
+
+        private static string GetStringValue(object? value, string fallback)
+        {
+            if (value == null)
+            {
+                return fallback;
+            }
+
+            if (value is JsonElement element)
+            {
+                if (element.ValueKind == JsonValueKind.String)
+                {
+                    return element.GetString() ?? fallback;
+                }
+
+                if (element.ValueKind == JsonValueKind.Null || element.ValueKind == JsonValueKind.Undefined)
+                {
+                    return fallback;
+                }
+
+                return element.ToString();
+            }
+
+            return value.ToString() ?? fallback;
+        }
+
+        private static long? GetInt64Value(object? value)
+        {
+            if (value == null)
+            {
+                return null;
+            }
+
+            if (value is long l)
+            {
+                return l;
+            }
+
+            if (value is int i)
+            {
+                return i;
+            }
+
+            if (value is JsonElement element)
+            {
+                if (element.ValueKind == JsonValueKind.Number)
+                {
+                    return element.TryGetInt64(out var num) ? num : null;
+                }
+
+                if (element.ValueKind == JsonValueKind.String)
+                {
+                    var text = element.GetString();
+                    return long.TryParse(text, out var parsed) ? parsed : null;
+                }
+
+                return null;
+            }
+
+            return long.TryParse(value.ToString(), out var result) ? result : null;
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            _lifetimeCts.Cancel();
+            _lifetimeCts.Dispose();
+            base.OnFormClosing(e);
         }
     }
 }

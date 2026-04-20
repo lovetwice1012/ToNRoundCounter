@@ -33,22 +33,60 @@ export class InstanceService {
     }
 
     async joinInstance(instanceId: string, playerId: string, playerName: string): Promise<any> {
-        const instance = await InstanceRepository.getInstance(instanceId);
+        let instance = await InstanceRepository.getInstance(instanceId);
 
         if (!instance) {
-            throw new Error(`Instance ${instanceId} not found`);
+            // Auto-create instance when it doesn't exist yet (first joiner becomes creator)
+            instance = await this.createInstance(instanceId, playerId, 10, {
+                auto_suicide_mode: 'Individual' as const,
+                voting_timeout: 30,
+            });
+            logger.info({ instanceId }, 'Auto-created instance on join');
+        }
+
+        // Idempotent: if the user is already a member just return the current
+        // membership instead of throwing. Reconnecting clients (especially the
+        // C# client after a transient drop) call instance.join again to resume
+        // their server-side subscription and would otherwise see spurious
+        // "Already joined this instance" errors.
+        const alreadyMember = await InstanceRepository.isMemberInInstance(instanceId, playerId);
+        if (alreadyMember) {
+            const existingMembers = await InstanceRepository.getMembers(instanceId);
+            return {
+                instance_id: instanceId,
+                members: existingMembers.map(m => ({
+                    player_id: m.player_id,
+                    player_name: m.player_name,
+                    joined_at: m.joined_at.toISOString(),
+                })),
+            };
         }
 
         if (instance.member_count >= instance.max_players) {
             throw new Error('Instance is full');
         }
 
-        const isMember = await InstanceRepository.isMemberInInstance(instanceId, playerId);
-        if (isMember) {
-            throw new Error('Already joined this instance');
+        try {
+            await InstanceRepository.addMember(instanceId, playerId, playerName);
+        } catch (err: any) {
+            // Two concurrent join requests can both pass the alreadyMember check
+            // above and then race on INSERT. The instance_members table has a
+            // UNIQUE (instance_id, player_id) key, so the second one throws
+            // ER_DUP_ENTRY. Treat it as a successful idempotent join.
+            const code = err?.code || err?.errno;
+            if (code !== 'ER_DUP_ENTRY' && code !== '23000' && code !== 1062) {
+                throw err;
+            }
+            const existingMembers = await InstanceRepository.getMembers(instanceId);
+            return {
+                instance_id: instanceId,
+                members: existingMembers.map(m => ({
+                    player_id: m.player_id,
+                    player_name: m.player_name,
+                    joined_at: m.joined_at.toISOString(),
+                })),
+            };
         }
-
-        await InstanceRepository.addMember(instanceId, playerId, playerName);
 
         const members = await InstanceRepository.getMembers(instanceId);
 
@@ -74,6 +112,17 @@ export class InstanceService {
     }
 
     async leaveInstance(instanceId: string, playerId: string): Promise<void> {
+        // Idempotent: skip the entire flow if the user was never a member.
+        // Without this guard, instance.leave / disconnect cleanup would emit
+        // spurious instance.member.left events for non-members (polluting the
+        // dashboard) and could even auto-delete instances that they never
+        // joined when member_count happens to be 0.
+        const wasMember = await InstanceRepository.isMemberInInstance(instanceId, playerId);
+        if (!wasMember) {
+            logger.debug({ instanceId, playerId }, 'leaveInstance: not a member, skipping');
+            return;
+        }
+
         await InstanceRepository.removeMember(instanceId, playerId);
 
         // Broadcast member left event
@@ -115,9 +164,14 @@ export class InstanceService {
         return {
             instances: instances.map(i => ({
                 instance_id: i.instance_id,
+                creator_id: i.creator_id,
                 member_count: i.member_count,
+                current_player_count: i.member_count,
                 max_players: i.max_players,
+                status: i.status,
+                settings: i.settings,
                 created_at: i.created_at.toISOString(),
+                updated_at: i.updated_at.toISOString(),
             })),
             total,
             limit,
@@ -140,6 +194,10 @@ export class InstanceService {
 
         return {
             instance_id: instance.instance_id,
+            creator_id: instance.creator_id,
+            max_players: instance.max_players,
+            member_count: instance.member_count,
+            status: instance.status,
             members: members.map(m => ({
                 player_id: m.player_id,
                 player_name: m.player_name,
@@ -147,6 +205,7 @@ export class InstanceService {
             })),
             settings: instance.settings,
             created_at: instance.created_at.toISOString(),
+            updated_at: instance.updated_at.toISOString(),
         };
     }
 
@@ -191,6 +250,14 @@ export class InstanceService {
         });
 
         await InstanceRepository.deleteInstance(instanceId);
+
+        // Drop the in-memory subscription bookkeeping for this instance.
+        // Otherwise the wsHandler would hold dead subscribers indefinitely
+        // (until each socket disconnected), and any later auto-recreate of
+        // the same instance id would inherit a polluted subscriber set.
+        if (this.wsHandler && typeof this.wsHandler.clearInstanceSubscriptions === 'function') {
+            this.wsHandler.clearInstanceSubscriptions(instanceId);
+        }
 
         logger.info({ instanceId }, 'Instance deleted');
     }

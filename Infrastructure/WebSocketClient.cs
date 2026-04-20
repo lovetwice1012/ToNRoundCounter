@@ -25,6 +25,7 @@ namespace ToNRoundCounter.Infrastructure
         private readonly ICancellationProvider _cancellation;
         private readonly IEventLogger _logger;
         private readonly Channel<string> _channel;
+        private readonly object _processingTaskSync = new();
         private Task? _processingTask;
         private int _connectionAttempts;
         private long _receivedMessages;
@@ -280,7 +281,21 @@ namespace ToNRoundCounter.Infrastructure
             _logger.LogEvent("WebSocket", "Dispose called.");
             try
             {
-                StopAsync().GetAwaiter().GetResult();
+                var cts = Interlocked.Exchange(ref _cts, null);
+                try
+                {
+                    cts?.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                finally
+                {
+                    cts?.Dispose();
+                }
+
+                _socket?.Dispose();
+                _socket = null;
             }
             catch (Exception ex)
             {
@@ -296,10 +311,13 @@ namespace ToNRoundCounter.Infrastructure
 
         private void EnsureProcessingTask(CancellationToken token)
         {
-            var existing = _processingTask;
-            if (existing == null || existing.IsCompleted)
+            lock (_processingTaskSync)
             {
-                _processingTask = Task.Run(() => ProcessMessagesAsync(token), token);
+                var existing = _processingTask;
+                if (existing == null || existing.IsCompleted)
+                {
+                    _processingTask = Task.Run(() => ProcessMessagesAsync(token), token);
+                }
             }
         }
 

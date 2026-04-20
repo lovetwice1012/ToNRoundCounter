@@ -19,6 +19,7 @@ namespace ToNRoundCounter.UI
         private readonly CloudWebSocketClient? _cloudClient;
         private readonly string _userId;
         private readonly IAppSettings _localSettings;
+        private readonly CancellationTokenSource _lifetimeCts = new CancellationTokenSource();
         private Dictionary<string, object>? _remoteSettings;
         private int _remoteVersion = 0;
         private int _localVersion = 0;
@@ -269,16 +270,11 @@ namespace ToNRoundCounter.UI
             // Load local settings preview
             try
             {
-                var localDict = new Dictionary<string, object>
+                RefreshLocalSettingsPreview();
+                if (_localVersion <= 0)
                 {
-                    ["CloudSyncEnabled"] = _localSettings.CloudSyncEnabled,
-                    ["CloudPlayerName"] = _localSettings.CloudPlayerName ?? "",
-                    ["AutoSuicideEnabled"] = _localSettings.AutoSuicideEnabled
-                    // Add more settings as needed
-                };
-
-                localSettingsTextBox.Text = JsonSerializer.Serialize(localDict, new JsonSerializerOptions { WriteIndented = true });
-                _localVersion = 1; // Placeholder
+                    _localVersion = 1;
+                }
                 localVersionLabel.Text = $"ローカルバージョン: {_localVersion}";
             }
             catch (Exception ex)
@@ -303,20 +299,21 @@ namespace ToNRoundCounter.UI
 
             try
             {
-                _remoteSettings = await _cloudClient.GetSettingsAsync(_userId, CancellationToken.None);
+                var response = await _cloudClient.GetSettingsAsync(_userId, _lifetimeCts.Token);
+                _remoteSettings = ExtractSettingsPayload(response);
+                _remoteVersion = ExtractVersion(response);
 
                 if (_remoteSettings != null)
                 {
                     remoteSettingsTextBox.Text = JsonSerializer.Serialize(_remoteSettings, new JsonSerializerOptions { WriteIndented = true });
-                    
-                    if (_remoteSettings.TryGetValue("version", out var version))
-                    {
-                        _remoteVersion = Convert.ToInt32(version);
-                    }
 
                     remoteVersionLabel.Text = $"リモートバージョン: {_remoteVersion}";
                     UpdateSyncStatus();
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                // Ignore cancellation while closing the form.
             }
             catch (Exception ex)
             {
@@ -355,10 +352,21 @@ namespace ToNRoundCounter.UI
                     ["AutoSuicideEnabled"] = _localSettings.AutoSuicideEnabled
                 };
 
-                await _cloudClient.UpdateSettingsAsync(_userId, localDict, CancellationToken.None);
+                var response = await _cloudClient.UpdateSettingsAsync(_userId, localDict, _lifetimeCts.Token);
+                var version = ExtractVersion(response);
+                if (version > 0)
+                {
+                    _localVersion = version;
+                    _remoteVersion = version;
+                }
+
                 MessageBox.Show("設定をアップロードしました", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 
                 await GetRemoteSettingsAsync();
+            }
+            catch (OperationCanceledException)
+            {
+                // Ignore cancellation while closing the form.
             }
             catch (Exception ex)
             {
@@ -389,20 +397,23 @@ namespace ToNRoundCounter.UI
 
             try
             {
-                // Apply remote settings to local
-                if (_remoteSettings.TryGetValue("CloudSyncEnabled", out var cloudSync))
+                ApplySettingsToLocal(_remoteSettings);
+                _localVersion = _remoteVersion > 0 ? _remoteVersion : _localVersion;
+                // Persist to disk so the downloaded settings survive an app restart.
+                // Without this, the user sees the settings change but they revert on next launch.
+                try
                 {
-                    _localSettings.CloudSyncEnabled = Convert.ToBoolean(cloudSync);
+                    await _localSettings.SaveAsync();
                 }
-                if (_remoteSettings.TryGetValue("CloudPlayerName", out var playerName) && playerName != null)
+                catch (Exception saveEx)
                 {
-                    _localSettings.CloudPlayerName = playerName.ToString();
+                    MessageBox.Show($"ダウンロードは成功しましたが、保存に失敗しました: {saveEx.Message}", "警告", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
-                // Apply more settings as needed
+                localVersionLabel.Text = $"ローカルバージョン: {_localVersion}";
+                RefreshLocalSettingsPreview();
+                UpdateSyncStatus();
 
                 MessageBox.Show("設定をダウンロードして適用しました", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                
-                await LoadSettingsAsync();
             }
             catch (Exception ex)
             {
@@ -431,14 +442,55 @@ namespace ToNRoundCounter.UI
                     ["AutoSuicideEnabled"] = _localSettings.AutoSuicideEnabled
                 };
 
-                var result = await _cloudClient.SyncSettingsAsync(_userId, localDict, _localVersion, CancellationToken.None);
+                var result = await _cloudClient.SyncSettingsAsync(_userId, localDict, _localVersion, _lifetimeCts.Token);
 
-                if (result.TryGetValue("merged_settings", out var merged))
+                var payload = ExtractSettingsPayload(result);
+                if (payload.Count > 0)
                 {
-                    MessageBox.Show("設定を自動同期しました(マージ完了)", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    ApplySettingsToLocal(payload);
+                    // Persist merged settings so changes survive across restarts.
+                    try
+                    {
+                        await _localSettings.SaveAsync();
+                    }
+                    catch (Exception saveEx)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[SettingsSync] Failed to persist merged settings: {saveEx.Message}");
+                    }
+                    RefreshLocalSettingsPreview();
                 }
 
-                await LoadSettingsAsync();
+                var version = ExtractVersion(result);
+                if (version > 0)
+                {
+                    _remoteVersion = version;
+                    _localVersion = version;
+                }
+
+                localVersionLabel.Text = $"ローカルバージョン: {_localVersion}";
+                remoteVersionLabel.Text = $"リモートバージョン: {_remoteVersion}";
+                UpdateSyncStatus();
+
+                var action = result.TryGetValue("action", out var actionObj)
+                    ? GetStringValue(actionObj, string.Empty)
+                    : result.TryGetValue("merged_settings", out _)
+                        ? "conflict_resolved"
+                        : string.Empty;
+
+                var message = action switch
+                {
+                    "up_to_date" => "設定はすでに最新です",
+                    "conflict_resolved" => "設定を自動同期しました(マージ完了)",
+                    _ => "設定を自動同期しました"
+                };
+
+                MessageBox.Show(message, "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                await GetRemoteSettingsAsync();
+            }
+            catch (OperationCanceledException)
+            {
+                // Ignore cancellation while closing the form.
             }
             catch (Exception ex)
             {
@@ -468,6 +520,232 @@ namespace ToNRoundCounter.UI
                 syncStatusLabel.Text = "同期状態: ローカルが新しい";
                 syncStatusLabel.ForeColor = Color.Blue;
             }
+        }
+
+        private void RefreshLocalSettingsPreview()
+        {
+            var localDict = new Dictionary<string, object>
+            {
+                ["CloudSyncEnabled"] = _localSettings.CloudSyncEnabled,
+                ["CloudPlayerName"] = _localSettings.CloudPlayerName ?? string.Empty,
+                ["AutoSuicideEnabled"] = _localSettings.AutoSuicideEnabled
+            };
+
+            localSettingsTextBox.Text = JsonSerializer.Serialize(localDict, new JsonSerializerOptions { WriteIndented = true });
+        }
+
+        private void ApplySettingsToLocal(Dictionary<string, object> settingsPayload)
+        {
+            if (TryGetBooleanValue(settingsPayload, "CloudSyncEnabled", out var cloudSyncEnabled))
+            {
+                _localSettings.CloudSyncEnabled = cloudSyncEnabled;
+            }
+
+            if (TryGetStringValue(settingsPayload, "CloudPlayerName", out var cloudPlayerName))
+            {
+                _localSettings.CloudPlayerName = cloudPlayerName;
+            }
+
+            if (TryGetBooleanValue(settingsPayload, "AutoSuicideEnabled", out var autoSuicideEnabled))
+            {
+                _localSettings.AutoSuicideEnabled = autoSuicideEnabled;
+            }
+        }
+
+        private static Dictionary<string, object> ExtractSettingsPayload(Dictionary<string, object> response)
+        {
+            if (response.TryGetValue("categories", out var categoriesObj) && TryGetObjectDictionary(categoriesObj, out var categories))
+            {
+                return categories;
+            }
+
+            if (response.TryGetValue("settings", out var settingsObj) && TryGetObjectDictionary(settingsObj, out var settings))
+            {
+                if (settings.TryGetValue("categories", out var nestedCategoriesObj) && TryGetObjectDictionary(nestedCategoriesObj, out var nestedCategories))
+                {
+                    return nestedCategories;
+                }
+
+                return settings;
+            }
+
+            if (response.TryGetValue("merged_settings", out var mergedObj) && TryGetObjectDictionary(mergedObj, out var merged))
+            {
+                return merged;
+            }
+
+            return new Dictionary<string, object>(response);
+        }
+
+        private static int ExtractVersion(Dictionary<string, object> response)
+        {
+            if (response.TryGetValue("version", out var versionObj))
+            {
+                var parsed = GetInt32Value(versionObj);
+                if (parsed.HasValue)
+                {
+                    return parsed.Value;
+                }
+            }
+
+            if (response.TryGetValue("remote_version", out var remoteVersionObj))
+            {
+                var parsed = GetInt32Value(remoteVersionObj);
+                if (parsed.HasValue)
+                {
+                    return parsed.Value;
+                }
+            }
+
+            if (response.TryGetValue("settings", out var settingsObj) && TryGetObjectDictionary(settingsObj, out var settings))
+            {
+                if (settings.TryGetValue("version", out var nestedVersionObj))
+                {
+                    var parsed = GetInt32Value(nestedVersionObj);
+                    if (parsed.HasValue)
+                    {
+                        return parsed.Value;
+                    }
+                }
+            }
+
+            return 0;
+        }
+
+        private static bool TryGetObjectDictionary(object? value, out Dictionary<string, object> dictionary)
+        {
+            dictionary = new Dictionary<string, object>();
+
+            if (value is Dictionary<string, object> source)
+            {
+                dictionary = source;
+                return true;
+            }
+
+            if (value is JsonElement element && element.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in element.EnumerateObject())
+                {
+                    dictionary[prop.Name] = prop.Value;
+                }
+
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryGetBooleanValue(Dictionary<string, object> source, string key, out bool value)
+        {
+            value = false;
+            if (!source.TryGetValue(key, out var raw))
+            {
+                return false;
+            }
+
+            if (raw is bool boolValue)
+            {
+                value = boolValue;
+                return true;
+            }
+
+            if (raw is JsonElement element)
+            {
+                if (element.ValueKind == JsonValueKind.True || element.ValueKind == JsonValueKind.False)
+                {
+                    value = element.GetBoolean();
+                    return true;
+                }
+
+                if (element.ValueKind == JsonValueKind.String)
+                {
+                    var text = element.GetString();
+                    if (bool.TryParse(text, out var parsed))
+                    {
+                        value = parsed;
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            return bool.TryParse(raw.ToString(), out value);
+        }
+
+        private static bool TryGetStringValue(Dictionary<string, object> source, string key, out string value)
+        {
+            value = string.Empty;
+            if (!source.TryGetValue(key, out var raw))
+            {
+                return false;
+            }
+
+            value = GetStringValue(raw, string.Empty);
+            return !string.IsNullOrWhiteSpace(value);
+        }
+
+        private static int? GetInt32Value(object? value)
+        {
+            if (value == null)
+            {
+                return null;
+            }
+
+            if (value is int intValue)
+            {
+                return intValue;
+            }
+
+            if (value is JsonElement element)
+            {
+                if (element.ValueKind == JsonValueKind.Number)
+                {
+                    return element.TryGetInt32(out var parsed) ? parsed : null;
+                }
+
+                if (element.ValueKind == JsonValueKind.String)
+                {
+                    var text = element.GetString();
+                    return int.TryParse(text, out var parsed) ? parsed : null;
+                }
+
+                return null;
+            }
+
+            return int.TryParse(value.ToString(), out var result) ? result : null;
+        }
+
+        private static string GetStringValue(object? value, string fallback)
+        {
+            if (value == null)
+            {
+                return fallback;
+            }
+
+            if (value is JsonElement element)
+            {
+                if (element.ValueKind == JsonValueKind.String)
+                {
+                    return element.GetString() ?? fallback;
+                }
+
+                if (element.ValueKind == JsonValueKind.Null || element.ValueKind == JsonValueKind.Undefined)
+                {
+                    return fallback;
+                }
+
+                return element.ToString();
+            }
+
+            return value.ToString() ?? fallback;
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            _lifetimeCts.Cancel();
+            _lifetimeCts.Dispose();
+            base.OnFormClosing(e);
         }
     }
 }

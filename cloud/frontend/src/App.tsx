@@ -2,12 +2,14 @@
  * Main App Component
  */
 
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Login } from './pages/Login';
-import { Dashboard } from './pages/Dashboard';
 import { useAppStore } from './store/appStore';
+import { ToastHub } from './components/ToastHub';
 import './App.css';
+
+const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })));
+const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { sessionToken } = useAppStore();
@@ -22,18 +24,21 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 const App: React.FC = () => {
     return (
         <BrowserRouter>
-            <Routes>
-                <Route path="/login" element={<Login />} />
-                <Route
-                    path="/dashboard"
-                    element={
-                        <ProtectedRoute>
-                            <Dashboard />
-                        </ProtectedRoute>
-                    }
-                />
-                <Route path="/" element={<Navigate to="/login" replace />} />
-            </Routes>
+            <Suspense fallback={<div className="route-loading">Loading dashboard...</div>}>
+                <Routes>
+                    <Route path="/login" element={<Login />} />
+                    <Route
+                        path="/dashboard"
+                        element={
+                            <ProtectedRoute>
+                                <Dashboard />
+                            </ProtectedRoute>
+                        }
+                    />
+                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                </Routes>
+            </Suspense>
+            <ToastHub />
         </BrowserRouter>
     );
 };

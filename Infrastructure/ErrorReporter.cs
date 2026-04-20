@@ -105,7 +105,13 @@ namespace ToNRoundCounter.Infrastructure
                 }
                 try
                 {
-                    var drive = new DriveInfo(Path.GetPathRoot(AppDomain.CurrentDomain.BaseDirectory));
+                    var driveRoot = Path.GetPathRoot(AppDomain.CurrentDomain.BaseDirectory);
+                    if (string.IsNullOrWhiteSpace(driveRoot))
+                    {
+                        throw new InvalidOperationException("Unable to determine the application drive root.");
+                    }
+
+                    var drive = new DriveInfo(driveRoot);
                     long total = drive.TotalSize;
                     long used = total - drive.AvailableFreeSpace;
                     double percent = total > 0 ? (double)used / total * 100 : 0;
@@ -158,7 +164,7 @@ namespace ToNRoundCounter.Infrastructure
                 sb.AppendLine();
                 sb.AppendLine($"Exception Type: {ex.GetType()}");
                 sb.AppendLine($"Message: {ex.Message}");
-                if (!string.IsNullOrWhiteSpace(ex.ToString()))
+                if (!string.IsNullOrWhiteSpace(ex.StackTrace))
                 {
                     sb.AppendLine("Stack Trace:");
                     foreach (var line in ex.StackTrace

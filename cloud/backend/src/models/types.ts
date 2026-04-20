@@ -85,12 +85,14 @@ export interface WishedTerror {
 }
 
 // Voting types
+export type VoteDecision = 'Continue' | 'Skip';
+
 export interface VotingCampaign {
     campaign_id: string;
     instance_id: string;
     terror_name: string;
     round_key: string;
-    final_decision?: 'Proceed' | 'Cancel';
+    final_decision?: VoteDecision;
     status: 'PENDING' | 'RESOLVED' | 'EXPIRED';
     created_at: Date;
     expires_at: Date;
@@ -101,8 +103,38 @@ export interface PlayerVote {
     id: number;
     campaign_id: string;
     player_id: string;
-    decision: 'Proceed' | 'Cancel';
+    decision: VoteDecision;
     voted_at: Date;
+}
+
+export interface CoordinatedAutoSuicideEntry {
+    id: string;
+    terror_name: string;
+    round_key: string;
+    created_at: string;
+    created_by?: string;
+    source: 'manual' | 'vote';
+}
+
+export interface CoordinatedAutoSuicidePresetEntry {
+    terror_name: string;
+    round_key: string;
+}
+
+export interface CoordinatedAutoSuicidePreset {
+    id: string;
+    name: string;
+    entries: CoordinatedAutoSuicidePresetEntry[];
+    created_at: string;
+    created_by?: string;
+}
+
+export interface CoordinatedAutoSuicideState {
+    entries: CoordinatedAutoSuicideEntry[];
+    presets: CoordinatedAutoSuicidePreset[];
+    skip_all_without_survival_wish: boolean;
+    updated_at?: string;
+    updated_by?: string;
 }
 
 // Round types

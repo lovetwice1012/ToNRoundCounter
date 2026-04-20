@@ -8,6 +8,18 @@ import { getDatabase } from '../database/connection';
 import { RemoteCommand } from '../models/types';
 import { logger } from '../logger';
 
+// Defensive JSON parser: corrupted/legacy DB rows must not crash the handler.
+function safeJsonParse<T>(raw: any, fallback: T): T {
+    if (raw == null || raw === '') return fallback;
+    if (typeof raw === 'object') return raw as T;
+    try {
+        return JSON.parse(String(raw)) as T;
+    } catch (err) {
+        logger.warn({ err, raw }, 'safeJsonParse failed');
+        return fallback;
+    }
+}
+
 export class RemoteControlService {
     private db = getDatabase();
     private wsHandler: any;
@@ -241,9 +253,9 @@ export class RemoteControlService {
             instance_id: row.instance_id,
             command_type: row.command_type,
             action: row.action,
-            parameters: JSON.parse(row.parameters),
+            parameters: safeJsonParse(row.parameters, {}),
             status: row.status,
-            result: row.result ? JSON.parse(row.result) : undefined,
+            result: row.result ? safeJsonParse(row.result, undefined) : undefined,
             error: row.error,
             initiator: row.initiator,
             priority: row.priority,

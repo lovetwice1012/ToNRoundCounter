@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
 using System.Linq;
@@ -21,7 +22,7 @@ namespace ToNRoundCounter.Infrastructure.Services
     {
         private readonly IAppSettings _settings;
         private readonly IEventLogger _logger;
-        private readonly IStateService _stateService;
+        private readonly StateService _stateService;
         private readonly IUiDispatcher _dispatcher;
         private readonly CultureInfo _japaneseCulture = new CultureInfo("ja-JP");
 
@@ -30,8 +31,11 @@ namespace ToNRoundCounter.Infrastructure.Services
         private System.Windows.Forms.Timer? _overlayVisibilityTimer;
         private OverlayShortcutForm? _shortcutOverlayForm;
         private bool _overlayTemporarilyHidden;
+        private bool _isEditMode;
         private int _activeOverlayInteractions;
         private DateTime _lastVrChatForegroundTime = DateTime.MinValue;
+        private string _currentInstanceId = string.Empty;
+        private DateTimeOffset _currentInstanceEnteredAt;
 
         private const string NextRoundPredictionUnavailableMessage = "データ不足";
 
@@ -49,13 +53,14 @@ namespace ToNRoundCounter.Infrastructure.Services
             Shortcuts,
             Clock,
             InstanceTimer,
-            InstanceMembers
+            InstanceMembers,
+            Voting
         }
 
         public OverlayManager(
             IAppSettings settings,
             IEventLogger logger,
-            IStateService stateService,
+            StateService stateService,
             IUiDispatcher dispatcher)
         {
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
@@ -101,7 +106,8 @@ namespace ToNRoundCounter.Infrastructure.Services
                     (OverlaySection.Shortcuts, "ショートカット", string.Empty),
                     (OverlaySection.Clock, "時計", FormatClockOverlayText(DateTimeOffset.Now)),
                     (OverlaySection.InstanceTimer, "滞在時間", FormatElapsedText(TimeSpan.Zero)),
-                    (OverlaySection.InstanceMembers, "メンバー", string.Empty)
+                    (OverlaySection.InstanceMembers, "メンバー", string.Empty),
+                    (OverlaySection.Voting, "投票", string.Empty)
                 };
 
                 int x = Math.Max(workingArea.Left, workingArea.Right - 260 - offsetX);
@@ -123,6 +129,8 @@ namespace ToNRoundCounter.Infrastructure.Services
                     form.SetBackgroundOpacity(GetEffectiveOverlayOpacity());
 
                     string key = GetOverlaySectionKey(section);
+                    form.SectionKey = key;
+                    form.SetEditMode(_isEditMode);
 
                     if (section == OverlaySection.RoundHistory && form is OverlayRoundHistoryForm historyForm)
                     {
@@ -277,7 +285,7 @@ namespace ToNRoundCounter.Infrastructure.Services
             HashSet<string>? filterSet = null;
             if (hasRoundFilter)
             {
-                filterSet = new HashSet<string>(_settings.RoundTypeStats, StringComparer.OrdinalIgnoreCase);
+                filterSet = new HashSet<string>(_settings.RoundTypeStats!, StringComparer.OrdinalIgnoreCase);
             }
 
             var entries = aggregates
@@ -330,9 +338,12 @@ namespace ToNRoundCounter.Infrastructure.Services
 
         public void UpdateInstanceTimer(string instanceId, DateTimeOffset enteredAt)
         {
-            string displayText = string.IsNullOrEmpty(instanceId)
+            _currentInstanceId = instanceId ?? string.Empty;
+            _currentInstanceEnteredAt = enteredAt;
+
+            string displayText = string.IsNullOrEmpty(_currentInstanceId)
                 ? FormatElapsedText(TimeSpan.Zero)
-                : FormatElapsedText(DateTimeOffset.Now - enteredAt);
+                : FormatElapsedText(DateTimeOffset.Now - _currentInstanceEnteredAt);
 
             UpdateOverlay(OverlaySection.InstanceTimer, form => form.SetValue(displayText));
         }
@@ -350,6 +361,34 @@ namespace ToNRoundCounter.Infrastructure.Services
                     form.SetValue(string.Join("\n", members));
                 }
             });
+        }
+
+        public void UpdateInstanceMembersDetailed(IReadOnlyList<InstanceMemberInfo> members, IReadOnlyList<string> desirePlayerIds)
+        {
+            var memberList = members != null ? new List<InstanceMemberInfo>(members) : new List<InstanceMemberInfo>();
+            var desireList = desirePlayerIds != null ? new List<string>(desirePlayerIds) : new List<string>();
+
+            UpdateOverlay(OverlaySection.InstanceMembers, form =>
+            {
+                if (form is OverlayInstanceMembersForm membersForm)
+                {
+                    membersForm.UpdateMembers(memberList, desireList);
+                }
+                else
+                {
+                    form.SetValue(string.Join("\n", memberList.ConvertAll(m => m.PlayerName)));
+                }
+            });
+        }
+
+        public void UpdateVoting(string votingText)
+        {
+            UpdateOverlay(OverlaySection.Voting, form => form.SetValue(votingText));
+        }
+
+        public void ClearVoting()
+        {
+            UpdateOverlay(OverlaySection.Voting, form => form.SetValue(string.Empty));
         }
 
         public void CapturePositions()
@@ -446,6 +485,7 @@ namespace ToNRoundCounter.Infrastructure.Services
                 _shortcutOverlayForm.SetToggleState(OverlayShortcutForm.ShortcutButton.CoordinatedBrainToggle, coordinatedBrainEnabled);
                 _shortcutOverlayForm.SetToggleState(OverlayShortcutForm.ShortcutButton.AfkDetectionToggle, afkDetectionEnabled);
                 _shortcutOverlayForm.SetToggleState(OverlayShortcutForm.ShortcutButton.HideUntilRoundEnd, overlayTemporarilyHidden);
+                _shortcutOverlayForm.SetToggleState(OverlayShortcutForm.ShortcutButton.EditModeToggle, _isEditMode);
                 _shortcutOverlayForm.SetButtonEnabled(OverlayShortcutForm.ShortcutButton.AutoSuicideCancel, autoSuicideScheduled);
                 _shortcutOverlayForm.SetButtonEnabled(OverlayShortcutForm.ShortcutButton.AutoSuicideDelay, autoSuicideScheduled);
             });
@@ -457,6 +497,26 @@ namespace ToNRoundCounter.Infrastructure.Services
                 OverlayShortcutForm.ShortcutButton.AutoSuicideDelay,
                 OverlayShortcutForm.ShortcutButton.ManualSuicide,
                 OverlayShortcutForm.ShortcutButton.AutoSuicideCancel);
+        }
+
+        public bool IsEditMode => _isEditMode;
+
+        public void SetEditMode(bool enabled)
+        {
+            _dispatcher.Invoke(() =>
+            {
+                _isEditMode = enabled;
+                foreach (var form in _overlayForms.Values)
+                {
+                    if (form.IsDisposed)
+                    {
+                        continue;
+                    }
+                    form.SetEditMode(enabled);
+                }
+                _shortcutOverlayForm?.SetToggleState(
+                    OverlayShortcutForm.ShortcutButton.EditModeToggle, enabled);
+            });
         }
 
         public void Dispose()
@@ -478,7 +538,17 @@ namespace ToNRoundCounter.Infrastructure.Services
         private void OverlayVisibilityTimer_Tick(object? sender, EventArgs e)
         {
             UpdateClock();
+            RefreshInstanceTimer();
             UpdateOverlayVisibility();
+        }
+
+        private void RefreshInstanceTimer()
+        {
+            if (string.IsNullOrEmpty(_currentInstanceId))
+                return;
+
+            string displayText = FormatElapsedText(DateTimeOffset.Now - _currentInstanceEnteredAt);
+            UpdateOverlay(OverlaySection.InstanceTimer, form => form.SetValue(displayText));
         }
 
         private void UpdateOverlayVisibility()
@@ -491,6 +561,17 @@ namespace ToNRoundCounter.Infrastructure.Services
                 }
 
                 bool isVrChatForeground = WindowUtilities.IsProcessInForeground("VRChat");
+                bool isAppForeground = false;
+                try
+                {
+                    string currentProcessName = Process.GetCurrentProcess().ProcessName;
+                    isAppForeground = WindowUtilities.IsProcessInForeground(currentProcessName);
+                }
+                catch
+                {
+                    isAppForeground = false;
+                }
+
                 if (isVrChatForeground)
                 {
                     _lastVrChatForegroundTime = DateTime.UtcNow;
@@ -514,7 +595,7 @@ namespace ToNRoundCounter.Infrastructure.Services
                     bool enabled = IsOverlaySectionEnabled(section);
                     bool overlayHasFocus = form.ContainsFocus;
                     bool shouldShow = enabled && !_overlayTemporarilyHidden &&
-                                      (isVrChatForeground || overlayHasFocus || _activeOverlayInteractions > 0);
+                                      (isVrChatForeground || isAppForeground || _isEditMode || overlayHasFocus || _activeOverlayInteractions > 0);
 
                     if (shouldShow)
                     {
@@ -587,9 +668,22 @@ namespace ToNRoundCounter.Infrastructure.Services
                 return;
             }
 
-            HandleOverlayMoved(section, form);
-
             string key = GetOverlaySectionKey(section);
+            
+            // Only clamp position if the form has moved outside the working area
+            // due to the size change. Don't unconditionally reposition on resize.
+            Rectangle workingArea = Screen.FromPoint(form.Location)?.WorkingArea
+                ?? Screen.PrimaryScreen?.WorkingArea
+                ?? new Rectangle(0, 0, 1920, 1080);
+            
+            Point clampedLocation = ClampOverlayLocation(form.Location, form.Size, workingArea);
+            if (form.Location != clampedLocation)
+            {
+                form.Location = clampedLocation;
+                _settings.OverlayPositions ??= new Dictionary<string, Point>();
+                _settings.OverlayPositions[key] = form.Location;
+            }
+
             _settings.OverlayScaleFactors ??= new Dictionary<string, float>();
             _settings.OverlayScaleFactors[key] = form.ScaleFactor;
             _settings.OverlaySizes ??= new Dictionary<string, Size>();
@@ -608,6 +702,7 @@ namespace ToNRoundCounter.Infrastructure.Services
                 OverlayShortcutForm.ShortcutButton.CoordinatedBrainToggle => ShortcutButton.CoordinatedBrainToggle,
                 OverlayShortcutForm.ShortcutButton.AfkDetectionToggle => ShortcutButton.AfkDetectionToggle,
                 OverlayShortcutForm.ShortcutButton.HideUntilRoundEnd => ShortcutButton.HideUntilRoundEnd,
+                OverlayShortcutForm.ShortcutButton.EditModeToggle => ShortcutButton.EditModeToggle,
                 _ => throw new ArgumentException($"Unknown shortcut button: {e.Button}")
             };
 
@@ -663,6 +758,8 @@ namespace ToNRoundCounter.Infrastructure.Services
                 OverlaySection.Shortcuts => _settings.OverlayShowShortcuts,
                 OverlaySection.Clock => _settings.OverlayShowClock,
                 OverlaySection.InstanceTimer => _settings.OverlayShowInstanceTimer,
+                OverlaySection.InstanceMembers => _settings.OverlayShowInstanceMembers,
+                OverlaySection.Voting => _settings.OverlayShowVoting,
                 _ => false
             };
         }

@@ -2,11 +2,15 @@ using System;
 using System.Drawing;
 using System.Globalization;
 using System.Windows.Forms;
-using SharpDX.Direct2D1;
-using SharpDX.DirectWrite;
-using SharpDX.Mathematics.Interop;
+using Vortice;
+using Vortice.DCommon;
+using Vortice.Direct2D1;
+using Vortice.DirectWrite;
+using Vortice.Mathematics;
 using ToNRoundCounter.UI.DirectX;
-using DWFontStyle = SharpDX.DirectWrite.FontStyle;
+using DWFontStyle = Vortice.DirectWrite.FontStyle;
+using Color = System.Drawing.Color;
+using Size = System.Drawing.Size;
 
 namespace ToNRoundCounter.UI
 {
@@ -27,28 +31,30 @@ namespace ToNRoundCounter.UI
             string speedText = velocity.ToString("00.00", CultureInfo.InvariantCulture);
             string afkText = $"AFK: {clampedIdle:F1}秒";
             velocitySurface.SetVelocityText(speedText, afkText);
+            
+            // Adjust parent form size to content after updating velocity readings
+            AdjustSizeToContent();
         }
 
         private sealed class VelocityOverlaySurface : DirectXOverlaySurface
         {
-            private readonly Color speedOnColor = Color.FromArgb(255, 255, 180, 70);
-            private readonly Color speedOffColor = Color.FromArgb(70, 120, 70, 20);
+            private readonly Color speedColor = Color.FromArgb(255, 255, 180, 70);
             private readonly Color afkColor = Color.White;
-            private readonly float digitWidth = 34f;
-            private readonly float digitHeight = 58f;
-            private readonly float digitSpacing = 8f;
-            private readonly float rowSpacing = 6f;
+            private readonly float speedFontSize = 18f;
             private readonly float afkFontSize = 10.5f;
+            private readonly float rowSpacing = 6f;
 
             private string speedText = "00.00";
             private string afkText = string.Empty;
+            private float speedTextWidth;
+            private float speedTextHeight;
             private float afkTextWidth;
             private float afkTextHeight;
 
-            private TextFormat? afkFormat;
-            private SolidColorBrush? speedOnBrush;
-            private SolidColorBrush? speedOffBrush;
-            private SolidColorBrush? afkBrush;
+            private IDWriteTextFormat? speedFormat;
+            private IDWriteTextFormat? afkFormat;
+            private ID2D1SolidColorBrush? speedBrush;
+            private ID2D1SolidColorBrush? afkBrush;
 
             public VelocityOverlaySurface()
             {
@@ -60,10 +66,28 @@ namespace ToNRoundCounter.UI
 
             public void SetVelocityText(string speed, string afk)
             {
-                speedText = speed ?? string.Empty;
-                afkText = afk ?? string.Empty;
+                string nextSpeed = speed ?? string.Empty;
+                string nextAfk = afk ?? string.Empty;
+                if (string.Equals(speedText, nextSpeed, StringComparison.Ordinal) &&
+                    string.Equals(afkText, nextAfk, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                speedText = nextSpeed;
+                afkText = nextAfk;
                 RecalculatePreferredSize();
                 Invalidate();
+            }
+
+            protected override void OnVisibleChanged(EventArgs e)
+            {
+                base.OnVisibleChanged(e);
+
+                if (Visible)
+                {
+                    Invalidate();
+                }
             }
 
             protected override void OnFontChanged(EventArgs e)
@@ -73,28 +97,31 @@ namespace ToNRoundCounter.UI
                 RecalculatePreferredSize();
             }
 
-            protected override void RenderOverlay(WindowRenderTarget target)
+            protected override void RenderOverlay(ID2D1HwndRenderTarget target)
             {
-                if (afkFormat == null)
+                if (speedFormat == null || afkFormat == null)
                 {
                     EnsureTextFormat();
                 }
 
-                var onBrush = GetBrush(ref speedOnBrush, ToRawColor(speedOnColor));
-                var offBrush = GetBrush(ref speedOffBrush, ToRawColor(speedOffColor));
-                var afkTextBrush = GetBrush(ref afkBrush, ToRawColor(afkColor));
+                var speedBrushLocal = GetBrush(ref speedBrush, ToColor4(speedColor));
+                var afkBrushLocal = GetBrush(ref afkBrush, ToColor4(afkColor));
 
                 float x = ContentPadding.Left;
                 float y = ContentPadding.Top;
                 float availableWidth = Math.Max(0f, Width - ContentPadding.Horizontal);
 
-                DirectXSegmentRenderer.Draw(target, speedText, new RawVector2(x, y), digitWidth, digitHeight, digitSpacing, onBrush, offBrush);
+                if (!string.IsNullOrEmpty(speedText) && speedFormat != null && speedTextHeight > 0f)
+                {
+                    var speedRect = new RawRectF(x, y, x + availableWidth, y + speedTextHeight);
+                    target.DrawText(speedText, speedFormat, speedRect, speedBrushLocal, DrawTextOptions.None, MeasuringMode.Natural);
+                    y += speedTextHeight + rowSpacing;
+                }
 
                 if (!string.IsNullOrEmpty(afkText) && afkFormat != null && afkTextHeight > 0f)
                 {
-                    y += digitHeight + rowSpacing;
-                    var textRect = new RawRectangleF(x, y, x + availableWidth, y + afkTextHeight);
-                    target.DrawText(afkText, afkFormat, textRect, afkTextBrush, DrawTextOptions.None, MeasuringMode.Natural);
+                    var textRect = new RawRectF(x, y, x + availableWidth, y + afkTextHeight);
+                    target.DrawText(afkText, afkFormat, textRect, afkBrushLocal, DrawTextOptions.None, MeasuringMode.Natural);
                 }
             }
 
@@ -102,14 +129,14 @@ namespace ToNRoundCounter.UI
             {
                 if (disposing)
                 {
-                    speedOnBrush?.Dispose();
-                    speedOnBrush = null;
-
-                    speedOffBrush?.Dispose();
-                    speedOffBrush = null;
+                    speedBrush?.Dispose();
+                    speedBrush = null;
 
                     afkBrush?.Dispose();
                     afkBrush = null;
+
+                    speedFormat?.Dispose();
+                    speedFormat = null;
 
                     afkFormat?.Dispose();
                     afkFormat = null;
@@ -120,31 +147,42 @@ namespace ToNRoundCounter.UI
 
             private void EnsureTextFormat()
             {
+                speedFormat?.Dispose();
                 afkFormat?.Dispose();
                 string fontFamily = Font?.FontFamily?.Name ?? "Segoe UI";
-                afkFormat = new TextFormat(DirectWriteFactory, fontFamily, FontWeight.Regular, DWFontStyle.Normal, FontStretch.Normal, afkFontSize)
-                {
-                    TextAlignment = TextAlignment.Leading,
-                    ParagraphAlignment = ParagraphAlignment.Near,
-                };
+                speedFormat = DirectWriteFactory.CreateTextFormat(fontFamily, FontWeight.Regular, DWFontStyle.Normal, FontStretch.Normal, speedFontSize);
+                speedFormat.TextAlignment = TextAlignment.Leading;
+                speedFormat.ParagraphAlignment = ParagraphAlignment.Near;
+                afkFormat = DirectWriteFactory.CreateTextFormat(fontFamily, FontWeight.Regular, DWFontStyle.Normal, FontStretch.Normal, afkFontSize);
+                afkFormat.TextAlignment = TextAlignment.Leading;
+                afkFormat.ParagraphAlignment = ParagraphAlignment.Near;
             }
 
             private void RecalculatePreferredSize()
             {
+                speedTextWidth = 0f;
+                speedTextHeight = 0f;
                 afkTextWidth = 0f;
                 afkTextHeight = 0f;
 
+                if (speedFormat != null && !string.IsNullOrEmpty(speedText))
+                {
+                    using var layout = DirectWriteFactory.CreateTextLayout(speedText, speedFormat, float.MaxValue, float.MaxValue);
+                    var metrics = layout.Metrics;
+                    speedTextWidth = metrics.WidthIncludingTrailingWhitespace;
+                    speedTextHeight = metrics.Height;
+                }
+
                 if (afkFormat != null && !string.IsNullOrEmpty(afkText))
                 {
-                    using var layout = new TextLayout(DirectWriteFactory, afkText, afkFormat, float.MaxValue, float.MaxValue);
+                    using var layout = DirectWriteFactory.CreateTextLayout(afkText, afkFormat, float.MaxValue, float.MaxValue);
                     var metrics = layout.Metrics;
                     afkTextWidth = metrics.WidthIncludingTrailingWhitespace;
                     afkTextHeight = metrics.Height;
                 }
 
-                float speedWidth = DirectXSegmentRenderer.Measure(speedText, digitWidth, digitSpacing);
-                float contentWidth = Math.Max(speedWidth, afkTextWidth);
-                float contentHeight = digitHeight;
+                float contentWidth = Math.Max(speedTextWidth, afkTextWidth);
+                float contentHeight = speedTextHeight;
                 if (afkTextHeight > 0f)
                 {
                     contentHeight += rowSpacing + afkTextHeight;

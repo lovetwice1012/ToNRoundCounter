@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
@@ -40,7 +41,7 @@ namespace ToNRoundCounter
                 try
                 {
                     var exporter = new RoundLogExporter(Log.Logger);
-                    Task.Run(() => exporter.ExportAsync(exportOptions!)).GetAwaiter().GetResult();
+                    exporter.ExportAsync(exportOptions!).GetAwaiter().GetResult();
                     return;
                 }
                 catch (Exception ex)
@@ -59,21 +60,31 @@ namespace ToNRoundCounter
 
             var bootstrap = LoadBootstrapAsync().GetAwaiter().GetResult();
 
-            var useDefaultLogPath = string.IsNullOrWhiteSpace(bootstrap.LogFilePath);
-            var defaultLogPath = Path.Combine("logs", $"log-{DateTime.Now:yyyyMMdd_HHmmss}.txt");
-            var logPath = useDefaultLogPath ? defaultLogPath : bootstrap.LogFilePath!;
+            var launchTimestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string logPath;
+            if (string.IsNullOrWhiteSpace(bootstrap.LogFilePath))
+            {
+                logPath = Path.Combine("logs", $"log-{launchTimestamp}.txt");
+            }
+            else
+            {
+                var logDir = Path.GetDirectoryName(bootstrap.LogFilePath!) ?? "logs";
+                var logBase = Path.GetFileNameWithoutExtension(bootstrap.LogFilePath!);
+                var logExt = Path.GetExtension(bootstrap.LogFilePath!);
+                if (string.IsNullOrEmpty(logExt)) logExt = ".txt";
+                logPath = Path.Combine(logDir, $"{logBase}{launchTimestamp}{logExt}");
+            }
             var wsIp = string.IsNullOrWhiteSpace(bootstrap.WebSocketIp) ? "127.0.0.1" : bootstrap.WebSocketIp;
             var wsUrl = $"ws://{wsIp}:11398";
 
             var loggerConfiguration = new LoggerConfiguration()
                 .MinimumLevel.Debug()
-                .WriteTo.Console();
-
-            loggerConfiguration = useDefaultLogPath
-                ? loggerConfiguration.WriteTo.File(logPath)
-                : loggerConfiguration.WriteTo.File(logPath, rollingInterval: RollingInterval.Day);
+                .WriteTo.Console()
+                .WriteTo.File(logPath);
 
             Log.Logger = loggerConfiguration.CreateLogger();
+
+            CompressOldLogs(Path.GetDirectoryName(logPath) ?? "logs", TimeSpan.FromDays(3));
 
             var dataDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data");
             Directory.CreateDirectory(dataDirectory);
@@ -136,7 +147,7 @@ namespace ToNRoundCounter
             services.AddSingleton<IWebSocketClient>(sp => new WebSocketClient(wsUrl, sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ICancellationProvider>(), sp.GetRequiredService<IEventLogger>()));
             
             // Cloud WebSocket Client for ToNRoundCounter Cloud integration
-            var cloudWsUrl = string.IsNullOrWhiteSpace(bootstrap.CloudWebSocketUrl) ? "ws://localhost:8080" : bootstrap.CloudWebSocketUrl;
+            var cloudWsUrl = string.IsNullOrWhiteSpace(bootstrap.CloudWebSocketUrl) ? "ws://localhost:3000/ws" : bootstrap.CloudWebSocketUrl;
             var cloudApiKey = bootstrap.CloudApiKey;
             var cloudPlayerName = bootstrap.CloudPlayerName;
             eventLogger.LogEvent("Bootstrap", $"Cloud WebSocket endpoint: {cloudWsUrl}");
@@ -158,6 +169,9 @@ namespace ToNRoundCounter
                 sp.GetRequiredService<IAppSettings>(),
                 sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<IInputSender, NativeInputSender>();
+            services.AddSingleton<IOscRepeaterService>(sp => new OscRepeaterService(
+                sp.GetRequiredService<IEventLogger>(),
+                sp.GetRequiredService<ICancellationProvider>()));
             services.AddSingleton<IErrorReporter>(sp => new ErrorReporter(sp.GetRequiredService<IEventLogger>(), sp.GetRequiredService<IEventBus>()));
             services.AddSingleton<IHttpClient, HttpClientWrapper>();
             services.AddSingleton<IUiDispatcher, WinFormsDispatcher>();
@@ -181,8 +195,9 @@ namespace ToNRoundCounter
                 sp.GetRequiredService<IAppSettings>(),
                 sp.GetRequiredService<IEventLogger>(),
                 sp.GetRequiredService<IHttpClient>(),
-                sp.GetRequiredService<CloudWebSocketClient>()));
-            Task.Run(() => ModuleLoader.LoadModules(services, moduleHost, eventLogger, eventBus, safeMode: safeModeActive)).GetAwaiter().GetResult();
+                sp.GetRequiredService<CloudWebSocketClient>(),
+                sp.GetRequiredService<ICancellationProvider>()));
+            ModuleLoader.LoadModules(services, moduleHost, eventLogger, eventBus, safeMode: safeModeActive);
             eventLogger.LogEvent("Bootstrap", $"Module discovery complete. Discovered modules: {moduleHost.Modules.Count}");
             services.AddSingleton<MainForm>(sp => new MainForm(
                 sp.GetRequiredService<IWebSocketClient>(),
@@ -203,12 +218,13 @@ namespace ToNRoundCounter
                 sp.GetRequiredService<CloudWebSocketClient>(),
                 sp.GetRequiredService<ISoundManager>(),
                 sp.GetRequiredService<IOverlayManager>(),
-                sp.GetRequiredService<IAutoSuicideCoordinator>()));
+                sp.GetRequiredService<IAutoSuicideCoordinator>(),
+                sp.GetRequiredService<IOscRepeaterService>()));
 
             eventLogger.LogEvent("Bootstrap", "Building service provider (pre-build notifications).");
             moduleHost.NotifyServiceProviderBuilding(new ModuleServiceProviderBuildContext(services, eventLogger, eventBus));
 
-            var provider = Task.Run(services.BuildServiceProvider).GetAwaiter().GetResult();
+            var provider = services.BuildServiceProvider();
             eventLogger.LogEvent("Bootstrap", "Service provider built successfully.");
             moduleHost.NotifyServiceProviderBuilt(new ModuleServiceProviderContext(provider, eventLogger, eventBus));
             provider.GetRequiredService<IErrorReporter>().Register();
@@ -252,11 +268,11 @@ namespace ToNRoundCounter
                 throw new InvalidOperationException("Crash report test triggered");
             }
 
-            var launches = Task.Run(() => BuildAutoLaunchPlans(autoLaunchPath, autoLaunchArguments, appSettings)).GetAwaiter().GetResult();
+            var launches = BuildAutoLaunchPlans(autoLaunchPath, autoLaunchArguments, appSettings);
 
             if (launches.Count > 0)
             {
-                Task.Run(() => moduleHost.NotifyAutoLaunchEvaluating(new ModuleAutoLaunchEvaluationContext(launches, appSettings, provider))).GetAwaiter().GetResult();
+                moduleHost.NotifyAutoLaunchEvaluating(new ModuleAutoLaunchEvaluationContext(launches, appSettings, provider));
                 mainForm.Shown += async (s, e) => await Task.Run(() => ExecuteAutoLaunchPlans(launches, moduleHost, eventLogger, provider));
             }
 
@@ -267,7 +283,7 @@ namespace ToNRoundCounter
             moduleHost.NotifyAppRunCompleted(new ModuleAppRunContext(mainForm, provider));
             moduleHost.NotifyAppShutdownStarting(new ModuleAppShutdownContext(provider));
             eventLogger.LogEvent("Bootstrap", "Disposing service provider and shutting down.");
-            Task.Run(() => (provider as IDisposable)?.Dispose()).GetAwaiter().GetResult();
+            (provider as IDisposable)?.Dispose();
             moduleHost.NotifyAppShutdownCompleted(new ModuleAppShutdownContext(provider));
             eventLogger.LogEvent("Bootstrap", "Application shutdown complete.");
         }
@@ -281,7 +297,7 @@ namespace ToNRoundCounter
                     return new AppSettingsData();
                 }
 
-                var json = await Task.Run(() => File.ReadAllText("appsettings.json")).ConfigureAwait(false);
+                var json = await File.ReadAllTextAsync("appsettings.json").ConfigureAwait(false);
                 return JsonConvert.DeserializeObject<AppSettingsData>(json) ?? new AppSettingsData();
             }
             catch
@@ -408,6 +424,43 @@ namespace ToNRoundCounter
                     moduleHost.NotifyAutoLaunchFailed(failureContext);
                     eventLogger.LogEvent("AutoLaunch", $"Failed to start executable ({launch.Origin}): {ex.Message}", Serilog.Events.LogEventLevel.Error);
                 }
+            }
+        }
+
+        private static void CompressOldLogs(string logDirectory, TimeSpan maxAge)
+        {
+            try
+            {
+                if (!Directory.Exists(logDirectory)) return;
+
+                var cutoff = DateTime.Now - maxAge;
+                foreach (var file in Directory.EnumerateFiles(logDirectory, "*.txt"))
+                {
+                    try
+                    {
+                        if (File.GetLastWriteTime(file) >= cutoff) continue;
+
+                        var gzPath = file + ".gz";
+                        if (File.Exists(gzPath)) continue;
+
+                        using (var source = File.OpenRead(file))
+                        using (var destination = File.Create(gzPath))
+                        using (var gz = new GZipStream(destination, CompressionLevel.Optimal))
+                        {
+                            source.CopyTo(gz);
+                        }
+
+                        File.Delete(file);
+                    }
+                    catch
+                    {
+                        // Skip files that are locked or otherwise inaccessible.
+                    }
+                }
+            }
+            catch
+            {
+                // Non-critical: do not let cleanup errors block startup.
             }
         }
     }

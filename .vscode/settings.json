@@ -1,3 +1,7 @@
 {
-    "dotnet.preferCSharpExtension": true
+    "dotnet.preferCSharpExtension": true,
+    "chat.tools.terminal.autoApprove": {
+        "npx tsc": true,
+        "dotnet build": true
+    }
 }

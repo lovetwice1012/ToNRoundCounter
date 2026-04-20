@@ -38,14 +38,25 @@ namespace ToNRoundCounter.Application
             var handlers = StateChanged;
             if (handlers == null)
             {
-                _logger?.LogEvent("StateService", () => $"State change '{reason}' occurred but no subscribers were registered.", LogEventLevel.Debug);
+                if (_logger != null && _logger.IsEnabled(LogEventLevel.Debug))
+                {
+                    _logger.LogEvent("StateService", () => $"State change '{reason}' occurred but no subscribers were registered.", LogEventLevel.Debug);
+                }
                 return;
             }
 
-            var subscriberCount = handlers.GetInvocationList().Length;
-            _logger?.LogEvent("StateService", () => $"Notifying {subscriberCount} subscriber(s) of state change '{reason}'.", LogEventLevel.Debug);
-            handlers.Invoke();
-            _logger?.LogEvent("StateService", () => $"State change '{reason}' notifications completed.", LogEventLevel.Debug);
+            // Avoid GetInvocationList() allocation unless Debug logging is enabled
+            if (_logger != null && _logger.IsEnabled(LogEventLevel.Debug))
+            {
+                var subscriberCount = handlers.GetInvocationList().Length;
+                _logger.LogEvent("StateService", () => $"Notifying {subscriberCount} subscriber(s) of state change '{reason}'.", LogEventLevel.Debug);
+                handlers.Invoke();
+                _logger.LogEvent("StateService", () => $"State change '{reason}' notifications completed.", LogEventLevel.Debug);
+            }
+            else
+            {
+                handlers.Invoke();
+            }
         }
 
         private static string DescribeRound(Round? round)

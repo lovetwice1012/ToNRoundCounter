@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Drawing;
 using System.Windows.Forms;
+using System.Threading;
 using System.Threading.Tasks;
 using ToNRoundCounter.Application;
 using ToNRoundCounter.Infrastructure;
@@ -20,6 +21,7 @@ namespace ToNRoundCounter.UI
     {
         private readonly IAppSettings _settings;
         private readonly CloudWebSocketClient? _cloudClient;
+        private int _cloudClientStartRequested;
 
         private Label languageLabel = null!;
         public ComboBox LanguageComboBox { get; private set; } = null!;
@@ -49,6 +51,7 @@ namespace ToNRoundCounter.UI
         public CheckBox OverlayClockCheckBox { get; private set; } = null!;
         public CheckBox OverlayInstanceTimerCheckBox { get; private set; } = null!;
         public CheckBox OverlayInstanceMembersCheckBox { get; private set; } = null!;
+        public CheckBox OverlayVotingCheckBox { get; private set; } = null!;
         public CheckBox OverlayUnboundTerrorDetailsCheckBox { get; private set; } = null!;
         public TrackBar OverlayOpacityTrackBar { get; private set; } = null!;
         public Label OverlayOpacityValueLabel { get; private set; } = null!;
@@ -190,6 +193,107 @@ namespace ToNRoundCounter.UI
         };
 
 
+        private readonly Dictionary<Control, Point> _originalLocations = new Dictionary<Control, Point>();
+        private Size _originalAutoScrollMinSize;
+
+        public void SetCategoryFilter(SettingsCategory? category)
+        {
+            this.SuspendLayout();
+            try
+            {
+                CacheOriginalLayoutIfNeeded();
+                foreach (Control c in this.Controls)
+                {
+                    if (c.Tag is SettingsCategory cat)
+                    {
+                        c.Visible = !category.HasValue || cat == category.Value;
+                    }
+                }
+                if (category.HasValue)
+                {
+                    ReflowVisibleControls();
+                }
+                else
+                {
+                    RestoreOriginalLayout();
+                }
+            }
+            finally
+            {
+                this.ResumeLayout(true);
+            }
+        }
+
+        private void CacheOriginalLayoutIfNeeded()
+        {
+            if (_originalLocations.Count > 0)
+            {
+                return;
+            }
+            foreach (Control c in this.Controls)
+            {
+                if (c.Tag is SettingsCategory)
+                {
+                    _originalLocations[c] = c.Location;
+                }
+            }
+            _originalAutoScrollMinSize = this.AutoScrollMinSize;
+        }
+
+        private void RestoreOriginalLayout()
+        {
+            foreach (var kv in _originalLocations)
+            {
+                kv.Key.Location = kv.Value;
+            }
+            if (_originalAutoScrollMinSize != Size.Empty)
+            {
+                this.AutoScrollMinSize = _originalAutoScrollMinSize;
+            }
+        }
+
+        private void ReflowVisibleControls()
+        {
+            const int margin = 10;
+            const int columnWidth = 540;
+            int leftX = margin;
+            int y = margin;
+            int maxRight = leftX + columnWidth;
+
+            // 元の配置順 (上→下、同一行は左→右) を維持しつつ、すべて左列に寄せる
+            var visible = new System.Collections.Generic.List<Control>();
+            foreach (Control c in this.Controls)
+            {
+                if (!(c.Tag is SettingsCategory) || !c.Visible)
+                {
+                    continue;
+                }
+                visible.Add(c);
+            }
+            visible.Sort((a, b) =>
+            {
+                Point pa = _originalLocations.TryGetValue(a, out var la) ? la : a.Location;
+                Point pb = _originalLocations.TryGetValue(b, out var lb) ? lb : b.Location;
+                int cmp = pa.Y.CompareTo(pb.Y);
+                if (cmp != 0) return cmp;
+                return pa.X.CompareTo(pb.X);
+            });
+
+            foreach (var c in visible)
+            {
+                c.Location = new Point(leftX, y);
+                y = c.Bottom + margin;
+                if (c.Right > maxRight)
+                {
+                    maxRight = c.Right;
+                }
+            }
+
+            int totalHeight = y + margin;
+            int totalWidth = Math.Max(maxRight + margin, columnWidth + margin * 2);
+            this.AutoScrollMinSize = new Size(totalWidth, totalHeight);
+        }
+
         public SettingsPanel(IAppSettings settings, CloudWebSocketClient? cloudClient = null)
         {
             _settings = settings;
@@ -213,12 +317,14 @@ namespace ToNRoundCounter.UI
             languageLabel.Text = LanguageManager.Translate("言語");
             languageLabel.AutoSize = true;
             languageLabel.Location = new Point(margin, currentY + 4);
+            languageLabel.Tag = SettingsCategory.General;
             this.Controls.Add(languageLabel);
 
             LanguageComboBox = new ComboBox();
             LanguageComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
             LanguageComboBox.Location = new Point(languageLabel.Right + 10, currentY);
             LanguageComboBox.Width = columnWidth - (LanguageComboBox.Left - margin);
+            LanguageComboBox.Tag = SettingsCategory.General;
             this.Controls.Add(LanguageComboBox);
             LoadLanguageOptions(_settings.Language);
             currentY += LanguageComboBox.Height + margin;
@@ -227,12 +333,14 @@ namespace ToNRoundCounter.UI
             themeLabel.Text = LanguageManager.Translate("テーマ");
             themeLabel.AutoSize = true;
             themeLabel.Location = new Point(margin, currentY + 4);
+            themeLabel.Tag = SettingsCategory.General;
             this.Controls.Add(themeLabel);
 
             ThemeComboBox = new ComboBox();
             ThemeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
             ThemeComboBox.Location = new Point(themeLabel.Right + 10, currentY);
             ThemeComboBox.Width = columnWidth - (ThemeComboBox.Left - margin);
+            ThemeComboBox.Tag = SettingsCategory.General;
             this.Controls.Add(ThemeComboBox);
             LoadThemeOptions(Theme.RegisteredThemes, _settings.ThemeKey);
             currentY += ThemeComboBox.Height + margin;
@@ -241,6 +349,7 @@ namespace ToNRoundCounter.UI
             grpOsc.Text = LanguageManager.Translate("OSC設定");
             grpOsc.Location = new Point(margin, currentY);
             grpOsc.Size = new Size(columnWidth, 60);
+            grpOsc.Tag = SettingsCategory.General;
             this.Controls.Add(grpOsc);
 
             Label wsIpLabel = new Label();
@@ -272,6 +381,7 @@ namespace ToNRoundCounter.UI
             grpAutoSuicide.Text = LanguageManager.Translate("自動自殺モード");
             grpAutoSuicide.Location = new Point(margin * 2 + columnWidth, rightColumnY);
             grpAutoSuicide.Size = new Size(columnWidth, 100);
+            grpAutoSuicide.Tag = SettingsCategory.AutoSuicide;
             this.Controls.Add(grpAutoSuicide);
 
             int autoInnerY = 20;
@@ -302,7 +412,13 @@ namespace ToNRoundCounter.UI
                 "https://github.com/lovetwice1012/ToNRoundCounter/blob/master/docs/auto-suicide-detail-settings.md");
             autoSuicideDetailDocLink.LinkClicked += (s, e) =>
             {
-                var psi = new ProcessStartInfo(e.Link.LinkData.ToString()) { UseShellExecute = true };
+                string? url = e.Link?.LinkData?.ToString();
+                if (string.IsNullOrWhiteSpace(url))
+                {
+                    return;
+                }
+
+                var psi = new ProcessStartInfo(url) { UseShellExecute = true };
                 Process.Start(psi);
             };
             grpAutoSuicide.Controls.Add(autoSuicideDetailDocLink);
@@ -338,8 +454,8 @@ namespace ToNRoundCounter.UI
             autoSuicideRoundListBox.Items.Add("アンバウンド");
             for (int i = 0; i < autoSuicideRoundListBox.Items.Count; i++)
             {
-                string item = autoSuicideRoundListBox.Items[i].ToString();
-                autoSuicideRoundListBox.SetItemChecked(i, _settings.AutoSuicideRoundTypes.Contains(item));
+                string item = autoSuicideRoundListBox.Items[i]?.ToString() ?? string.Empty;
+                autoSuicideRoundListBox.SetItemChecked(i, !string.IsNullOrEmpty(item) && _settings.AutoSuicideRoundTypes.Contains(item));
             }
             grpAutoSuicide.Controls.Add(autoSuicideRoundListBox);
             autoSuicideRoundListBox.ItemCheck += (s, e) =>
@@ -385,7 +501,11 @@ namespace ToNRoundCounter.UI
                 CleanAutoSuicideDetailRules();
                 var preset = new AutoSuicidePreset
                 {
-                    RoundTypes = autoSuicideRoundListBox.CheckedItems.Cast<object>().Select(i => i.ToString()).ToList(),
+                    RoundTypes = autoSuicideRoundListBox.CheckedItems.Cast<object>()
+                        .Select(i => i?.ToString())
+                        .Where(i => !string.IsNullOrEmpty(i))
+                        .Cast<string>()
+                        .ToList(),
                     DetailCustom = GetCustomAutoSuicideLines(),
                     Fuzzy = autoSuicideFuzzyCheckBox.Checked
                 };
@@ -408,8 +528,8 @@ namespace ToNRoundCounter.UI
                     var preset = _settings.AutoSuicidePresets[name];
                     for (int i = 0; i < autoSuicideRoundListBox.Items.Count; i++)
                     {
-                        string item = autoSuicideRoundListBox.Items[i].ToString();
-                        autoSuicideRoundListBox.SetItemChecked(i, preset.RoundTypes.Contains(item));
+                        string item = autoSuicideRoundListBox.Items[i]?.ToString() ?? string.Empty;
+                        autoSuicideRoundListBox.SetItemChecked(i, !string.IsNullOrEmpty(item) && preset.RoundTypes.Contains(item));
                     }
                     autoSuicideFuzzyCheckBox.Checked = preset.Fuzzy;
                     autoSuicideAutoRuleCount = 0;
@@ -818,6 +938,7 @@ namespace ToNRoundCounter.UI
             grpOverlay.Text = LanguageManager.Translate("オーバーレイ設定");
             grpOverlay.Location = new Point(thirdColumnX, thirdColumnY);
             grpOverlay.Size = new Size(columnWidth, 230);
+            grpOverlay.Tag = SettingsCategory.Overlay;
             this.Controls.Add(grpOverlay);
 
             int overlayInnerMargin = 10;
@@ -947,11 +1068,21 @@ namespace ToNRoundCounter.UI
             OverlayInstanceMembersCheckBox.Text = LanguageManager.Translate("インスタンスメンバーを表示");
             OverlayInstanceMembersCheckBox.AutoSize = true;
             OverlayInstanceMembersCheckBox.Location = new Point(overlayInnerMargin, overlayInnerY);
-            OverlayInstanceMembersCheckBox.Checked = false;
-            OverlayInstanceMembersCheckBox.Enabled = false;
+            OverlayInstanceMembersCheckBox.Checked = _settings.OverlayShowInstanceMembers;
+            OverlayInstanceMembersCheckBox.Enabled = _settings.CloudSyncEnabled;
             grpOverlay.Controls.Add(OverlayInstanceMembersCheckBox);
 
-            overlayInnerY = OverlayInstanceMembersCheckBox.Bottom + 12;
+            overlayInnerY = OverlayInstanceMembersCheckBox.Bottom + 8;
+
+            OverlayVotingCheckBox = new CheckBox();
+            OverlayVotingCheckBox.Text = LanguageManager.Translate("投票状況を表示");
+            OverlayVotingCheckBox.AutoSize = true;
+            OverlayVotingCheckBox.Location = new Point(overlayInnerMargin, overlayInnerY);
+            OverlayVotingCheckBox.Checked = _settings.OverlayShowVoting;
+            OverlayVotingCheckBox.Enabled = _settings.CloudSyncEnabled;
+            grpOverlay.Controls.Add(OverlayVotingCheckBox);
+
+            overlayInnerY = OverlayVotingCheckBox.Bottom + 12;
 
             var overlayOpacityLabel = new Label();
             overlayOpacityLabel.Text = LanguageManager.Translate("透明度");
@@ -988,6 +1119,7 @@ namespace ToNRoundCounter.UI
             roundLogExportGroup.Text = LanguageManager.Translate("ラウンドログエクスポート");
             roundLogExportGroup.Location = new Point(thirdColumnX, thirdColumnY);
             roundLogExportGroup.Size = new Size(columnWidth, 180);
+            roundLogExportGroup.Tag = SettingsCategory.Recording;
             this.Controls.Add(roundLogExportGroup);
 
             int exportInnerMargin = 10;
@@ -1013,13 +1145,13 @@ namespace ToNRoundCounter.UI
             grpAutoRecording.Text = LanguageManager.Translate("自動録画設定");
             grpAutoRecording.Location = new Point(thirdColumnX, thirdColumnY);
             grpAutoRecording.Size = new Size(columnWidth, 360);
+            grpAutoRecording.Tag = SettingsCategory.Recording;
             this.Controls.Add(grpAutoRecording);
 
             int autoRecordingInnerY = 25;
 
             AutoRecordingEnabledCheckBox = new CheckBox();
-            AutoRecordingEnabledCheckBox.Text = LanguageManager.Translate("指定条件でVRChatを自動録画する(開発中)");
-            AutoRecordingEnabledCheckBox.Enabled = false;
+            AutoRecordingEnabledCheckBox.Text = LanguageManager.Translate("指定条件でVRChatを自動録画する");
             AutoRecordingEnabledCheckBox.Checked = false;
             AutoRecordingEnabledCheckBox.AutoSize = true;
             AutoRecordingEnabledCheckBox.Location = new Point(innerMargin, autoRecordingInnerY);
@@ -1326,6 +1458,7 @@ namespace ToNRoundCounter.UI
             grpDisplay.Text = LanguageManager.Translate("表示設定");
             grpDisplay.Location = new Point(margin, currentY);
             grpDisplay.Size = new Size(columnWidth, 100);
+            grpDisplay.Tag = SettingsCategory.General;
             this.Controls.Add(grpDisplay);
 
             ShowStatsCheckBox = new CheckBox();
@@ -1352,6 +1485,7 @@ namespace ToNRoundCounter.UI
             grpFilter.Text = LanguageManager.Translate("フィルター設定");
             grpFilter.Location = new Point(margin, currentY);
             grpFilter.Size = new Size(columnWidth, 70);
+            grpFilter.Tag = SettingsCategory.General;
             this.Controls.Add(grpFilter);
 
             int innerY = 20;
@@ -1397,6 +1531,7 @@ namespace ToNRoundCounter.UI
             grpAutoLaunch.Text = LanguageManager.Translate("自動起動設定");
             grpAutoLaunch.Location = new Point(margin * 2 + columnWidth, rightColumnY);
             grpAutoLaunch.Size = new Size(columnWidth, 240);
+            grpAutoLaunch.Tag = SettingsCategory.Other;
             this.Controls.Add(grpAutoLaunch);
 
             int autoLaunchInnerY = 25;
@@ -1498,6 +1633,7 @@ namespace ToNRoundCounter.UI
             grpItemMusic.Text = LanguageManager.Translate("アイテム音楽ギミック");
             grpItemMusic.Location = new Point(margin * 2 + columnWidth, rightColumnY);
             grpItemMusic.Size = new Size(columnWidth, 270);
+            grpItemMusic.Tag = SettingsCategory.Overlay;
             this.Controls.Add(grpItemMusic);
 
             int itemMusicInnerY = 25;
@@ -1615,6 +1751,7 @@ namespace ToNRoundCounter.UI
             grpRoundBgm.Text = LanguageManager.Translate("ラウンド/テラーBGM設定");
             grpRoundBgm.Location = new Point(margin * 2 + columnWidth, rightColumnY);
             grpRoundBgm.Size = new Size(columnWidth, 260);
+            grpRoundBgm.Tag = SettingsCategory.Overlay;
             this.Controls.Add(grpRoundBgm);
 
             int roundBgmInnerY = 25;
@@ -1747,6 +1884,7 @@ namespace ToNRoundCounter.UI
             grpAdditional.Text = LanguageManager.Translate("追加設定");
             grpAdditional.Location = new Point(margin, currentY);
             grpAdditional.Size = new Size(columnWidth, 200);
+            grpAdditional.Tag = SettingsCategory.General;
             this.Controls.Add(grpAdditional);
 
             innerY = 20;
@@ -1810,6 +1948,7 @@ namespace ToNRoundCounter.UI
             grpBg.Text = LanguageManager.Translate("背景色設定");
             grpBg.Location = new Point(margin, currentY);
             grpBg.Size = new Size(columnWidth, 120);
+            grpBg.Tag = SettingsCategory.General;
             this.Controls.Add(grpBg);
 
             innerY = 20;
@@ -1892,6 +2031,7 @@ namespace ToNRoundCounter.UI
             grpApiKey.Text = LanguageManager.Translate("ToNRoundCounter-Cloudの設定");
             grpApiKey.Location = new Point(margin, currentY);
             grpApiKey.Size = new Size(columnWidth, 300);
+            grpApiKey.Tag = SettingsCategory.Other;
             this.Controls.Add(grpApiKey);
 
             Label apiKeyDescription = new Label();
@@ -1910,7 +2050,8 @@ namespace ToNRoundCounter.UI
             {
                 try
                 {
-                    if (string.IsNullOrEmpty(_settings.CloudPlayerName))
+                    var cloudPlayerName = CloudPlayerNameTextBox.Text?.Trim() ?? string.Empty;
+                    if (string.IsNullOrEmpty(cloudPlayerName))
                     {
                         MessageBox.Show(
                             LanguageManager.Translate("クラウドプレイヤー名を設定してください。"),
@@ -1921,7 +2062,7 @@ namespace ToNRoundCounter.UI
                         return;
                     }
 
-                    if (string.IsNullOrEmpty(_settings.apikey))
+                    if (string.IsNullOrEmpty(_settings.ApiKey))
                     {
                         MessageBox.Show(
                             LanguageManager.Translate("APIキーを設定してください。"),
@@ -1944,16 +2085,67 @@ namespace ToNRoundCounter.UI
                         return;
                     }
 
+                    var endpoint = CloudWebSocketUrlTextBox.Text?.Trim() ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(endpoint))
+                    {
+                        try
+                        {
+                            _cloudClient.UpdateEndpoint(endpoint);
+                        }
+                        catch (UriFormatException)
+                        {
+                            MessageBox.Show(
+                                LanguageManager.Translate("Cloud WebSocket URLの形式が正しくありません。"),
+                                LanguageManager.Translate("エラー"),
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Warning
+                            );
+                            return;
+                        }
+                    }
+
+                    using (var connectTimeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(8)))
+                    {
+                        var connected = await EnsureCloudClientConnectedAsync(TimeSpan.FromSeconds(8), connectTimeoutCts.Token).ConfigureAwait(true);
+                        if (!connected)
+                        {
+                            MessageBox.Show(
+                                LanguageManager.Translate("クラウドサーバーに接続できませんでした。Cloud WebSocket URL とサーバー起動状態を確認してください。"),
+                                LanguageManager.Translate("エラー"),
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Warning
+                            );
+                            return;
+                        }
+                    }
+
                     // ワンタイムトークンを生成
+                    using var tokenTimeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                     var (token, loginUrl) = await _cloudClient.GenerateOneTimeTokenAsync(
-                        _settings.CloudPlayerName,
-                        _settings.apikey
+                        cloudPlayerName,
+                        _settings.ApiKey,
+                        tokenTimeoutCts.Token
                     );
 
-                    // ダッシュボードを開く（ローカルフロントエンド用のURLに変更）
-                    string dashboardUrl = $"http://localhost:8080/login?token={token}";
+                    // Prefer backend-provided login URL; fallback to local dashboard URL.
+                    string dashboardUrl = !string.IsNullOrWhiteSpace(loginUrl)
+                        ? loginUrl
+                        : $"http://localhost:8080/login?token={Uri.EscapeDataString(token)}";
+
+                    _settings.CloudPlayerName = cloudPlayerName;
+                    await _settings.SaveAsync();
+
                     var psi = new ProcessStartInfo(dashboardUrl) { UseShellExecute = true };
                     Process.Start(psi);
+                }
+                catch (OperationCanceledException)
+                {
+                    MessageBox.Show(
+                        LanguageManager.Translate("ダッシュボード接続トークンの生成がタイムアウトしました。時間をおいて再試行してください。"),
+                        LanguageManager.Translate("エラー"),
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning
+                    );
                 }
                 catch (Exception ex)
                 {
@@ -1973,6 +2165,11 @@ namespace ToNRoundCounter.UI
             CloudSyncEnabledCheckBox.AutoSize = true;
             CloudSyncEnabledCheckBox.Location = new Point(innerMargin2, apiInnerY);
             CloudSyncEnabledCheckBox.Checked = _settings.CloudSyncEnabled;
+            CloudSyncEnabledCheckBox.CheckedChanged += (s, e) =>
+            {
+                OverlayInstanceMembersCheckBox.Enabled = CloudSyncEnabledCheckBox.Checked;
+                OverlayVotingCheckBox.Enabled = CloudSyncEnabledCheckBox.Checked;
+            };
             grpApiKey.Controls.Add(CloudSyncEnabledCheckBox);
             apiInnerY += CloudSyncEnabledCheckBox.Height + 10;
 
@@ -2021,7 +2218,7 @@ namespace ToNRoundCounter.UI
 
             // APIキー生成/再生成ボタン
             Button generateApiKeyButton = new Button();
-            generateApiKeyButton.Text = string.IsNullOrEmpty(_settings.apikey)
+            generateApiKeyButton.Text = string.IsNullOrEmpty(_settings.ApiKey)
                 ? LanguageManager.Translate("APIキーを生成")
                 : LanguageManager.Translate("APIキーを再生成");
             generateApiKeyButton.AutoSize = true;
@@ -2052,8 +2249,27 @@ namespace ToNRoundCounter.UI
                         return;
                     }
 
+                    var endpoint = CloudWebSocketUrlTextBox.Text?.Trim() ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(endpoint))
+                    {
+                        try
+                        {
+                            _cloudClient.UpdateEndpoint(endpoint);
+                        }
+                        catch (UriFormatException)
+                        {
+                            MessageBox.Show(
+                                LanguageManager.Translate("Cloud WebSocket URLの形式が正しくありません。"),
+                                LanguageManager.Translate("エラー"),
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Warning
+                            );
+                            return;
+                        }
+                    }
+
                     var confirmResult = MessageBox.Show(
-                        string.IsNullOrEmpty(_settings.apikey)
+                        string.IsNullOrEmpty(_settings.ApiKey)
                             ? LanguageManager.Translate("新しいAPIキーを生成しますか?")
                             : LanguageManager.Translate("APIキーを再生成すると、古いAPIキーは無効になります。続行しますか?"),
                         LanguageManager.Translate("確認"),
@@ -2066,23 +2282,28 @@ namespace ToNRoundCounter.UI
 
                     try
                     {
-                        // 既存のCloudWebSocketClientを使用してAPIキー生成
-                        var registerTask = _cloudClient.RegisterUserAsync(
-                            CloudPlayerNameTextBox.Text,
-                            System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0.0"
-                        );
-
-                        var registerTimeout = Task.Delay(15000); // 15秒のタイムアウト
-                        var completedRegisterTask = await Task.WhenAny(registerTask, registerTimeout);
-
-                        if (completedRegisterTask == registerTimeout)
+                        using (var connectTimeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(8)))
                         {
-                            throw new TimeoutException("APIキー生成リクエストがタイムアウトしました。\n\n" +
-                                "レスポンスが返ってきません。\n" +
-                                "アプリを再起動してから、もう一度お試しください。");
+                            var connected = await EnsureCloudClientConnectedAsync(TimeSpan.FromSeconds(8), connectTimeoutCts.Token).ConfigureAwait(true);
+                            if (!connected)
+                            {
+                                MessageBox.Show(
+                                    LanguageManager.Translate("クラウドサーバーに接続できませんでした。Cloud WebSocket URL とサーバー起動状態を確認してください。"),
+                                    LanguageManager.Translate("エラー"),
+                                    MessageBoxButtons.OK,
+                                    MessageBoxIcon.Warning
+                                );
+                                return;
+                            }
                         }
 
-                        var (userId, apiKey) = await registerTask;
+                        // 既存のCloudWebSocketClientを使用してAPIキー生成
+                        using var registerTimeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                        var (userId, apiKey) = await _cloudClient.RegisterUserAsync(
+                            CloudPlayerNameTextBox.Text,
+                            System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0.0",
+                            registerTimeoutCts.Token
+                        );
 
                         // UIスレッドで更新（読み取り専用でも表示を確実に更新）
                         if (apiKeyTextBox.InvokeRequired)
@@ -2103,7 +2324,7 @@ namespace ToNRoundCounter.UI
                             apiKeyTextBox.Refresh();
                         }
 
-                        _settings.apikey = apiKey;
+                        _settings.ApiKey = apiKey;
                         _settings.CloudPlayerName = CloudPlayerNameTextBox.Text.Trim();
 
                         // 設定を永続化
@@ -2127,6 +2348,15 @@ namespace ToNRoundCounter.UI
                         {
                             generateApiKeyButton.Text = LanguageManager.Translate("APIキーを再生成");
                         }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        MessageBox.Show(
+                            "APIキー生成リクエストがタイムアウトしました。\n\nレスポンスが返ってきません。\nアプリを再起動してから、もう一度お試しください。",
+                            LanguageManager.Translate("エラー"),
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning
+                        );
                     }
                     catch (Exception ex)
                     {
@@ -2163,6 +2393,7 @@ namespace ToNRoundCounter.UI
             grpDiscord.Text = LanguageManager.Translate("Discord通知設定");
             grpDiscord.Location = new Point(margin * 2 + columnWidth, rightColumnY);
             grpDiscord.Size = new Size(columnWidth, 130);
+            grpDiscord.Tag = SettingsCategory.Other;
             this.Controls.Add(grpDiscord);
 
             int discordInnerMargin = 10;
@@ -2201,6 +2432,7 @@ namespace ToNRoundCounter.UI
             ModuleExtensionsPanel.WrapContents = false;
             ModuleExtensionsPanel.Location = new Point(margin, currentY);
             ModuleExtensionsPanel.Width = columnWidth;
+            ModuleExtensionsPanel.Tag = SettingsCategory.Other;
             this.Controls.Add(ModuleExtensionsPanel);
 
             int moduleMargin = margin;
@@ -2214,6 +2446,51 @@ namespace ToNRoundCounter.UI
             this.Width = totalWidth;
             this.Height = Math.Max(Math.Max(currentY, rightColumnY), thirdColumnY) + margin;
 
+        }
+
+        private async Task<bool> EnsureCloudClientConnectedAsync(TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            if (_cloudClient == null)
+            {
+                return false;
+            }
+
+            if (_cloudClient.IsConnected)
+            {
+                return true;
+            }
+
+            // Cloud sync disabled means MainForm did not start the cloud client.
+            // Start it on demand so API key/token operations from settings can still work.
+            if (!_settings.CloudSyncEnabled && Interlocked.Exchange(ref _cloudClientStartRequested, 1) == 0)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _cloudClient.StartAsync().ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Logger?.Warning(ex, "Cloud client start from settings panel failed.");
+                        Interlocked.Exchange(ref _cloudClientStartRequested, 0);
+                    }
+                });
+            }
+
+            var deadline = DateTime.UtcNow + timeout;
+            while (!_cloudClient.IsConnected)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (DateTime.UtcNow >= deadline)
+                {
+                    return false;
+                }
+
+                await Task.Delay(150, cancellationToken).ConfigureAwait(false);
+            }
+
+            return true;
         }
 
         private async void RoundLogExportButton_Click(object? sender, EventArgs e)
@@ -2582,8 +2859,6 @@ namespace ToNRoundCounter.UI
                 new RecordingFormatOption("mov", LanguageManager.Translate("AutoRecording_FormatOption_MOV")),
                 new RecordingFormatOption("wmv", LanguageManager.Translate("AutoRecording_FormatOption_WMV")),
                 new RecordingFormatOption("mpg", LanguageManager.Translate("AutoRecording_FormatOption_MPG")),
-                new RecordingFormatOption("mkv", LanguageManager.Translate("AutoRecording_FormatOption_MKV")),
-                new RecordingFormatOption("flv", LanguageManager.Translate("AutoRecording_FormatOption_FLV")),
                 new RecordingFormatOption("asf", LanguageManager.Translate("AutoRecording_FormatOption_ASF")),
                 new RecordingFormatOption("vob", LanguageManager.Translate("AutoRecording_FormatOption_VOB")),
                 new RecordingFormatOption("gif", LanguageManager.Translate("AutoRecording_FormatOption_GIF")),
@@ -3444,7 +3719,7 @@ namespace ToNRoundCounter.UI
             }
         }
 
-        private static double GetDoubleFromCell(object value, double fallback)
+        private static double GetDoubleFromCell(object? value, double fallback)
         {
             if (value == null)
             {
@@ -3562,7 +3837,7 @@ namespace ToNRoundCounter.UI
             var lines = new List<string>();
             for (int i = 0; i < autoSuicideRoundListBox.Items.Count; i++)
             {
-                string round = autoSuicideRoundListBox.Items[i].ToString();
+                string round = autoSuicideRoundListBox.Items[i]?.ToString() ?? string.Empty;
                 bool isChecked = autoSuicideRoundListBox.GetItemChecked(i);
                 lines.Add($"{round}::{(isChecked ? 1 : 0)}");
             }

@@ -33,22 +33,21 @@ namespace ToNRoundCounter.Infrastructure
                 throw new ArgumentNullException(nameof(messageFactory));
             }
 
-            string? message = null;
-            if (_logger.IsEnabled(level))
+            // Skip entirely when the level is below Serilog's enabled threshold.
+            // This avoids string materialization and SQLite writes for verbose levels
+            // (the persisted log mirrors the Serilog filter).
+            if (!_logger.IsEnabled(level))
             {
-                message = messageFactory();
-                _logger.Write(level, "{EventType} - {Message}", eventType, message);
+                return;
             }
-            else if (_repository != null)
-            {
-                message = messageFactory();
-            }
+
+            string message = messageFactory();
+            _logger.Write(level, "{EventType} - {Message}", eventType, message);
 
             try
             {
                 if (_repository != null)
                 {
-                    message ??= messageFactory();
                     _repository.WriteLog(eventType, message, level, DateTime.UtcNow);
                 }
             }
