@@ -34,8 +34,45 @@ namespace ToNRoundCounter.Infrastructure.Services
         private bool _isEditMode;
         private int _activeOverlayInteractions;
         private DateTime _lastVrChatForegroundTime = DateTime.MinValue;
+        // Cached own-process name; Process.GetCurrentProcess() is expensive and the name never
+        // changes during the app lifetime.
+        private static readonly string CurrentProcessName = GetCurrentProcessNameSafe();
         private string _currentInstanceId = string.Empty;
         private DateTimeOffset _currentInstanceEnteredAt;
+
+        private static string GetCurrentProcessNameSafe()
+        {
+            try
+            {
+                using var p = Process.GetCurrentProcess();
+                return p.ProcessName;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        // Cached HashSet<string> for RoundTypeStats filter. Invalidated by reference-equality
+        // + count check (settings list rarely changes but RefreshRoundStats fires often).
+        private List<string>? _cachedRoundFilterSource;
+        private int _cachedRoundFilterCount;
+        private HashSet<string>? _cachedRoundFilter;
+
+        private HashSet<string> GetRoundFilterSnapshot(List<string> source)
+        {
+            if (ReferenceEquals(_cachedRoundFilterSource, source)
+                && _cachedRoundFilterCount == source.Count
+                && _cachedRoundFilter != null)
+            {
+                return _cachedRoundFilter;
+            }
+            var snap = new HashSet<string>(source, StringComparer.OrdinalIgnoreCase);
+            _cachedRoundFilterSource = source;
+            _cachedRoundFilterCount = source.Count;
+            _cachedRoundFilter = snap;
+            return snap;
+        }
 
         private const string NextRoundPredictionUnavailableMessage = "データ不足";
 
@@ -203,8 +240,6 @@ namespace ToNRoundCounter.Infrastructure.Services
 
         public void UpdateVelocity(double velocity, double afkSeconds)
         {
-            string fallback = $"{velocity.ToString("00.00", CultureInfo.InvariantCulture)}\nAFK: {afkSeconds:F1}秒";
-
             UpdateOverlay(OverlaySection.Velocity, form =>
             {
                 if (form is OverlayVelocityForm velocityForm)
@@ -213,7 +248,8 @@ namespace ToNRoundCounter.Infrastructure.Services
                 }
                 else
                 {
-                    form.SetValue(fallback);
+                    // Fallback string built lazily only when a custom form replaces OverlayVelocityForm.
+                    form.SetValue($"{velocity.ToString("00.00", CultureInfo.InvariantCulture)}\nAFK: {afkSeconds:F1}\u79d2");
                 }
             });
         }
@@ -279,20 +315,30 @@ namespace ToNRoundCounter.Infrastructure.Services
         public void RefreshRoundStats()
         {
             var aggregates = _stateService.GetRoundAggregates();
-            int totalRounds = aggregates.Values.Sum(r => r.Total);
 
             bool hasRoundFilter = _settings.RoundTypeStats != null && _settings.RoundTypeStats.Count > 0;
             HashSet<string>? filterSet = null;
             if (hasRoundFilter)
             {
-                filterSet = new HashSet<string>(_settings.RoundTypeStats!, StringComparer.OrdinalIgnoreCase);
+                filterSet = GetRoundFilterSnapshot(_settings.RoundTypeStats!);
             }
 
-            var entries = aggregates
-                .Where(kvp => !hasRoundFilter || (filterSet != null && filterSet.Contains(kvp.Key)))
-                .Select(kvp => new OverlayRoundStatsForm.RoundStatEntry(kvp.Key, kvp.Value.Total, kvp.Value.Survival, kvp.Value.Death))
-                .OrderByDescending(entry => entry.Total)
-                .ToList();
+            // Single pass over aggregates: compute total, filter, and collect entries without
+            // intermediate LINQ collections.
+            int totalRounds = 0;
+            var entries = new List<OverlayRoundStatsForm.RoundStatEntry>(aggregates.Count);
+            foreach (var kvp in aggregates)
+            {
+                var agg = kvp.Value;
+                totalRounds += agg.Total;
+                if (hasRoundFilter && (filterSet == null || !filterSet.Contains(kvp.Key)))
+                {
+                    continue;
+                }
+                entries.Add(new OverlayRoundStatsForm.RoundStatEntry(kvp.Key, agg.Total, agg.Survival, agg.Death));
+            }
+            // Descending sort by Total using a comparer (avoids LINQ OrderByDescending allocation).
+            entries.Sort((a, b) => b.Total.CompareTo(a.Total));
 
             UpdateOverlay(OverlaySection.RoundStats, form =>
             {
@@ -564,8 +610,12 @@ namespace ToNRoundCounter.Infrastructure.Services
                 bool isAppForeground = false;
                 try
                 {
-                    string currentProcessName = Process.GetCurrentProcess().ProcessName;
-                    isAppForeground = WindowUtilities.IsProcessInForeground(currentProcessName);
+                    // Reuse cached process name; avoids Process.GetCurrentProcess() allocation
+                    // every 500ms timer tick.
+                    if (!string.IsNullOrEmpty(CurrentProcessName))
+                    {
+                        isAppForeground = WindowUtilities.IsProcessInForeground(CurrentProcessName);
+                    }
                 }
                 catch
                 {
@@ -582,13 +632,16 @@ namespace ToNRoundCounter.Infrastructure.Services
                     isVrChatForeground = true;
                 }
 
-                foreach (var kvp in _overlayForms.ToList())
+                // Enumerate directly without .ToList() snapshot; we only remove items in-loop
+                // (disposed forms) and we use a deferred-removal list for safety.
+                List<OverlaySection>? toRemove = null;
+                foreach (var kvp in _overlayForms)
                 {
                     var section = kvp.Key;
                     var form = kvp.Value;
                     if (form.IsDisposed)
                     {
-                        _overlayForms.Remove(section);
+                        (toRemove ??= new List<OverlaySection>()).Add(section);
                         continue;
                     }
 
@@ -613,6 +666,14 @@ namespace ToNRoundCounter.Infrastructure.Services
                         {
                             form.Hide();
                         }
+                    }
+                }
+
+                if (toRemove != null)
+                {
+                    for (int i = 0; i < toRemove.Count; i++)
+                    {
+                        _overlayForms.Remove(toRemove[i]);
                     }
                 }
             });

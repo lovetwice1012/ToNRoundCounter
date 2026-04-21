@@ -104,8 +104,9 @@ namespace ToNRoundCounter.UI
                 return;
             }
 
-            bool isHighFrequencyMessage = message.Address == "/avatar/parameters/VelocityX" ||
-                                         message.Address == "/avatar/parameters/VelocityZ";
+            string address = message.Address;
+            bool isHighFrequencyMessage = address == "/avatar/parameters/VelocityX" ||
+                                         address == "/avatar/parameters/VelocityZ";
 
             if (isHighFrequencyMessage)
             {
@@ -116,237 +117,190 @@ namespace ToNRoundCounter.UI
                 }
             }
 
-            if (message.Address == "/avatar/parameters/VelocityMagnitude")
+            // Hashed dispatch via string switch (compiler emits hash-based jump table).
+            switch (address)
             {
-                try
+                case "/avatar/parameters/VelocityMagnitude":
+                    if (TryReadSingle(message, out float vm)) receivedVelocityMagnitude = vm;
+                    break;
+                case "/avatar/parameters/VelocityX":
+                    if (TryReadSingle(message, out float vx)) currentVelocityX = vx;
+                    break;
+                case "/avatar/parameters/VelocityZ":
+                    if (TryReadSingle(message, out float vz)) currentVelocityZ = vz;
+                    break;
+                case "/avatar/parameters/suside":
+                    if (TryReadBool(message, out bool suicideFlag) && suicideFlag)
+                    {
+                        LogUi("Immediate suicide flag received. Executing auto suicide action.");
+                        RunBackgroundOperation(() => PerformAutoSuicide(), "OscImmediateSuicide", LogEventLevel.Debug);
+                    }
+                    break;
+                case "/avatar/parameters/autosuside":
                 {
+                    bool autoSuicideOSC = false;
                     if (message.Count > 0)
                     {
-                        receivedVelocityMagnitude = Convert.ToSingle(message[0]);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    LogUi($"Failed to parse velocity magnitude: {ex.Message}", LogEventLevel.Warning);
-                }
-            }
-            else if (message.Address == "/avatar/parameters/VelocityX")
-            {
-                try
-                {
-                    if (message.Count > 0)
-                    {
-                        currentVelocityX = Convert.ToSingle(message[0]);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    LogUi($"Failed to parse velocity X: {ex.Message}", LogEventLevel.Warning);
-                }
-            }
-            else if (message.Address == "/avatar/parameters/VelocityZ")
-            {
-                try
-                {
-                    if (message.Count > 0)
-                    {
-                        currentVelocityZ = Convert.ToSingle(message[0]);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    LogUi($"Failed to parse velocity Z: {ex.Message}", LogEventLevel.Warning);
-                }
-            }
-            else if (message.Address == "/avatar/parameters/suside")
-            {
-                bool suicideFlag = false;
-                if (message.Count > 0)
-                {
-                    try
-                    {
-                        suicideFlag = Convert.ToBoolean(message[0]);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogUi($"Failed to parse suicide flag: {ex.Message}", LogEventLevel.Warning);
-                    }
-                }
-                if (suicideFlag)
-                {
-                    LogUi("Immediate suicide flag received. Executing auto suicide action.");
-                    RunBackgroundOperation(() => PerformAutoSuicide(), "OscImmediateSuicide", LogEventLevel.Debug);
-                }
-            }
-            else if (message.Address == "/avatar/parameters/autosuside")
-            {
-                bool autoSuicideOSC = false;
-                if (message.Count > 0)
-                {
-                    try
-                    {
-                        autoSuicideOSC = Convert.ToBoolean(message[0]);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogUi($"Failed to parse auto-suicide OSC toggle: {ex.Message}", LogEventLevel.Warning);
-                    }
-                    _settings.AutoSuicideEnabled = autoSuicideOSC;
-                    LoadAutoSuicideRules();
-                    if (!autoSuicideOSC)
-                    {
-                        CancelAutoSuicide();
-                    }
-                    SyncShortcutOverlayState();
-                }
-                LogUi($"Auto suicide OSC toggle set to {autoSuicideOSC}.", LogEventLevel.Debug);
-            }
-            else if (message.Address == "/avatar/parameters/abortAutoSuside")
-            {
-                bool abortFlag = true;
-                if (message.Count > 0)
-                {
-                    try
-                    {
-                        abortFlag = Convert.ToBoolean(message[0]);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogUi($"Failed to parse abort flag: {ex.Message}", LogEventLevel.Warning);
-                    }
-                }
-                if (abortFlag)
-                {
-                    LogUi("Abort auto suicide requested via OSC.");
-                    CancelAutoSuicide(manualOverride: true);
-                }
-            }
-            else if (message.Address == "/avatar/parameters/delayAutoSuside")
-            {
-                bool delayFlag = true;
-                if (message.Count > 0)
-                {
-                    try
-                    {
-                        delayFlag = Convert.ToBoolean(message[0]);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogUi($"Failed to parse delay flag: {ex.Message}", LogEventLevel.Warning);
-                    }
-                }
-                if (delayFlag && autoSuicideService.HasScheduled)
-                {
-                    var remaining = DelayAutoSuicide(manualOverride: true);
-                    if (remaining.HasValue)
-                    {
-                        LogUi($"Delaying auto suicide by {remaining.Value}.", LogEventLevel.Debug);
-                    }
-                }
-            }
-            else if (message.Address == "/avatar/parameters/setalert")
-            {
-                float setAlertValue = 0;
-                if (message.Count > 0)
-                {
-                    try
-                    {
-                        setAlertValue = Convert.ToSingle(message[0]);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogUi($"Failed to parse alert value: {ex.Message}", LogEventLevel.Warning);
-                    }
-                }
-                if (setAlertValue != 0)
-                {
-                    LogUi($"Forwarding alert value {setAlertValue} to integrated cloud.", LogEventLevel.Debug);
-                    RunBackgroundOperation(() => SendAlertToCloudAsync(setAlertValue), "OscForwardAlert", LogEventLevel.Debug);
-                }
-            }
-            else if (message.Address == "/avatar/parameters/getlatestsavecode")
-            {
-                bool getLatestSaveCode = false;
-                if (message.Count > 0)
-                {
-                    try
-                    {
-                        getLatestSaveCode = Convert.ToBoolean(message[0]);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogUi($"Failed to parse save code request flag: {ex.Message}", LogEventLevel.Warning);
-                    }
-                }
-                if (getLatestSaveCode)
-                {
-                    LogUi("OSC request received for latest save code.");
-                    RunBackgroundOperation(async () =>
-                    {
-                        try
+                        TryReadBool(message, out autoSuicideOSC);
+                        _settings.AutoSuicideEnabled = autoSuicideOSC;
+                        LoadAutoSuicideRules();
+                        if (!autoSuicideOSC)
                         {
-                            var saveCode = await GetLatestSaveCodeFromCloudAsync(_cancellation.Token).ConfigureAwait(false);
-                            if (!string.IsNullOrWhiteSpace(saveCode))
-                            {
-                                await PersistLastSaveCodeAsync(saveCode).ConfigureAwait(false);
-                                CopySaveCodeToClipboard(saveCode);
-                                _logger.LogEvent("SaveCode", "Latest save code copied to clipboard from cloud settings: " + saveCode);
-                            }
-                            else
-                            {
-                                CopyCachedSaveCode("No save code found in cloud settings.");
-                            }
+                            CancelAutoSuicide();
                         }
-                        catch (Exception ex)
-                        {
-                            CopyCachedSaveCode($"Exception occurred while fetching latest save code from cloud settings: {ex.Message}");
-                        }
-                    }, "OscFetchLatestSaveCode", LogEventLevel.Warning);
-                }
-            }
-            else if (message.Address == "/avatar/parameters/isAllSelfKill")
-            {
-                if (message.Count > 0)
-                {
-                    try
+                        SyncShortcutOverlayState();
+                    }
+                    if (_logger != null && _logger.IsEnabled(LogEventLevel.Debug))
                     {
-                        var newValue = Convert.ToBoolean(message[0]);
-                        if (issetAllSelfKillMode != newValue)
+                        LogUi($"Auto suicide OSC toggle set to {autoSuicideOSC}.", LogEventLevel.Debug);
+                    }
+                    break;
+                }
+                case "/avatar/parameters/abortAutoSuside":
+                {
+                    bool abortFlag = true;
+                    if (message.Count > 0)
+                    {
+                        TryReadBool(message, out abortFlag);
+                    }
+                    if (abortFlag)
+                    {
+                        LogUi("Abort auto suicide requested via OSC.");
+                        CancelAutoSuicide(manualOverride: true);
+                    }
+                    break;
+                }
+                case "/avatar/parameters/delayAutoSuside":
+                {
+                    bool delayFlag = true;
+                    if (message.Count > 0)
+                    {
+                        TryReadBool(message, out delayFlag);
+                    }
+                    if (delayFlag && autoSuicideService.HasScheduled)
+                    {
+                        var remaining = DelayAutoSuicide(manualOverride: true);
+                        if (remaining.HasValue && _logger != null && _logger.IsEnabled(LogEventLevel.Debug))
                         {
-                            issetAllSelfKillMode = newValue;
+                            LogUi($"Delaying auto suicide by {remaining.Value}.", LogEventLevel.Debug);
+                        }
+                    }
+                    break;
+                }
+                case "/avatar/parameters/setalert":
+                {
+                    float setAlertValue = 0;
+                    if (message.Count > 0)
+                    {
+                        TryReadSingle(message, out setAlertValue);
+                    }
+                    if (setAlertValue != 0)
+                    {
+                        if (_logger != null && _logger.IsEnabled(LogEventLevel.Debug))
+                        {
+                            LogUi($"Forwarding alert value {setAlertValue} to integrated cloud.", LogEventLevel.Debug);
+                        }
+                        var alertCopy = setAlertValue;
+                        RunBackgroundOperation(() => SendAlertToCloudAsync(alertCopy), "OscForwardAlert", LogEventLevel.Debug);
+                    }
+                    break;
+                }
+                case "/avatar/parameters/getlatestsavecode":
+                {
+                    bool getLatestSaveCode = false;
+                    if (message.Count > 0)
+                    {
+                        TryReadBool(message, out getLatestSaveCode);
+                    }
+                    if (getLatestSaveCode)
+                    {
+                        LogUi("OSC request received for latest save code.");
+                        RunBackgroundOperation(async () =>
+                        {
+                            try
+                            {
+                                var saveCode = await GetLatestSaveCodeFromCloudAsync(_cancellation.Token).ConfigureAwait(false);
+                                if (!string.IsNullOrWhiteSpace(saveCode))
+                                {
+                                    await PersistLastSaveCodeAsync(saveCode).ConfigureAwait(false);
+                                    CopySaveCodeToClipboard(saveCode);
+                                    _logger.LogEvent("SaveCode", "Latest save code copied to clipboard from cloud settings: " + saveCode);
+                                }
+                                else
+                                {
+                                    CopyCachedSaveCode("No save code found in cloud settings.");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                CopyCachedSaveCode($"Exception occurred while fetching latest save code from cloud settings: {ex.Message}");
+                            }
+                        }, "OscFetchLatestSaveCode", LogEventLevel.Warning);
+                    }
+                    break;
+                }
+                case "/avatar/parameters/isAllSelfKill":
+                    if (TryReadBool(message, out bool newAllSelfKill) && issetAllSelfKillMode != newAllSelfKill)
+                    {
+                        issetAllSelfKillMode = newAllSelfKill;
+                        if (_logger != null && _logger.IsEnabled(LogEventLevel.Debug))
+                        {
                             LogUi($"Received 'isAllSelfKill' flag: {issetAllSelfKillMode}.", LogEventLevel.Debug);
-                            SyncShortcutOverlayState();
                         }
+                        SyncShortcutOverlayState();
                     }
-                    catch (Exception ex)
+                    break;
+                case "/avatar/parameters/followAutoSelfKill":
+                    if (TryReadBool(message, out bool newFollowAutoSelfKill) && followAutoSelfKill != newFollowAutoSelfKill)
                     {
-                        LogUi($"Failed to parse isAllSelfKill flag: {ex.Message}", LogEventLevel.Warning);
-                    }
-                }
-            }
-            else if (message.Address == "/avatar/parameters/followAutoSelfKill")
-            {
-                if (message.Count > 0)
-                {
-                    try
-                    {
-                        var newValue = Convert.ToBoolean(message[0]);
-                        if (followAutoSelfKill != newValue)
+                        followAutoSelfKill = newFollowAutoSelfKill;
+                        if (_logger != null && _logger.IsEnabled(LogEventLevel.Debug))
                         {
-                            followAutoSelfKill = newValue;
                             LogUi($"Received 'followAutoSelfKill' flag: {followAutoSelfKill}.", LogEventLevel.Debug);
                         }
                     }
-                    catch (Exception ex)
-                    {
-                        LogUi($"Failed to parse followAutoSelfKill flag: {ex.Message}", LogEventLevel.Warning);
-                    }
-                }
+                    break;
             }
 
             currentVelocity = Math.Abs(receivedVelocityMagnitude);
             hasFacingAngleMeasurement = false;
             Interlocked.Exchange(ref oscUiUpdatePending, 1);
+        }
+
+        private static bool TryReadSingle(OscMessage message, out float value)
+        {
+            if (message.Count > 0)
+            {
+                try
+                {
+                    object o = message[0];
+                    value = o is float f ? f : Convert.ToSingle(o);
+                    return true;
+                }
+                catch
+                {
+                }
+            }
+            value = 0f;
+            return false;
+        }
+
+        private static bool TryReadBool(OscMessage message, out bool value)
+        {
+            if (message.Count > 0)
+            {
+                try
+                {
+                    object o = message[0];
+                    value = o is bool b ? b : Convert.ToBoolean(o);
+                    return true;
+                }
+                catch
+                {
+                }
+            }
+            value = false;
+            return false;
         }
 
         private void CopySaveCodeToClipboard(string saveCode)

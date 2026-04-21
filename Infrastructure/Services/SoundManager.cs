@@ -203,18 +203,17 @@ namespace ToNRoundCounter.Infrastructure.Services
         {
             try
             {
-                DisposeItemMusicPlayer();
-
                 if (!_settings.ItemMusicEnabled)
                 {
+                    DisposeItemMusicPlayer();
                     _logger.LogEvent("SoundManager", "Item music disabled. Skipping player update.", LogEventLevel.Debug);
                     return;
                 }
 
-                _activeItemMusicEntry = entry;
-
                 if (entry == null || !entry.Enabled)
                 {
+                    DisposeItemMusicPlayer();
+                    _activeItemMusicEntry = entry;
                     _logger.LogEvent("SoundManager", "No active item music entry. Player not updated.", LogEventLevel.Debug);
                     return;
                 }
@@ -222,11 +221,25 @@ namespace ToNRoundCounter.Infrastructure.Services
                 string configuredPath = entry.SoundPath ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(configuredPath))
                 {
+                    DisposeItemMusicPlayer();
+                    _activeItemMusicEntry = entry;
                     _logger.LogEvent("SoundManager", "Item music entry has no configured path.", LogEventLevel.Warning);
                     return;
                 }
 
                 string fullPath = Path.GetFullPath(configuredPath);
+
+                // Short-circuit: player already loaded for this entry and path; called at 20Hz from tick, avoid dispose/reload churn.
+                if (_itemMusicPlayer != null
+                    && ReferenceEquals(_activeItemMusicEntry, entry)
+                    && string.Equals(_lastLoadedItemMusicPath, fullPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                DisposeItemMusicPlayer();
+                _activeItemMusicEntry = entry;
+
                 if (!File.Exists(fullPath))
                 {
                     _logger.LogEvent("ItemMusic", $"Sound file not found: {fullPath}", LogEventLevel.Warning);
@@ -250,18 +263,17 @@ namespace ToNRoundCounter.Infrastructure.Services
         {
             try
             {
-                DisposeRoundBgmPlayer();
-
                 if (!_settings.RoundBgmEnabled)
                 {
+                    DisposeRoundBgmPlayer();
                     _logger.LogEvent("SoundManager", "Round BGM disabled. Skipping player update.", LogEventLevel.Debug);
                     return;
                 }
 
-                _activeRoundBgmEntry = entry;
-
                 if (entry == null || !entry.Enabled)
                 {
+                    DisposeRoundBgmPlayer();
+                    _activeRoundBgmEntry = entry;
                     _logger.LogEvent("SoundManager", "No active round BGM entry. Player not updated.", LogEventLevel.Debug);
                     return;
                 }
@@ -269,11 +281,25 @@ namespace ToNRoundCounter.Infrastructure.Services
                 string configuredPath = entry.SoundPath ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(configuredPath))
                 {
+                    DisposeRoundBgmPlayer();
+                    _activeRoundBgmEntry = entry;
                     _logger.LogEvent("SoundManager", "Round BGM entry has no configured path.", LogEventLevel.Warning);
                     return;
                 }
 
                 string fullPath = Path.GetFullPath(configuredPath);
+
+                // Short-circuit: player already loaded for this entry and path; called at 20Hz from tick, avoid dispose/reload churn.
+                if (_roundBgmPlayer != null
+                    && ReferenceEquals(_activeRoundBgmEntry, entry)
+                    && string.Equals(_lastLoadedRoundBgmPath, fullPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                DisposeRoundBgmPlayer();
+                _activeRoundBgmEntry = entry;
+
                 if (!File.Exists(fullPath))
                 {
                     _logger.LogEvent("RoundBgm", $"Sound file not found: {fullPath}", LogEventLevel.Warning);

@@ -51,20 +51,41 @@ namespace ToNRoundCounter.Application
                 .ToList();
         }
 
+        // Cached last split result. EvaluateRecordingState may be called per OSC tick and almost
+        // always with the same terrorKey, so we memoize the last split.
+        private static string? _cachedTerrorSplitKey;
+        private static List<string>? _cachedTerrorSplitValues;
+        private static readonly object _cachedTerrorSplitSync = new object();
+        private static readonly char[] TerrorSplitSeparators = new[] { '&', ',', ';' };
+
         private static IEnumerable<string> SplitTerrorNames(string? terrorKey)
         {
             if (string.IsNullOrWhiteSpace(terrorKey))
             {
-                yield break;
+                return Array.Empty<string>();
             }
 
-            foreach (var part in terrorKey!.Split(new[] { '&', ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            lock (_cachedTerrorSplitSync)
             {
-                var value = part.Trim();
-                if (!string.IsNullOrWhiteSpace(value))
+                if (string.Equals(_cachedTerrorSplitKey, terrorKey, StringComparison.Ordinal) && _cachedTerrorSplitValues != null)
                 {
-                    yield return value;
+                    return _cachedTerrorSplitValues;
                 }
+
+                var split = terrorKey!.Split(TerrorSplitSeparators, StringSplitOptions.RemoveEmptyEntries);
+                var list = new List<string>(split.Length);
+                for (int i = 0; i < split.Length; i++)
+                {
+                    var value = split[i].Trim();
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        list.Add(value);
+                    }
+                }
+
+                _cachedTerrorSplitKey = terrorKey;
+                _cachedTerrorSplitValues = list;
+                return list;
             }
         }
 

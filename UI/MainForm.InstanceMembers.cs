@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Text.Json;
@@ -245,7 +246,28 @@ namespace ToNRoundCounter.UI
                 }
                 currentInstanceMembers = members;
 
-                _dispatcher.Invoke(() => UpdateInstanceMembersOverlay());
+                // Coalesce overlay repaints: instead of dispatcher.Invoke per stream message
+                // (which can fire ~5Hz × 20 players = 100/sec), set a dirty flag and let the
+                // existing instanceMemberUpdateTimer pick it up at its 200ms cadence.
+                if (Interlocked.Exchange(ref _instanceMembersOverlayDirty, 1) == 0)
+                {
+                    var dispatcher = _dispatcher;
+                    if (dispatcher != null)
+                    {
+                        // Schedule one repaint; further sets of the dirty flag during this
+                        // dispatch will be absorbed and picked up by the next scheduling.
+                        Task.Run(() =>
+                        {
+                            dispatcher.Invoke(() =>
+                            {
+                                if (Interlocked.Exchange(ref _instanceMembersOverlayDirty, 0) == 1)
+                                {
+                                    UpdateInstanceMembersOverlay();
+                                }
+                            });
+                        });
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -682,6 +704,109 @@ namespace ToNRoundCounter.UI
             {
                 // No desire players - proceed normally
                 _autoSuicideCoordinator.Schedule(delay, resetStartTime, fromAllRoundsMode, false);
+            }
+        }
+
+        // Coalescing state for UpdateCloudPlayerState. Multiple call sites can request an update;
+        // only one runs at a time, and a follow-up runs at most every MinIntervalMs.
+        private const long CloudPlayerStateMinIntervalMs = 200;
+        private long _cloudPlayerStateLastSentTicks;
+        private int _cloudPlayerStatePending; // 0/1
+        private int _cloudPlayerStateRunning; // 0/1
+
+        // Coalescing flag for instance member overlay repaints triggered by player.state.updated
+        // stream events. Set to 1 when a repaint is needed; only the first set schedules a UI
+        // dispatch, subsequent sets are absorbed.
+        private int _instanceMembersOverlayDirty;
+
+        /// <summary>
+        /// Request a coalesced player-state update. Safe to call from any thread at high frequency.
+        /// At most one network call runs concurrently, and successive calls within the throttle
+        /// window are merged into a single trailing send so the latest state always wins.
+        /// </summary>
+        private void RequestCloudPlayerStateUpdate(string operationName)
+        {
+            // Mark that an update is desired.
+            Interlocked.Exchange(ref _cloudPlayerStatePending, 1);
+
+            // If a worker is already running, it will pick up the pending flag.
+            if (Interlocked.CompareExchange(ref _cloudPlayerStateRunning, 1, 0) != 0)
+            {
+                return;
+            }
+
+            RunBackgroundOperation(async () =>
+            {
+                try
+                {
+                    while (Interlocked.Exchange(ref _cloudPlayerStatePending, 0) == 1)
+                    {
+                        long nowTicks = Environment.TickCount64;
+                        long lastTicks = Interlocked.Read(ref _cloudPlayerStateLastSentTicks);
+                        long elapsed = nowTicks - lastTicks;
+                        if (elapsed < CloudPlayerStateMinIntervalMs)
+                        {
+                            try
+                            {
+                                await Task.Delay((int)(CloudPlayerStateMinIntervalMs - elapsed), _cancellation.Token).ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                return;
+                            }
+                            // Re-set pending so we send the latest state once cooldown ends.
+                            Interlocked.Exchange(ref _cloudPlayerStatePending, 1);
+                            continue;
+                        }
+
+                        Interlocked.Exchange(ref _cloudPlayerStateLastSentTicks, nowTicks);
+                        await UpdateCloudPlayerState().ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref _cloudPlayerStateRunning, 0);
+                    // Race: a request may have arrived just before we cleared running. Re-launch if so.
+                    if (Volatile.Read(ref _cloudPlayerStatePending) == 1 &&
+                        Interlocked.CompareExchange(ref _cloudPlayerStateRunning, 1, 0) == 0)
+                    {
+                        // Hand off to a fresh background op to avoid deep recursion.
+                        RunBackgroundOperation(() => UpdateCloudPlayerStateLoopAsync(), operationName, LogEventLevel.Debug);
+                    }
+                }
+            }, operationName, LogEventLevel.Debug);
+        }
+
+        private async Task UpdateCloudPlayerStateLoopAsync()
+        {
+            try
+            {
+                while (Interlocked.Exchange(ref _cloudPlayerStatePending, 0) == 1)
+                {
+                    long nowTicks = Environment.TickCount64;
+                    long lastTicks = Interlocked.Read(ref _cloudPlayerStateLastSentTicks);
+                    long elapsed = nowTicks - lastTicks;
+                    if (elapsed < CloudPlayerStateMinIntervalMs)
+                    {
+                        try
+                        {
+                            await Task.Delay((int)(CloudPlayerStateMinIntervalMs - elapsed), _cancellation.Token).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            return;
+                        }
+                        Interlocked.Exchange(ref _cloudPlayerStatePending, 1);
+                        continue;
+                    }
+
+                    Interlocked.Exchange(ref _cloudPlayerStateLastSentTicks, nowTicks);
+                    await UpdateCloudPlayerState().ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _cloudPlayerStateRunning, 0);
             }
         }
 

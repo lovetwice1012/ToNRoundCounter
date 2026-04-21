@@ -191,22 +191,19 @@ namespace ToNRoundCounter.UI
                 : OverlayTheme.Blend(OverlayTheme.StatePending, OverlayTheme.StateDanger, 1f - ratio * 2f);
         }
 
+        private static readonly SolidBrush s_accentBrush = new SolidBrush(OverlayTheme.StatePending);
+        private static readonly Pen s_borderPen = new Pen(OverlayTheme.WithAlpha(OverlayTheme.StatePending, 200), 1.5f);
+
         private void OnFramePaint(object? sender, PaintEventArgs e)
         {
             var g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
             // Accent strip at top
-            using (var accentBrush = new SolidBrush(OverlayTheme.StatePending))
-            {
-                g.FillRectangle(accentBrush, 0, 0, Width, 4);
-            }
+            g.FillRectangle(s_accentBrush, 0, 0, Width, 4);
 
             // Outer border
-            using (var pen = new Pen(OverlayTheme.WithAlpha(OverlayTheme.StatePending, 200), 1.5f))
-            {
-                g.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
-            }
+            g.DrawRectangle(s_borderPen, 0, 0, Width - 1, Height - 1);
         }
 
         protected override void Dispose(bool disposing)

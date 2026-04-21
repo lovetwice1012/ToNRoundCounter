@@ -122,6 +122,11 @@ namespace ToNRoundCounter.Application.Recording
         private bool _disposed;
         private readonly bool _isHardwareAccelerated;
         private readonly HardwareDeviceContext? _hardwareContext;
+        // Reason text for any silent fallback that happened during construction (e.g. HW encoder
+        // initialization failed and we fell back to software). Used by AutoRecordingService to log
+        // why a recording is running degraded so users can diagnose poor output (looks like 1fps,
+        // missing audio, etc.) without enabling MF tracing.
+        private readonly string? _hardwareFallbackReason;
         private readonly bool _supportsAudio;
         private readonly int? _audioStreamIndex;
         private readonly AudioFormat? _audioFormat;
@@ -165,7 +170,7 @@ namespace ToNRoundCounter.Application.Recording
 
             try
             {
-                writer = CreateSinkWriter(path, descriptor, selection, out _isHardwareAccelerated, out hardwareContext);
+                writer = CreateSinkWriter(path, descriptor, selection, out _isHardwareAccelerated, out hardwareContext, out _hardwareFallbackReason);
 
                 outputType = MediaFoundationInterop.CreateMediaType();
                 MediaFoundationInterop.CheckHr(outputType.SetGUID(MediaFoundationInterop.MF_MT_MAJOR_TYPE, MediaFoundationInterop.MFMediaType_Video), "MF_MT_MAJOR_TYPE");
@@ -189,7 +194,15 @@ namespace ToNRoundCounter.Application.Recording
                 MediaFoundationInterop.SetAttributeRatio(inputType, MediaFoundationInterop.MF_MT_FRAME_RATE, frameRate, 1);
                 MediaFoundationInterop.SetAttributeRatio(inputType, MediaFoundationInterop.MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
                 MediaFoundationInterop.CheckHr(inputType.SetUINT32(MediaFoundationInterop.MF_MT_INTERLACE_MODE, (int)MediaFoundationInterop.MFVideoInterlaceMode.Progressive), "Input MF_MT_INTERLACE_MODE");
-                MediaFoundationInterop.CheckHr(inputType.SetUINT32(MediaFoundationInterop.MF_MT_DEFAULT_STRIDE, _targetStride), "Input MF_MT_DEFAULT_STRIDE");
+                // MFVideoFormat_RGB32's legacy convention is bottom-up (the first byte of the
+                // buffer is the BOTTOM-LEFT pixel). To express that we feed the buffer bottom-up,
+                // MF_MT_DEFAULT_STRIDE must be NEGATIVE. Many H.264 / HEVC encoder pipelines on
+                // Windows ignore a positive (top-down) stride for RGB32 input and assume the
+                // legacy bottom-up convention anyway, which causes the encoded video to come out
+                // 180-rotated / vertically flipped. Declaring negative stride and writing the
+                // GDI bitmap rows in reverse order avoids the upside-down output on every
+                // SinkWriter topology we have observed.
+                MediaFoundationInterop.CheckHr(inputType.SetUINT32(MediaFoundationInterop.MF_MT_DEFAULT_STRIDE, -_targetStride), "Input MF_MT_DEFAULT_STRIDE");
                 MediaFoundationInterop.CheckHr(inputType.SetUINT32(MediaFoundationInterop.MF_MT_FIXED_SIZE_SAMPLES, 1), "Input MF_MT_FIXED_SIZE_SAMPLES");
                 MediaFoundationInterop.CheckHr(inputType.SetUINT32(MediaFoundationInterop.MF_MT_SAMPLE_SIZE, _targetStride * _height), "Input MF_MT_SAMPLE_SIZE");
                 MediaFoundationInterop.CheckHr(inputType.SetUINT32(MediaFoundationInterop.MF_MT_ALL_SAMPLES_INDEPENDENT, 1), "Input MF_MT_ALL_SAMPLES_INDEPENDENT");
@@ -253,6 +266,12 @@ namespace ToNRoundCounter.Application.Recording
         }
 
         public bool IsHardwareAccelerated => _isHardwareAccelerated;
+
+        // Non-null when this writer was requested to use hardware acceleration but silently
+        // fell back to software (because HW init or HW SinkWriter creation failed and the
+        // user has AllowSoftwareFallback=true). The contained string is the original error
+        // message and is intended for diagnostic logging only.
+        public string? HardwareFallbackReason => _hardwareFallbackReason;
 
         public bool SupportsAudio => _supportsAudio;
 
@@ -397,9 +416,10 @@ namespace ToNRoundCounter.Application.Recording
             return new MediaFoundationFrameWriter(extension, codecId, path, width, height, frameRate, descriptor, audioFormat, videoBitrate, audioBitrate, selection);
         }
 
-        private static MediaFoundationInterop.IMFSinkWriter CreateSinkWriter(string path, FormatDescriptor descriptor, HardwareEncoderSelection selection, out bool hardwareEnabled, out HardwareDeviceContext? hardwareContext)
+        private static MediaFoundationInterop.IMFSinkWriter CreateSinkWriter(string path, FormatDescriptor descriptor, HardwareEncoderSelection selection, out bool hardwareEnabled, out HardwareDeviceContext? hardwareContext, out string? fallbackReason)
         {
             hardwareContext = null;
+            fallbackReason = null;
 
             if (selection.Api != HardwareAccelerationApi.Software)
             {
@@ -413,6 +433,14 @@ namespace ToNRoundCounter.Application.Recording
                     {
                         throw new InvalidOperationException("Failed to initialize Media Foundation sink writer.", ex);
                     }
+
+                    // Remember why we silently fell back so the caller can log it. Without this
+                    // the user only sees 'encoder=software' in the log and has no way to know
+                    // that hardware encoding was attempted but rejected (which on 4K30 typically
+                    // means the SW encoder cannot keep up and the capture loop fills the gaps
+                    // with duplicate frames -- the video looks like 1 fps even though the file
+                    // header says 30 fps).
+                    fallbackReason = ex.Message;
                 }
             }
 
@@ -1347,21 +1375,35 @@ namespace ToNRoundCounter.Application.Recording
             return (int)bitRate;
         }
 
+        // Copies a top-down GDI bitmap (positive sourceStride, first row = top of image) into a
+        // BOTTOM-UP destination buffer suitable for MFVideoFormat_RGB32 with negative
+        // MF_MT_DEFAULT_STRIDE. The destination's first row stores the BOTTOM line of the source
+        // image; the encoder then walks the buffer bottom-to-top and produces a correctly oriented
+        // frame regardless of whether the SinkWriter honors MF_MT_DEFAULT_STRIDE or assumes the
+        // legacy RGB32 bottom-up convention.
         private static unsafe void CopyFrame(IntPtr source, int sourceStride, IntPtr destination, int destinationStride, int height)
         {
             byte* src = (byte*)source.ToPointer();
-            if (sourceStride < 0)
+            int absSourceStride = sourceStride;
+            bool sourceIsBottomUp = absSourceStride < 0;
+            if (sourceIsBottomUp)
             {
-                src += (long)(height - 1) * (-sourceStride);
-                sourceStride = -sourceStride;
+                // Source is already bottom-up (rare with GDI). Re-anchor src to first row in memory
+                // and treat the stride as positive so the row-by-row copy below works the same.
+                absSourceStride = -absSourceStride;
+                src += (long)(height - 1) * absSourceStride;
             }
 
             byte* dst = (byte*)destination.ToPointer();
-            int rowLength = Math.Min(sourceStride, destinationStride);
+            int rowLength = Math.Min(absSourceStride, destinationStride);
 
             for (int y = 0; y < height; y++)
             {
-                Buffer.MemoryCopy(src + (long)y * sourceStride, dst + (long)y * destinationStride, destinationStride, rowLength);
+                // Top-down source row y --> bottom-up destination row (height - 1 - y) when the
+                // source is top-down (the typical case). When the source is bottom-up the same
+                // mapping applies because we re-anchored src to its first-in-memory row above.
+                int destRow = sourceIsBottomUp ? y : (height - 1 - y);
+                Buffer.MemoryCopy(src + (long)y * absSourceStride, dst + (long)destRow * destinationStride, destinationStride, rowLength);
             }
         }
 

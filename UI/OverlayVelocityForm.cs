@@ -29,11 +29,13 @@ namespace ToNRoundCounter.UI
         {
             double clampedIdle = idleSeconds < 0 ? 0 : idleSeconds;
             string speedText = velocity.ToString("00.00", CultureInfo.InvariantCulture);
-            string afkText = $"AFK: {clampedIdle:F1}秒";
-            velocitySurface.SetVelocityText(speedText, afkText);
-            
-            // Adjust parent form size to content after updating velocity readings
-            AdjustSizeToContent();
+            string afkText = $"AFK: {clampedIdle:F1}\u79d2";
+            if (velocitySurface.SetVelocityText(speedText, afkText))
+            {
+                // Layout only needs to be recomputed when the rendered text actually changed.
+                // UpdateReadings fires at 20Hz and speed often stays constant across ticks.
+                AdjustSizeToContent();
+            }
         }
 
         private sealed class VelocityOverlaySurface : DirectXOverlaySurface
@@ -64,20 +66,21 @@ namespace ToNRoundCounter.UI
                 RecalculatePreferredSize();
             }
 
-            public void SetVelocityText(string speed, string afk)
+            public bool SetVelocityText(string speed, string afk)
             {
                 string nextSpeed = speed ?? string.Empty;
                 string nextAfk = afk ?? string.Empty;
                 if (string.Equals(speedText, nextSpeed, StringComparison.Ordinal) &&
                     string.Equals(afkText, nextAfk, StringComparison.Ordinal))
                 {
-                    return;
+                    return false;
                 }
 
                 speedText = nextSpeed;
                 afkText = nextAfk;
                 RecalculatePreferredSize();
                 Invalidate();
+                return true;
             }
 
             protected override void OnVisibleChanged(EventArgs e)

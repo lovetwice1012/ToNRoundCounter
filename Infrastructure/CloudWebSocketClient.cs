@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Net.WebSockets;
@@ -184,6 +185,13 @@ namespace ToNRoundCounter.Infrastructure
         private const int ReceiveBufferSize = 8192;
         private const int MaxMessagePreviewLength = 200;
         private const string DEFAULT_SESSION_ID = "net-client";
+
+        // Cached serializer options to avoid per-message allocation
+        private static readonly JsonSerializerOptions s_cloudMessageOptions = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = null,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
 
         private Uri _uri;
         private ClientWebSocket? _socket;
@@ -553,12 +561,7 @@ namespace ToNRoundCounter.Infrastructure
 
             try
             {
-                var options = new JsonSerializerOptions
-                {
-                    PropertyNamingPolicy = null, // Use explicit JsonPropertyName attributes
-                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-                };
-                var json = JsonSerializer.Serialize(request, options);
+                var json = JsonSerializer.Serialize(request, s_cloudMessageOptions);
                 var bytes = Encoding.UTF8.GetBytes(json);
 
                 _logger.LogEvent("CloudWebSocket", $"Sending request - Id: {request.Id}, Method: {request.Method}, SocketState: {_socket?.State}", Serilog.Events.LogEventLevel.Debug);
@@ -2689,7 +2692,7 @@ namespace ToNRoundCounter.Infrastructure
 
             _logger.LogEvent("CloudWebSocket", $"ReceiveLoopAsync started - SocketState: {socket.State}", Serilog.Events.LogEventLevel.Debug);
 
-            var receiveBuffer = new byte[ReceiveBufferSize];
+            var receiveBuffer = ArrayPool<byte>.Shared.Rent(ReceiveBufferSize);
             byte[]? messageBuffer = null;
             int messageOffset = 0;
 
@@ -2704,7 +2707,14 @@ namespace ToNRoundCounter.Infrastructure
                     try
                     {
                         result = await socket.ReceiveAsync(segment, token).ConfigureAwait(false);
-                        _logger.LogEvent("CloudWebSocket", $"Received {result.Count} bytes, MessageType: {result.MessageType}, EndOfMessage: {result.EndOfMessage}", Serilog.Events.LogEventLevel.Debug);
+                        if (_logger.IsEnabled(Serilog.Events.LogEventLevel.Debug))
+                        {
+                            var r = result;
+                            _logger.LogEvent(
+                                "CloudWebSocket",
+                                () => $"Received {r.Count} bytes, MessageType: {r.MessageType}, EndOfMessage: {r.EndOfMessage}",
+                                Serilog.Events.LogEventLevel.Debug);
+                        }
                     }
                     catch (OperationCanceledException)
                     {
@@ -2731,12 +2741,19 @@ namespace ToNRoundCounter.Infrastructure
                     if (result.EndOfMessage && messageOffset == 0)
                     {
                         var message = Encoding.UTF8.GetString(receiveBuffer, 0, result.Count);
-                        _logger.LogEvent("CloudWebSocket", $"Dispatching single-frame message: {message.Substring(0, Math.Min(100, message.Length))}...", Serilog.Events.LogEventLevel.Debug);
+                        if (_logger.IsEnabled(Serilog.Events.LogEventLevel.Debug))
+                        {
+                            var m = message;
+                            _logger.LogEvent(
+                                "CloudWebSocket",
+                                () => $"Dispatching single-frame message: {Truncate(m, 100)}...",
+                                Serilog.Events.LogEventLevel.Debug);
+                        }
                         await DispatchMessageAsync(message, token).ConfigureAwait(false);
                         continue;
                     }
 
-                    messageBuffer ??= new byte[Math.Max(ReceiveBufferSize * 4, result.Count)];
+                    messageBuffer ??= ArrayPool<byte>.Shared.Rent(Math.Max(ReceiveBufferSize * 4, result.Count));
                     EnsureBufferCapacity(ref messageBuffer, messageOffset + result.Count, messageOffset);
                     Buffer.BlockCopy(receiveBuffer, 0, messageBuffer, messageOffset, result.Count);
                     messageOffset += result.Count;
@@ -2745,7 +2762,14 @@ namespace ToNRoundCounter.Infrastructure
                     {
                         var message = Encoding.UTF8.GetString(messageBuffer, 0, messageOffset);
                         messageOffset = 0;
-                        _logger.LogEvent("CloudWebSocket", $"Dispatching multi-frame message: {message.Substring(0, Math.Min(100, message.Length))}...", Serilog.Events.LogEventLevel.Debug);
+                        if (_logger.IsEnabled(Serilog.Events.LogEventLevel.Debug))
+                        {
+                            var m = message;
+                            _logger.LogEvent(
+                                "CloudWebSocket",
+                                () => $"Dispatching multi-frame message: {Truncate(m, 100)}...",
+                                Serilog.Events.LogEventLevel.Debug);
+                        }
                         await DispatchMessageAsync(message, token).ConfigureAwait(false);
                     }
                 }
@@ -2762,7 +2786,9 @@ namespace ToNRoundCounter.Infrastructure
                 if (messageBuffer != null)
                 {
                     Array.Clear(messageBuffer, 0, messageBuffer.Length);
+                    ArrayPool<byte>.Shared.Return(messageBuffer);
                 }
+                ArrayPool<byte>.Shared.Return(receiveBuffer, clearArray: true);
             }
         }
 
@@ -2788,11 +2814,6 @@ namespace ToNRoundCounter.Infrastructure
             {
                 long dispatched = 0;
                 var debugLoggingEnabled = _logger.IsEnabled(Serilog.Events.LogEventLevel.Debug);
-                var options = new JsonSerializerOptions
-                {
-                    PropertyNamingPolicy = null,
-                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-                };
 
                 await foreach (var rawMsg in _messageChannel.Reader.ReadAllAsync(token))
                 {
@@ -2803,7 +2824,7 @@ namespace ToNRoundCounter.Infrastructure
                             _logger.LogEvent("CloudWebSocket", () => $"Raw message received: {Truncate(rawMsg, MaxMessagePreviewLength)}", Serilog.Events.LogEventLevel.Debug);
                         }
                         
-                        var msg = JsonSerializer.Deserialize<CloudMessage>(rawMsg, options);
+                        var msg = JsonSerializer.Deserialize<CloudMessage>(rawMsg, s_cloudMessageOptions);
                         if (msg == null) continue;
 
                         if (debugLoggingEnabled && ShouldLogSample(dispatched + 1))
@@ -3038,12 +3059,13 @@ namespace ToNRoundCounter.Infrastructure
                 return;
             }
 
-            var newBuffer = new byte[Math.Max(buffer.Length * 2, requiredLength)];
+            var newBuffer = ArrayPool<byte>.Shared.Rent(Math.Max(buffer.Length * 2, requiredLength));
             if (preservedLength > 0)
             {
                 Buffer.BlockCopy(buffer, 0, newBuffer, 0, preservedLength);
             }
 
+            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
             buffer = newBuffer;
         }
 

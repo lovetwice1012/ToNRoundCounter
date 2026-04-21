@@ -383,6 +383,19 @@ namespace ToNRoundCounter.UI
                 Invalidate();
             }
 
+            private static readonly Font s_glyphFont = new Font(SystemFonts.DefaultFont.FontFamily, 16f, FontStyle.Bold);
+            private static readonly Font s_fallbackLabelFont = new Font(SystemFonts.DefaultFont.FontFamily, 9.5f, FontStyle.Bold);
+            private static readonly SolidBrush s_stateOnBrush = new SolidBrush(OverlayTheme.StateOn);
+            private static readonly SolidBrush s_stateOffBrush = new SolidBrush(OverlayTheme.StateOff);
+            private static readonly SolidBrush s_statePendingBrush = new SolidBrush(OverlayTheme.StatePending);
+            private static readonly StringFormat s_labelFormat = new StringFormat
+            {
+                Alignment = StringAlignment.Near,
+                LineAlignment = StringAlignment.Center,
+                Trimming = StringTrimming.EllipsisCharacter,
+                FormatFlags = StringFormatFlags.LineLimit
+            };
+
             protected override void OnPaint(PaintEventArgs e)
             {
                 base.OnPaint(e);
@@ -409,38 +422,28 @@ namespace ToNRoundCounter.UI
                     g.DrawPath(borderPen, path);
                 }
 
-                using var glyphFont = new Font(SystemFonts.DefaultFont.FontFamily, 16f, FontStyle.Bold);
-                Font labelFont = Font ?? new Font(SystemFonts.DefaultFont.FontFamily, 9.5f, FontStyle.Bold);
+                Font labelFont = Font ?? s_fallbackLabelFont;
                 using var glyphBrush = new SolidBrush(glyphColor);
                 using var textBrush = new SolidBrush(textColor);
 
-                var glyphSize = g.MeasureString(glyph, glyphFont);
+                var glyphSize = g.MeasureString(glyph, s_glyphFont);
                 float glyphX = 10f;
                 float glyphY = (Height - glyphSize.Height) / 2f;
-                g.DrawString(glyph, glyphFont, glyphBrush, glyphX, glyphY);
+                g.DrawString(glyph, s_glyphFont, glyphBrush, glyphX, glyphY);
 
                 float labelX = glyphX + glyphSize.Width + 6f;
                 float labelMaxWidth = Math.Max(0f, Width - labelX - 18f);
-                using var format = new StringFormat
-                {
-                    Alignment = StringAlignment.Near,
-                    LineAlignment = StringAlignment.Center,
-                    Trimming = StringTrimming.EllipsisCharacter,
-                    FormatFlags = StringFormatFlags.LineLimit
-                };
                 var labelRect = new RectangleF(labelX, 4f, labelMaxWidth, Height - 8f);
-                g.DrawString(label, labelFont, textBrush, labelRect, format);
+                g.DrawString(label, labelFont, textBrush, labelRect, s_labelFormat);
 
                 if (kind == ButtonKind.Toggle)
                 {
-                    var statusColor = isActive ? OverlayTheme.StateOn : OverlayTheme.StateOff;
-                    using var dotBrush = new SolidBrush(statusColor);
+                    var dotBrush = isActive ? s_stateOnBrush : s_stateOffBrush;
                     g.FillEllipse(dotBrush, Width - 14, 6, 7, 7);
                 }
                 else if ((kind == ButtonKind.Cancel || kind == ButtonKind.Action) && Enabled)
                 {
-                    using var dotBrush = new SolidBrush(OverlayTheme.StatePending);
-                    g.FillEllipse(dotBrush, Width - 14, 6, 7, 7);
+                    g.FillEllipse(s_statePendingBrush, Width - 14, 6, 7, 7);
                 }
             }
 

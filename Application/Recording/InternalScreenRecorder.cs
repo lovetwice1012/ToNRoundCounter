@@ -91,6 +91,20 @@ namespace ToNRoundCounter.Application.Recording
 
         public bool IsHardwareAccelerated => _isHardwareAccelerated;
 
+        // Diagnostic-only: populated when the recorder was started with audio enabled but the
+        // SinkWriter could not connect WASAPI loopback to the encoder MFT and we silently fell
+        // back to a video-only file. Used by AutoRecordingService to log the actual reason so
+        // users see why the recording came out without sound.
+        public string? AudioFallbackReason { get; private set; }
+
+        // Diagnostic-only: populated when the recorder was started with hardware acceleration
+        // requested but the HW SinkWriter creation failed and we silently fell back to the
+        // software encoder. Surfacing this is critical because the SW H.264 encoder cannot keep
+        // up with 4K30 in real time, which causes the capture loop to fill gaps with duplicate
+        // frames -- the resulting file has the correct 30 fps header but plays as roughly 1
+        // unique frame per second.
+        public string? HardwareFallbackReason { get; private set; }
+
         public static bool TryCreate(string windowHint, int requestedFrameRate, string resolutionOptionId, string outputPath, string extension, string codecId, bool includeOverlay, int videoBitrate, int audioBitrate, HardwareEncoderSelection hardwareSelection, bool captureAudio, out InternalScreenRecorder? recorder, out int actualFrameRate, out Size targetResolution, out string? failureReason)
         {
             recorder = null;
@@ -136,22 +150,38 @@ namespace ToNRoundCounter.Application.Recording
 
             try
             {
+                string? wasapiFailureReason = null;
                 if (captureAudio)
                 {
                     if (!WasapiAudioCapture.TryCreateForWindow(handle, out audioCapture, out var audioError))
                     {
-                        failureReason = string.IsNullOrEmpty(audioError)
+                        // Do NOT abort the whole recording when audio capture init fails. Common
+                        // causes are non-44100/48000 device sample rates and exclusive-mode usage.
+                        // Falling back to video-only matches the SetInputMediaType(Audio) fallback
+                        // path below and keeps the recording usable. The reason is surfaced via
+                        // AudioFallbackReason so the caller can log it.
+                        wasapiFailureReason = string.IsNullOrEmpty(audioError)
                             ? "Failed to initialize audio capture for the target window."
                             : audioError;
-                        return false;
+                        audioCapture?.Dispose();
+                        audioCapture = null;
+                        audioFormat = null;
                     }
-
-                    audioFormat = audioCapture?.Format;
+                    else
+                    {
+                        audioFormat = audioCapture?.Format;
+                    }
                 }
 
                 int frameRate = AutoRecordingService.ApplyFrameRateLimits(codecId, hardwareSelection, requestedFrameRate, targetResolution);
                 actualFrameRate = frameRate;
-                writer = CreateWriter(extension, codecId, outputPath, targetResolution.Width, targetResolution.Height, frameRate, audioFormat, videoBitrate, audioBitrate, hardwareSelection);
+                writer = CreateWriter(extension, codecId, outputPath, targetResolution.Width, targetResolution.Height, frameRate, audioFormat, videoBitrate, audioBitrate, hardwareSelection, out string? audioFallbackReason);
+
+                // WASAPI failure trumps the encoder-side fallback because it happens first.
+                if (wasapiFailureReason != null)
+                {
+                    audioFallbackReason = wasapiFailureReason;
+                }
 
                 if (audioCapture != null && !writer.SupportsAudio)
                 {
@@ -162,6 +192,11 @@ namespace ToNRoundCounter.Application.Recording
                 audioCaptureToTransfer = audioCapture;
                 audioCapture = null;
                 recorder = new InternalScreenRecorder(handle, frameRate, targetResolution, includeOverlay, writer, audioCaptureToTransfer);
+                recorder.AudioFallbackReason = audioFallbackReason;
+                if (writer is MediaFoundationFrameWriter mfWriter)
+                {
+                    recorder.HardwareFallbackReason = mfWriter.HardwareFallbackReason;
+                }
                 audioCaptureToTransfer = null;
                 return true;
             }
@@ -206,8 +241,9 @@ namespace ToNRoundCounter.Application.Recording
             return new Size(normalizedWidth, normalizedHeight);
         }
 
-        private static IMediaWriter CreateWriter(string extension, string codecId, string outputPath, int width, int height, int frameRate, AudioFormat? audioFormat, int videoBitrate, int audioBitrate, HardwareEncoderSelection hardwareSelection)
+        private static IMediaWriter CreateWriter(string extension, string codecId, string outputPath, int width, int height, int frameRate, AudioFormat? audioFormat, int videoBitrate, int audioBitrate, HardwareEncoderSelection hardwareSelection, out string? audioFallbackReason)
         {
+            audioFallbackReason = null;
             string normalizedExtension = (extension ?? string.Empty).ToLowerInvariant();
             
             switch (normalizedExtension)
@@ -237,13 +273,29 @@ namespace ToNRoundCounter.Application.Recording
                         {
                             // Some Windows audio endpoint formats cannot be connected to encoder MFTs
                             // through SinkWriter's automatic topology. Fall back to video-only capture
-                            // instead of aborting the entire recording start sequence.
+                            // instead of aborting the entire recording start sequence -- but remember
+                            // the original error message so the caller can log why the recording is
+                            // running without audio.
+                            audioFallbackReason = ExtractFirstMessage(ex);
                             return MediaFoundationFrameWriter.Create(normalizedExtension, codecId, outputPath, width, height, frameRate, null, videoBitrate, audioBitrate, hardwareSelection);
                         }
                     }
 
                     return MediaFoundationFrameWriter.Create(normalizedExtension, codecId, outputPath, width, height, frameRate, null, videoBitrate, audioBitrate, hardwareSelection);
             }
+        }
+
+        private static string ExtractFirstMessage(Exception exception)
+        {
+            for (Exception? current = exception; current != null; current = current.InnerException)
+            {
+                string message = current.Message ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(message))
+                {
+                    return message;
+                }
+            }
+            return exception.GetType().Name;
         }
 
         private static bool IsAudioMediaTypeNegotiationFailure(Exception exception)

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -75,7 +76,7 @@ namespace ToNRoundCounter.UI
             HashSet<string>? roundTypeFilter = null;
             if (_settings.RoundTypeStats != null && _settings.RoundTypeStats.Count > 0)
             {
-                roundTypeFilter = new HashSet<string>(_settings.RoundTypeStats, StringComparer.OrdinalIgnoreCase);
+                roundTypeFilter = GetRoundTypeFilterSnapshot(_settings.RoundTypeStats);
             }
 
             var config = new StatsDisplayConfig(
@@ -118,16 +119,50 @@ namespace ToNRoundCounter.UI
             }, _cancellation.Token);
         }
 
+        // Reusable StringBuilder to avoid per-row allocations when the aggregate stats panel is
+        // rebuilt (can be thousands of rows when many terrors are tracked).
+        [ThreadStatic] private static StringBuilder? _statsLineBuilder;
+
+        // Cached HashSet for RoundTypeStats. Settings rarely change but the stats panel rebuilds
+        // frequently, so we keep a reference-equality check on the source list.
+        private List<string>? _cachedRoundTypeStatsSource;
+        private int _cachedRoundTypeStatsCount;
+        private HashSet<string>? _cachedRoundTypeStats;
+
+        private HashSet<string> GetRoundTypeFilterSnapshot(List<string> source)
+        {
+            if (ReferenceEquals(_cachedRoundTypeStatsSource, source)
+                && _cachedRoundTypeStatsCount == source.Count
+                && _cachedRoundTypeStats != null)
+            {
+                return _cachedRoundTypeStats;
+            }
+
+            var snapshot = new HashSet<string>(source, StringComparer.OrdinalIgnoreCase);
+            _cachedRoundTypeStatsSource = source;
+            _cachedRoundTypeStatsCount = source.Count;
+            _cachedRoundTypeStats = snapshot;
+            return snapshot;
+        }
+
         private AggregateStatsUpdate? BuildAggregateStatsUpdate(CancellationToken token, StatsDisplayConfig config)
         {
-            static string TranslateSafe(string key)
-            {
-                return LanguageManager.Translate(key) ?? key;
-            }
+            // Translate labels once per rebuild rather than M*N times inside loops.
+            string trAppearance = LanguageManager.Translate("出現回数") ?? "出現回数";
+            string trSurvival = LanguageManager.Translate("生存回数") ?? "生存回数";
+            string trDeath = LanguageManager.Translate("死亡回数") ?? "死亡回数";
+            string trSurvivalRate = LanguageManager.Translate("生存率") ?? "生存率";
+            string trOccurrenceRate = LanguageManager.Translate("出現率") ?? "出現率";
+
+            var sb = _statsLineBuilder ??= new StringBuilder(256);
 
             var lines = new List<FormattedTextLine>();
             var roundAggregates = stateService.GetRoundAggregates();
-            int overallTotal = roundAggregates.Values.Sum(r => r.Total);
+            int overallTotal = 0;
+            foreach (var ra in roundAggregates.Values)
+            {
+                overallTotal += ra.Total;
+            }
             foreach (var kvp in roundAggregates)
             {
                 if (token.IsCancellationRequested)
@@ -142,22 +177,32 @@ namespace ToNRoundCounter.UI
                 }
 
                 RoundAggregate agg = kvp.Value;
-                var parts = new List<string> { roundType };
+                sb.Clear();
+                sb.Append(roundType);
                 if (config.FilterAppearance)
-                    parts.Add(TranslateSafe("出現回数") + "=" + agg.Total);
+                {
+                    sb.Append(' ').Append(trAppearance).Append('=').Append(agg.Total);
+                }
                 if (config.FilterSurvival)
-                    parts.Add(TranslateSafe("生存回数") + "=" + agg.Survival);
+                {
+                    sb.Append(' ').Append(trSurvival).Append('=').Append(agg.Survival);
+                }
                 if (config.FilterDeath)
-                    parts.Add(TranslateSafe("死亡回数") + "=" + agg.Death);
+                {
+                    sb.Append(' ').Append(trDeath).Append('=').Append(agg.Death);
+                }
                 if (config.FilterSurvivalRate)
-                    parts.Add(string.Format(TranslateSafe("生存率") + "={0:F1}%", agg.SurvivalRate));
+                {
+                    sb.Append(' ').Append(trSurvivalRate).Append('=');
+                    sb.AppendFormat(CultureInfo.InvariantCulture, "{0:F1}%", agg.SurvivalRate);
+                }
                 if (overallTotal > 0 && config.FilterAppearance)
                 {
                     double occurrenceRate = agg.Total * 100.0 / overallTotal;
-                    parts.Add(string.Format(TranslateSafe("出現率") + "={0:F1}%", occurrenceRate));
+                    sb.Append(' ').Append(trOccurrenceRate).Append('=');
+                    sb.AppendFormat(CultureInfo.InvariantCulture, "{0:F1}%", occurrenceRate);
                 }
-                string roundLine = string.Join(" ", parts);
-                lines.Add(new FormattedTextLine(roundLine, Theme.Current.Foreground, indent: false));
+                lines.Add(new FormattedTextLine(sb.ToString(), Theme.Current.Foreground, indent: false));
 
                 if (config.FilterTerror && stateService.TryGetTerrorAggregates(roundType, out var terrorDict) && terrorDict != null)
                 {
@@ -170,21 +215,30 @@ namespace ToNRoundCounter.UI
 
                         string terrorKey = terrorKvp.Key;
                         TerrorAggregate tAgg = terrorKvp.Value;
-                        var terrorParts = new List<string> { terrorKey };
+                        sb.Clear();
+                        sb.Append(terrorKey);
                         if (config.FilterAppearance)
-                            terrorParts.Add(TranslateSafe("出現回数") + "=" + tAgg.Total);
+                        {
+                            sb.Append(' ').Append(trAppearance).Append('=').Append(tAgg.Total);
+                        }
                         if (config.FilterSurvival)
-                            terrorParts.Add(TranslateSafe("生存回数") + "=" + tAgg.Survival);
+                        {
+                            sb.Append(' ').Append(trSurvival).Append('=').Append(tAgg.Survival);
+                        }
                         if (config.FilterDeath)
-                            terrorParts.Add(TranslateSafe("死亡回数") + "=" + tAgg.Death);
+                        {
+                            sb.Append(' ').Append(trDeath).Append('=').Append(tAgg.Death);
+                        }
                         if (config.FilterSurvivalRate)
-                            terrorParts.Add(string.Format(TranslateSafe("生存率") + "={0:F1}%", tAgg.SurvivalRate));
-                        string terrorLine = string.Join(" ", terrorParts);
+                        {
+                            sb.Append(' ').Append(trSurvivalRate).Append('=');
+                            sb.AppendFormat(CultureInfo.InvariantCulture, "{0:F1}%", tAgg.SurvivalRate);
+                        }
                         Color rawColor = terrorColors.TryGetValue(terrorKey, out var foundColor) ? foundColor : Color.Black;
                         Color terrorColor = (config.FixedTerrorColor != Color.Empty && config.FixedTerrorColor != Color.White)
                             ? config.FixedTerrorColor
                             : AdjustColorForVisibility(rawColor);
-                        lines.Add(new FormattedTextLine(terrorLine, terrorColor, indent: true));
+                        lines.Add(new FormattedTextLine(sb.ToString(), terrorColor, indent: true));
                     }
                 }
 

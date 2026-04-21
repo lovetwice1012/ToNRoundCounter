@@ -92,12 +92,45 @@ namespace ToNRoundCounter.Infrastructure
             var normalized = NormalizeCulture(cultureCode);
             var culture = CultureInfo.GetCultureInfo(normalized);
             Interlocked.Exchange(ref _culture, culture);
+            // Invalidate all per-thread translation caches by bumping the version counter.
+            Interlocked.Increment(ref _translateCacheVersion);
         }
+
+        // Per-thread translation cache. ResourceManager.GetString is surprisingly expensive
+        // (culture fallback chain + dictionary lookup); the UI layer calls Translate 50-100 times
+        // per refresh which compounds quickly. Cache invalidates when SetLanguage increments the
+        // global version counter.
+        private static int _translateCacheVersion;
+
+        [ThreadStatic]
+        private static Dictionary<string, string>? _translateCache;
+        [ThreadStatic]
+        private static int _translateCacheLocalVersion;
 
         public static string Translate(string key)
         {
+            if (string.IsNullOrEmpty(key))
+            {
+                return key;
+            }
+
+            int currentVersion = Volatile.Read(ref _translateCacheVersion);
+            var cache = _translateCache;
+            if (cache == null || _translateCacheLocalVersion != currentVersion)
+            {
+                cache = _translateCache = new Dictionary<string, string>(StringComparer.Ordinal);
+                _translateCacheLocalVersion = currentVersion;
+            }
+
+            if (cache.TryGetValue(key, out var cached))
+            {
+                return cached;
+            }
+
             var culture = Volatile.Read(ref _culture);
-            return _resourceManager.GetString(key, culture) ?? key;
+            string value = _resourceManager.GetString(key, culture) ?? key;
+            cache[key] = value;
+            return value;
         }
 
         public static string NormalizeCulture(string? cultureCode)

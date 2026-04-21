@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using ToNRoundCounter.Application;
@@ -20,6 +21,25 @@ namespace ToNRoundCounter.Infrastructure
         private readonly IEventBus _bus;
         private readonly ISettingsRepository? _settingsRepository;
         private readonly ISecureSettingsEncryption _encryption;
+
+        // Coalesce concurrent SaveAsync requests. Many UI events can call SaveAsync within the same
+        // tick (apikey rotation, OSC port handshake, overlay drag). We let the first call run, mark
+        // a "dirty" flag for any subsequent calls that arrive while it is in progress, and after the
+        // current save finishes we run exactly one trailing save to capture the latest values.
+        private readonly SemaphoreSlim _saveGate = new SemaphoreSlim(1, 1);
+        private int _savePending;
+        // Avoid pushing the same JSON snapshot to SQLite repeatedly when nothing has changed.
+        private string? _lastPersistedSnapshot;
+        // Reused JsonSerializer settings so we don't rebuild contract resolvers per save.
+        private static readonly JsonSerializerSettings SaveJsonSettings = new JsonSerializerSettings
+        {
+            Formatting = Formatting.Indented,
+        };
+
+        private static readonly JsonSerializerSettings LoadJsonSettings = new JsonSerializerSettings
+        {
+            NullValueHandling = NullValueHandling.Ignore,
+        };
 
         public AppSettings(IEventLogger logger, IEventBus bus, ISettingsRepository? settingsRepository = null, ISecureSettingsEncryption? encryption = null)
         {
@@ -195,104 +215,7 @@ namespace ToNRoundCounter.Infrastructure
                         }
 
                         // Deserialize to AppSettingsData first, then copy to AppSettings
-                        var settingsData = JsonConvert.DeserializeObject<AppSettingsData>(jsonContent);
-                        if (settingsData != null)
-                        {
-                            // Copy all properties from AppSettingsData to AppSettings
-                            OSCPort = settingsData.OSCPort;
-                            OSCPortChanged = settingsData.OSCPortChanged;
-                            BackgroundColor_InfoPanel = ColorTranslator.FromHtml(settingsData.BackgroundColor_InfoPanel);
-                            BackgroundColor_Stats = ColorTranslator.FromHtml(settingsData.BackgroundColor_Stats);
-                            BackgroundColor_Log = ColorTranslator.FromHtml(settingsData.BackgroundColor_Log);
-                            FixedTerrorColor = string.IsNullOrEmpty(settingsData.FixedTerrorColor) ? Color.Empty : ColorTranslator.FromHtml(settingsData.FixedTerrorColor);
-                            ShowStats = settingsData.ShowStats;
-                            ShowDebug = settingsData.ShowDebug;
-                            ShowRoundLog = settingsData.ShowRoundLog;
-                            Filter_RoundType = settingsData.Filter_RoundType;
-                            Filter_Terror = settingsData.Filter_Terror;
-                            Filter_Appearance = settingsData.Filter_Appearance;
-                            Filter_Survival = settingsData.Filter_Survival;
-                            Filter_Death = settingsData.Filter_Death;
-                            Filter_SurvivalRate = settingsData.Filter_SurvivalRate;
-                            OverlayShowVelocity = settingsData.OverlayShowVelocity;
-                            OverlayShowTerror = settingsData.OverlayShowTerror;
-                            OverlayShowDamage = settingsData.OverlayShowDamage;
-                            OverlayShowNextRound = settingsData.OverlayShowNextRound;
-                            OverlayShowRoundStatus = settingsData.OverlayShowRoundStatus;
-                            OverlayShowRoundHistory = settingsData.OverlayShowRoundHistory;
-                            OverlayShowRoundStats = settingsData.OverlayShowRoundStats;
-                            OverlayShowTerrorInfo = settingsData.OverlayShowTerrorInfo;
-                            OverlayShowShortcuts = settingsData.OverlayShowShortcuts;
-                            OverlayShowAngle = settingsData.OverlayShowAngle;
-                            OverlayShowClock = settingsData.OverlayShowClock;
-                            OverlayShowInstanceTimer = settingsData.OverlayShowInstanceTimer;
-                            OverlayShowInstanceMembers = settingsData.OverlayShowInstanceMembers;
-                            OverlayShowVoting = settingsData.OverlayShowVoting;
-                            OverlayShowUnboundTerrorDetails = settingsData.OverlayShowUnboundTerrorDetails;
-                            OverlayOpacity = settingsData.OverlayOpacity;
-                            OverlayRoundHistoryLength = settingsData.OverlayRoundHistoryLength;
-                            OverlayPositions = settingsData.OverlayPositions;
-                            OverlayScaleFactors = settingsData.OverlayScaleFactors;
-                            OverlaySizes = settingsData.OverlaySizes;
-                            RoundTypeStats = settingsData.RoundTypeStats;
-                            AutoSuicideEnabled = settingsData.AutoSuicideEnabled;
-                            AutoSuicideRoundTypes = settingsData.AutoSuicideRoundTypes;
-                            AutoSuicidePresets = settingsData.AutoSuicidePresets;
-                            AutoSuicideDetailCustom = settingsData.AutoSuicideDetailCustom;
-                            AutoSuicideFuzzyMatch = settingsData.AutoSuicideFuzzyMatch;
-                            AutoSuicideUseDetail = settingsData.AutoSuicideUseDetail;
-                            ApiKey = settingsData.ApiKey ?? string.Empty;
-                            ThemeKey = settingsData.ThemeKey ?? Theme.DefaultThemeKey;
-                            Language = settingsData.Language ?? LanguageManager.DefaultCulture;
-                            LogFilePath = settingsData.LogFilePath ?? "logs/log-.txt";
-                            WebSocketIp = settingsData.WebSocketIp ?? "127.0.0.1";
-                            CloudWebSocketUrl = settingsData.CloudWebSocketUrl ?? string.Empty;
-                            CloudSyncEnabled = settingsData.CloudSyncEnabled;
-                            CloudPlayerName = settingsData.CloudPlayerName ?? string.Empty;
-                            CloudApiKey = settingsData.CloudApiKey ?? string.Empty;
-                            AutoLaunchEnabled = settingsData.AutoLaunchEnabled;
-                            AutoLaunchEntries = settingsData.AutoLaunchEntries;
-                            AutoLaunchExecutablePath = settingsData.AutoLaunchExecutablePath ?? string.Empty;
-                            AutoLaunchArguments = settingsData.AutoLaunchArguments ?? string.Empty;
-                            ItemMusicEnabled = settingsData.ItemMusicEnabled;
-                            ItemMusicEntries = settingsData.ItemMusicEntries;
-                            ItemMusicItemName = settingsData.ItemMusicItemName ?? string.Empty;
-                            ItemMusicSoundPath = settingsData.ItemMusicSoundPath ?? string.Empty;
-                            ItemMusicMinSpeed = settingsData.ItemMusicMinSpeed;
-                            ItemMusicMaxSpeed = settingsData.ItemMusicMaxSpeed;
-                            RoundBgmEnabled = settingsData.RoundBgmEnabled;
-                            RoundBgmEntries = settingsData.RoundBgmEntries;
-                            RoundBgmItemConflictBehavior = settingsData.RoundBgmItemConflictBehavior;
-                            AutoRecordingEnabled = settingsData.AutoRecordingEnabled;
-                            AutoRecordingWindowTitle = settingsData.AutoRecordingWindowTitle ?? "VRChat";
-                            AutoRecordingCommand = settingsData.AutoRecordingCommand ?? string.Empty;
-                            AutoRecordingFrameRate = settingsData.AutoRecordingFrameRate;
-                            AutoRecordingResolution = settingsData.AutoRecordingResolution ?? AutoRecordingService.DefaultResolutionOptionId;
-                            AutoRecordingArguments = settingsData.AutoRecordingArguments ?? string.Empty;
-                            AutoRecordingOutputDirectory = settingsData.AutoRecordingOutputDirectory ?? "recordings";
-                            AutoRecordingOutputExtension = settingsData.AutoRecordingOutputExtension ?? "avi";
-                            AutoRecordingVideoCodec = settingsData.AutoRecordingVideoCodec ?? AutoRecordingService.DefaultCodec;
-                            AutoRecordingVideoBitrate = settingsData.AutoRecordingVideoBitrate;
-                            AutoRecordingAudioBitrate = settingsData.AutoRecordingAudioBitrate;
-                            AutoRecordingHardwareEncoder = settingsData.AutoRecordingHardwareEncoder ?? AutoRecordingService.DefaultHardwareEncoderOptionId;
-                            AutoRecordingIncludeOverlay = settingsData.AutoRecordingIncludeOverlay;
-                            AutoRecordingRoundTypes = settingsData.AutoRecordingRoundTypes;
-                            AutoRecordingTerrors = settingsData.AutoRecordingTerrors;
-                            DiscordWebhookUrl = settingsData.DiscordWebhookUrl ?? string.Empty;
-                            LastSaveCode = settingsData.LastSaveCode ?? string.Empty;
-                            AfkSoundCancelEnabled = settingsData.AfkSoundCancelEnabled;
-                            CoordinatedAutoSuicideBrainEnabled = settingsData.CoordinatedAutoSuicideBrainEnabled;
-                            NetworkAnalyzerConsentGranted = settingsData.NetworkAnalyzerConsentGranted;
-                            NetworkAnalyzerConsentTimestamp = settingsData.NetworkAnalyzerConsentTimestamp;
-                            NetworkAnalyzerConsentMarkerId = settingsData.NetworkAnalyzerConsentMarkerId;
-                            NetworkAnalyzerProxyPort = settingsData.NetworkAnalyzerProxyPort;
-                        }
-                        else
-                        {
-                            // Fallback to old PopulateObject method if deserialization fails
-                            JsonConvert.PopulateObject(jsonContent, this);
-                        }
-                        // settingsData is already defined above; no need to redefine
+                        var settingsData = JsonConvert.DeserializeObject<AppSettingsData>(jsonContent, LoadJsonSettings);
                         if (settingsData != null)
                         {
                             // Copy all properties from AppSettingsData to AppSettings
@@ -851,6 +774,29 @@ namespace ToNRoundCounter.Infrastructure
 
         public async Task SaveAsync()
         {
+            // Mark that a save is requested. If another save is already running, we'll be picked up
+            // by its trailing iteration and don't need to queue another worker.
+            Interlocked.Exchange(ref _savePending, 1);
+            if (!await _saveGate.WaitAsync(0).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            try
+            {
+                while (Interlocked.Exchange(ref _savePending, 0) == 1)
+                {
+                    await SaveCoreAsync().ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                _saveGate.Release();
+            }
+        }
+
+        private async Task SaveCoreAsync()
+        {
             _logger.LogEvent("AppSettings", $"Saving settings to {Path.GetFullPath(settingsFile)}.");
             _bus.Publish(new SettingsSaving(this));
             NormalizeAutoLaunchEntries();
@@ -950,7 +896,7 @@ namespace ToNRoundCounter.Infrastructure
                 NetworkAnalyzerProxyPort = NetworkAnalyzerProxyPort
             };
 
-            string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
+            string json = JsonConvert.SerializeObject(settings, SaveJsonSettings);
             bool success = false;
             try
             {
@@ -959,7 +905,12 @@ namespace ToNRoundCounter.Infrastructure
                 {
                     await writer.WriteAsync(json).ConfigureAwait(false);
                 }
-                PersistSettingsSnapshot(json);
+                // Skip SQLite snapshot persistence when content is identical to last persisted blob.
+                if (!string.Equals(_lastPersistedSnapshot, json, StringComparison.Ordinal))
+                {
+                    PersistSettingsSnapshot(json);
+                    _lastPersistedSnapshot = json;
+                }
                 success = true;
             }
             catch (Exception ex)

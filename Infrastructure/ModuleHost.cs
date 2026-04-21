@@ -23,6 +23,7 @@ namespace ToNRoundCounter.Infrastructure
         private readonly Dictionary<string, AuxiliaryWindowDescriptor> _auxiliaryWindows = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, List<Form>> _activeAuxiliaryWindows = new(StringComparer.OrdinalIgnoreCase);
         private List<LoadedModule>? _oscMessageReceiverModules;
+        private List<LoadedModule>? _webSocketMessageReceiverModules;
 
         public ModuleHost(IEventLogger logger, IEventBus bus, SafeModeManager? safeModeManager = null)
         {
@@ -394,6 +395,7 @@ namespace ToNRoundCounter.Infrastructure
             
             // Build cache of modules that need OSC message notifications
             BuildOscMessageReceiverCache();
+            BuildWebSocketMessageReceiverCache();
         }
         
         private void BuildOscMessageReceiverCache()
@@ -424,6 +426,33 @@ namespace ToNRoundCounter.Infrastructure
             
             LogHostEvent(nameof(BuildOscMessageReceiverCache), 
                 $"OSC message receiver cache built: {receivers.Count} of {_modules.Count} module(s) will receive OSC notifications.", 
+                LogEventLevel.Information);
+        }
+
+        private void BuildWebSocketMessageReceiverCache()
+        {
+            var receivers = new List<LoadedModule>();
+            foreach (var module in _modules)
+            {
+                var moduleType = module.Instance.GetType();
+                var method = moduleType.GetMethod(
+                    nameof(IModule.OnWebSocketMessageReceived),
+                    BindingFlags.Public | BindingFlags.Instance);
+
+                if (method != null)
+                {
+                    var methodBody = method.GetMethodBody();
+                    if (methodBody != null && methodBody.GetILAsByteArray()?.Length > 2)
+                    {
+                        receivers.Add(module);
+                    }
+                }
+            }
+
+            _webSocketMessageReceiverModules = receivers;
+
+            LogHostEvent(nameof(BuildWebSocketMessageReceiverCache),
+                $"WebSocket message receiver cache built: {receivers.Count} of {_modules.Count} module(s) will receive WebSocket notifications.",
                 LogEventLevel.Information);
         }
 
@@ -890,12 +919,28 @@ namespace ToNRoundCounter.Infrastructure
 
         private void HandleWebSocketMessageReceived(WebSocketMessageReceived message)
         {
-            LogHostEvent(nameof(HandleWebSocketMessageReceived), $"Message received ({message.Message?.Length ?? 0} chars).");
+            if (_logger.IsEnabled(LogEventLevel.Debug))
+            {
+                LogHostEvent(nameof(HandleWebSocketMessageReceived), () => $"Message received ({message.Message?.Length ?? 0} chars).", LogEventLevel.Debug);
+            }
+
+            var hasEventHandlers = WebSocketMessageReceived != null;
+            var modulesToNotify = _webSocketMessageReceiverModules ?? _modules;
+
+            if (!hasEventHandlers && (modulesToNotify == null || modulesToNotify.Count == 0))
+            {
+                return;
+            }
+
             var context = new ModuleWebSocketMessageContext(message.Message!, _serviceProvider);
             WebSocketMessageReceived?.Invoke(this, context);
-            foreach (var module in _modules)
+
+            if (modulesToNotify != null && modulesToNotify.Count > 0)
             {
-                InvokeModuleAction(module, context, static (m, ctx) => m.OnWebSocketMessageReceived(ctx), nameof(IModule.OnWebSocketMessageReceived));
+                foreach (var module in modulesToNotify)
+                {
+                    InvokeModuleAction(module, context, static (m, ctx) => m.OnWebSocketMessageReceived(ctx), nameof(IModule.OnWebSocketMessageReceived));
+                }
             }
         }
 

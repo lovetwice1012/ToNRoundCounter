@@ -129,6 +129,19 @@ namespace ToNRoundCounter.UI
                 }
             }
 
+            private static readonly Pen s_tickPen = CreatePen(Color.FromArgb(200, Color.White), 2f);
+            private static readonly Pen s_crossPen = CreatePen(Color.FromArgb(255, 255, 170, 60), 8f);
+            private static readonly Pen s_pointerPen = CreatePen(Color.White, 4f);
+            private static readonly SolidBrush s_centerBrush = new SolidBrush(Color.White);
+
+            private static Pen CreatePen(Color color, float width)
+            {
+                var p = new Pen(color, width);
+                p.StartCap = LineCap.Round;
+                p.EndCap = LineCap.Round;
+                return p;
+            }
+
             protected override void OnPaint(PaintEventArgs e)
             {
                 base.OnPaint(e);
@@ -145,35 +158,19 @@ namespace ToNRoundCounter.UI
                     return;
                 }
 
-                using (var tickPen = new Pen(Color.FromArgb(200, Color.White), 2f))
+                for (int i = 0; i < 12; i++)
                 {
-                    tickPen.StartCap = LineCap.Round;
-                    tickPen.EndCap = LineCap.Round;
-                    for (int i = 0; i < 12; i++)
-                    {
-                        float tickAngle = (float)(i * 30f * Math.PI / 180f);
-                        float inner = radius - 14f;
-                        float outer = radius;
-                        var innerPoint = new PointF(
-                            centerX + inner * (float)Math.Sin(tickAngle),
-                            centerY - inner * (float)Math.Cos(tickAngle));
-                        var outerPoint = new PointF(
-                            centerX + outer * (float)Math.Sin(tickAngle),
-                            centerY - outer * (float)Math.Cos(tickAngle));
-                        g.DrawLine(tickPen, innerPoint, outerPoint);
-                    }
+                    float tickAngle = (float)(i * 30f * Math.PI / 180f);
+                    float inner = radius - 14f;
+                    float outer = radius;
+                    var innerPoint = new PointF(
+                        centerX + inner * (float)Math.Sin(tickAngle),
+                        centerY - inner * (float)Math.Cos(tickAngle));
+                    var outerPoint = new PointF(
+                        centerX + outer * (float)Math.Sin(tickAngle),
+                        centerY - outer * (float)Math.Cos(tickAngle));
+                    g.DrawLine(s_tickPen, innerPoint, outerPoint);
                 }
-
-                using var crossPen = new Pen(Color.FromArgb(255, 255, 170, 60), 8f)
-                {
-                    StartCap = LineCap.Round,
-                    EndCap = LineCap.Round
-                };
-                using var pointerPen = new Pen(Color.White, 4f)
-                {
-                    StartCap = LineCap.Round,
-                    EndCap = LineCap.Round
-                };
 
                 var state = g.Save();
                 g.TranslateTransform(centerX, centerY);
@@ -181,19 +178,18 @@ namespace ToNRoundCounter.UI
                 g.RotateTransform(45f);
 
                 float crossLength = radius * 0.85f;
-                g.DrawLine(crossPen, -crossLength, 0, crossLength, 0);
-                g.DrawLine(crossPen, 0, -crossLength, 0, crossLength);
+                g.DrawLine(s_crossPen, -crossLength, 0, crossLength, 0);
+                g.DrawLine(s_crossPen, 0, -crossLength, 0, crossLength);
                 g.Restore(state);
 
                 state = g.Save();
                 g.TranslateTransform(centerX, centerY);
                 float pointerLength = radius * 0.9f;
-                g.DrawLine(pointerPen, 0, 0, 0, -pointerLength);
+                g.DrawLine(s_pointerPen, 0, 0, 0, -pointerLength);
                 g.Restore(state);
 
-                using var centerBrush = new SolidBrush(Color.White);
                 float hubSize = 8f;
-                g.FillEllipse(centerBrush, centerX - hubSize / 2f, centerY - hubSize / 2f, hubSize, hubSize);
+                g.FillEllipse(s_centerBrush, centerX - hubSize / 2f, centerY - hubSize / 2f, hubSize, hubSize);
             }
         }
     }

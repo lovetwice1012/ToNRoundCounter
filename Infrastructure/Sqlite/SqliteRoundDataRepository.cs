@@ -36,12 +36,13 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
             try
             {
                 using var pragmaCommand = _connection.CreateCommand();
-                pragmaCommand.CommandText = "PRAGMA journal_mode=WAL;";
+                // synchronous=NORMAL is safe with WAL and reduces fsync overhead for round log writes.
+                pragmaCommand.CommandText = "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;";
                 pragmaCommand.ExecuteNonQuery();
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, "Failed to enable WAL journal mode for round data database.");
+                Log.Warning(ex, "Failed to apply performance pragmas for round data database.");
             }
 
             Initialize();

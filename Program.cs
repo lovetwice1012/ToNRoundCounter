@@ -84,7 +84,20 @@ namespace ToNRoundCounter
 
             Log.Logger = loggerConfiguration.CreateLogger();
 
-            CompressOldLogs(Path.GetDirectoryName(logPath) ?? "logs", TimeSpan.FromDays(3));
+            // Compress old logs in the background to avoid blocking startup.
+            // Directory scans + GZip compression can take 50-500ms on large log folders.
+            var compressLogDir = Path.GetDirectoryName(logPath) ?? "logs";
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    CompressOldLogs(compressLogDir, TimeSpan.FromDays(3));
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Background log compression failed.");
+                }
+            });
 
             var dataDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data");
             Directory.CreateDirectory(dataDirectory);

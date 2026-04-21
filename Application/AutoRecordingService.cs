@@ -181,6 +181,24 @@ namespace ToNRoundCounter.Application
                 "AutoRecording",
                 () =>
                     $"Recording started. Output: {outputPath}. Trigger: {triggerDetails}. Codec: {codec}. Resolution: {resolutionDisplay}. FPS: {resolvedFrameRate}. Video bitrate: {videoBitrateDisplay}. Audio: {audioBitrateDisplay}. Hardware: {hardwareDescription} ({encoderMode}).");
+
+            // Surface silent fallbacks so users can diagnose poor output quality without enabling
+            // Media Foundation tracing. These are the most common causes of "no audio in the file"
+            // and "video plays back at ~1 fps even though the header says 30 fps" reports.
+            if (!string.IsNullOrEmpty(recorder.HardwareFallbackReason))
+            {
+                _logger.LogEvent(
+                    "AutoRecording",
+                    () => $"Hardware encoder unavailable, fell back to software encoder. This will likely produce duplicated frames at high resolutions/framerates. Reason: {recorder.HardwareFallbackReason}",
+                    LogEventLevel.Warning);
+            }
+            if (captureAudio && !string.IsNullOrEmpty(recorder.AudioFallbackReason))
+            {
+                _logger.LogEvent(
+                    "AutoRecording",
+                    () => $"Audio capture disabled for this recording (video-only fallback). Reason: {recorder.AudioFallbackReason}",
+                    LogEventLevel.Warning);
+            }
         }
 
         private void HandleRecorderCompleted(InternalScreenRecorder recorder)

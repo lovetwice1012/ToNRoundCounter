@@ -264,8 +264,8 @@ namespace ToNRoundCounter.Application
         {
             ThrowIfDisposed();
             
-            var tasks = _activeOperations.Values.Select(op => op.Task).ToList();
-            if (tasks.Count == 0)
+            var tasks = _activeOperations.Values.Select(op => op.Task).ToArray();
+            if (tasks.Length == 0)
                 return;
 
             if (!timeout.HasValue)
@@ -280,7 +280,7 @@ namespace ToNRoundCounter.Application
 
             if (completed == timeoutTask)
             {
-                throw new TimeoutException($"Timed out waiting for {tasks.Count} cloud operation(s) to complete.");
+                throw new TimeoutException($"Timed out waiting for {tasks.Length} cloud operation(s) to complete.");
             }
 
             await allTasks.ConfigureAwait(false);

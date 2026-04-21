@@ -3,6 +3,8 @@ using System.IO;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Serilog.Events;
 using Titanium.Web.Proxy;
@@ -25,6 +27,14 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
         private bool _isRunning;
         private int _currentPort;
         private readonly string _logDirectory;
+
+        // Async logging pipeline. Producer threads (proxy callbacks) only enqueue strings via
+        // the channel's writer; a single background task drains the channel and writes them to
+        // the log file. This removes per-frame/per-header lock contention and offloads
+        // synchronous file I/O from the high-throughput network event handlers.
+        private Channel<string>? _logChannel;
+        private Task? _logWriterTask;
+        private CancellationTokenSource? _logWriterCts;
 
         public NetworkAnalyzerProxy(IEventLogger logger)
         {
@@ -171,10 +181,27 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
             _proxyServer.Start();
 
             _logFilePath = Path.Combine(_logDirectory, $"network-{DateTimeOffset.Now:yyyyMMdd-HHmmss}.log");
-            _logWriter = TextWriter.Synchronized(new StreamWriter(new FileStream(_logFilePath, FileMode.Append, FileAccess.Write, FileShare.Read), new UTF8Encoding(false))
+            // No need for TextWriter.Synchronized: only the background writer task touches _logWriter.
+            _logWriter = new StreamWriter(new FileStream(_logFilePath, FileMode.Append, FileAccess.Write, FileShare.Read), new UTF8Encoding(false))
             {
-                AutoFlush = true
+                AutoFlush = false
+            };
+
+            // Bounded channel with DropOldest avoids unbounded memory growth if the writer falls
+            // behind during traffic spikes; this matches the behaviour we want (drop the oldest
+            // diagnostic line rather than back-pressure the proxy callback chain).
+            _logChannel = Channel.CreateBounded<string>(new BoundedChannelOptions(8192)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true,
+                SingleWriter = false,
+                AllowSynchronousContinuations = false,
             });
+            _logWriterCts = new CancellationTokenSource();
+            var channel = _logChannel;
+            var writer = _logWriter;
+            var token = _logWriterCts.Token;
+            _logWriterTask = Task.Run(() => RunLogWriterAsync(channel, writer, token));
 
             _currentPort = port;
             _isRunning = true;
@@ -213,6 +240,27 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
             {
                 try
                 {
+                    if (_logChannel != null)
+                    {
+                        _logChannel.Writer.TryComplete();
+                    }
+                    if (_logWriterTask != null)
+                    {
+                        // Give the writer a brief grace period to drain queued lines.
+                        if (!_logWriterTask.Wait(TimeSpan.FromSeconds(2)))
+                        {
+                            _logWriterCts?.Cancel();
+                            try { _logWriterTask.Wait(TimeSpan.FromSeconds(1)); } catch { }
+                        }
+                    }
+                }
+                catch
+                {
+                    // Ignore drain errors during shutdown.
+                }
+
+                try
+                {
                     _logWriter.Dispose();
                 }
                 catch
@@ -221,6 +269,11 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                 }
                 _logWriter = null;
             }
+
+            _logChannel = null;
+            _logWriterTask = null;
+            try { _logWriterCts?.Dispose(); } catch { }
+            _logWriterCts = null;
 
             _logFilePath = null;
             _currentPort = 0;
@@ -623,22 +676,17 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
 
         private void LogLine(string message)
         {
-            lock (_sync)
+            // Snapshot the writer reference under lock-free read; channel is created/cleared
+            // only inside StartInternal/StopInternal which run on the lock-protected start/stop path.
+            var channel = Volatile.Read(ref _logChannel);
+            if (channel == null)
             {
-                if (_logWriter == null)
-                {
-                    return;
-                }
-
-                try
-                {
-                    _logWriter.WriteLine($"{DateTimeOffset.Now:O} {message}");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogEvent("NetworkAnalyzer", $"Failed to write to log file: {ex}", LogEventLevel.Error);
-                }
+                return;
             }
+
+            // Pre-format with timestamp on the calling thread so the writer task only does I/O.
+            var line = string.Concat(DateTimeOffset.Now.ToString("O"), " ", message);
+            channel.Writer.TryWrite(line);
         }
 
         private void LogMultiline(string prefix, string content)
@@ -648,26 +696,64 @@ namespace ToNRoundCounter.Modules.NetworkAnalyzer
                 return;
             }
 
-            lock (_sync)
+            var channel = Volatile.Read(ref _logChannel);
+            if (channel == null)
             {
-                if (_logWriter == null)
-                {
-                    return;
-                }
+                return;
+            }
 
-                try
+            string timestamp = DateTimeOffset.Now.ToString("O");
+            using var reader = new StringReader(content);
+            string? line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                channel.Writer.TryWrite(string.Concat(timestamp, " ", prefix, line));
+            }
+        }
+
+        private async Task RunLogWriterAsync(Channel<string> channel, TextWriter writer, CancellationToken token)
+        {
+            try
+            {
+                var reader = channel.Reader;
+                int sinceLastFlush = 0;
+                while (await reader.WaitToReadAsync(token).ConfigureAwait(false))
                 {
-                    using var reader = new StringReader(content);
-                    string? line;
-                    while ((line = reader.ReadLine()) != null)
+                    while (reader.TryRead(out var line))
                     {
-                        _logWriter.WriteLine($"{DateTimeOffset.Now:O} {prefix}{line}");
+                        try
+                        {
+                            writer.WriteLine(line);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogEvent("NetworkAnalyzer", $"Failed to write to log file: {ex}", LogEventLevel.Error);
+                        }
+
+                        if (++sinceLastFlush >= 64)
+                        {
+                            try { writer.Flush(); } catch { }
+                            sinceLastFlush = 0;
+                        }
+                    }
+
+                    if (sinceLastFlush > 0)
+                    {
+                        try { writer.Flush(); } catch { }
+                        sinceLastFlush = 0;
                     }
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogEvent("NetworkAnalyzer", $"Failed to write multi-line log entry: {ex}", LogEventLevel.Error);
-                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                _logger.LogEvent("NetworkAnalyzer", $"Log writer task failed: {ex}", LogEventLevel.Error);
+            }
+            finally
+            {
+                try { writer.Flush(); } catch { }
             }
         }
 

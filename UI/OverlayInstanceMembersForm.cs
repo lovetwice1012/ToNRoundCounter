@@ -12,6 +12,15 @@ namespace ToNRoundCounter.UI
     /// </summary>
     public class OverlayInstanceMembersForm : OverlaySectionForm
     {
+        // Shared fonts to avoid per-rebuild Font allocations (previously every rebuild
+        // instantiated 3-4 new Font objects per member row, which at 5Hz × 20 players
+        // produced hundreds of GDI font handles per second).
+        private static readonly FontFamily DefaultFontFamily = Control.DefaultFont.FontFamily;
+        private static readonly Font EmptyLabelFont = new Font(DefaultFontFamily, 12f, FontStyle.Regular);
+        private static readonly Font HeaderFont = new Font(DefaultFontFamily, 11f, FontStyle.Bold);
+        private static readonly Font SeparatorFont = new Font(DefaultFontFamily, 9f, FontStyle.Regular);
+        private static readonly Font MemberRowFont = new Font(DefaultFontFamily, 11f, FontStyle.Regular);
+
         private readonly TableLayoutPanel contentPanel;
         private List<InstanceMemberInfo> members = new List<InstanceMemberInfo>();
         private List<string> desirePlayers = new List<string>();
@@ -41,7 +50,7 @@ namespace ToNRoundCounter.UI
             {
                 Text = message,
                 ForeColor = Color.Gray,
-                Font = new Font(Font.FontFamily, 12f, FontStyle.Regular),
+                Font = EmptyLabelFont,
                 AutoSize = true,
                 BackColor = Color.Transparent,
                 Margin = new Padding(0, 2, 0, 2),
@@ -172,7 +181,7 @@ namespace ToNRoundCounter.UI
                 {
                     Text = "インスタンスメンバーなし",
                     ForeColor = Color.Gray,
-                    Font = new Font(Font.FontFamily, 12f, FontStyle.Regular),
+                    Font = EmptyLabelFont,
                     AutoSize = true,
                     BackColor = Color.Transparent,
                     Margin = new Padding(0, 2, 0, 2),
@@ -204,7 +213,7 @@ namespace ToNRoundCounter.UI
                 {
                     Text = "【生存希望者】",
                     ForeColor = Color.Yellow,
-                    Font = new Font(Font.FontFamily, 11f, FontStyle.Bold),
+                    Font = HeaderFont,
                     AutoSize = true,
                     BackColor = Color.Transparent,
                     Margin = new Padding(0, 2, 0, 2),
@@ -224,7 +233,7 @@ namespace ToNRoundCounter.UI
                     {
                         Text = "―――――――――",
                         ForeColor = Color.Gray,
-                        Font = new Font(Font.FontFamily, 9f, FontStyle.Regular),
+                        Font = SeparatorFont,
                         AutoSize = true,
                         BackColor = Color.Transparent,
                         Margin = new Padding(0, 4, 0, 4),
@@ -243,7 +252,7 @@ namespace ToNRoundCounter.UI
                     {
                         Text = "【その他】",
                         ForeColor = Color.LightGray,
-                        Font = new Font(Font.FontFamily, 11f, FontStyle.Bold),
+                        Font = HeaderFont,
                         AutoSize = true,
                         BackColor = Color.Transparent,
                         Margin = new Padding(0, 2, 0, 2),
@@ -296,7 +305,7 @@ namespace ToNRoundCounter.UI
                 BorderStyle = BorderStyle.None,
                 ScrollBars = RichTextBoxScrollBars.None,
                 Margin = new Padding(0, 1, 0, 1),
-                Font = new Font(Font.FontFamily, 11f, FontStyle.Regular),
+                Font = MemberRowFont,
                 AutoSize = false,
                 Dock = DockStyle.Top,
                 WordWrap = false,

@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -50,28 +51,63 @@ namespace ToNRoundCounter.UI
                 LogUi($"Connecting to shared instance stream at {url}.");
                 await socket.ConnectAsync(new Uri(url), _cancellation.Token);
                 LogUi("Instance WebSocket connection established.", LogEventLevel.Debug);
-                while (socket.State == WebSocketState.Open)
+                var pool = ArrayPool<byte>.Shared;
+                byte[] buffer = pool.Rent(8192);
+                byte[]? assembly = null;
+                int assemblyOffset = 0;
+                try
                 {
-                    var buffer = new byte[8192];
-                    WebSocketReceiveResult result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), _cancellation.Token);
-                    if (result.MessageType == WebSocketMessageType.Close)
+                    while (socket.State == WebSocketState.Open)
                     {
-                        LogUi("Instance WebSocket close frame received. Closing connection.", LogEventLevel.Debug);
-                        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
-                        break;
-                    }
-                    else
-                    {
-                        var messageBytes = new List<byte>();
-                        messageBytes.AddRange(buffer.Take(result.Count));
-                        while (!result.EndOfMessage)
+                        WebSocketReceiveResult result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), _cancellation.Token);
+                        if (result.MessageType == WebSocketMessageType.Close)
                         {
-                            result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), _cancellation.Token);
-                            messageBytes.AddRange(buffer.Take(result.Count));
+                            LogUi("Instance WebSocket close frame received. Closing connection.", LogEventLevel.Debug);
+                            await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
+                            break;
                         }
-                        string msg = Encoding.UTF8.GetString(messageBytes.ToArray());
-                        LogUi($"Instance WebSocket message received ({msg.Length} chars).", LogEventLevel.Debug);
+
+                        string msg;
+                        if (result.EndOfMessage && assemblyOffset == 0)
+                        {
+                            msg = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                        }
+                        else
+                        {
+                            if (assembly == null)
+                            {
+                                assembly = pool.Rent(Math.Max(buffer.Length * 4, result.Count));
+                            }
+                            EnsureAssemblyCapacity(ref assembly, assemblyOffset + result.Count, assemblyOffset, pool);
+                            Buffer.BlockCopy(buffer, 0, assembly, assemblyOffset, result.Count);
+                            assemblyOffset += result.Count;
+
+                            while (!result.EndOfMessage)
+                            {
+                                result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), _cancellation.Token);
+                                EnsureAssemblyCapacity(ref assembly, assemblyOffset + result.Count, assemblyOffset, pool);
+                                Buffer.BlockCopy(buffer, 0, assembly, assemblyOffset, result.Count);
+                                assemblyOffset += result.Count;
+                            }
+
+                            msg = Encoding.UTF8.GetString(assembly, 0, assemblyOffset);
+                            assemblyOffset = 0;
+                        }
+
+                        if (_logger != null && _logger.IsEnabled(LogEventLevel.Debug))
+                        {
+                            var len = msg.Length;
+                            LogUi($"Instance WebSocket message received ({len} chars).", LogEventLevel.Debug);
+                        }
                         ProcessInstanceMessage(msg);
+                    }
+                }
+                finally
+                {
+                    pool.Return(buffer);
+                    if (assembly != null)
+                    {
+                        pool.Return(assembly);
                     }
                 }
             }
@@ -137,6 +173,28 @@ namespace ToNRoundCounter.UI
                     }
                 });
             }
+        }
+
+        private static void EnsureAssemblyCapacity(ref byte[] buffer, int requiredSize, int copyLength, ArrayPool<byte> pool)
+        {
+            if (buffer.Length >= requiredSize)
+            {
+                return;
+            }
+
+            int newSize = buffer.Length;
+            while (newSize < requiredSize)
+            {
+                newSize *= 2;
+            }
+
+            var newBuffer = pool.Rent(newSize);
+            if (copyLength > 0)
+            {
+                Buffer.BlockCopy(buffer, 0, newBuffer, 0, copyLength);
+            }
+            pool.Return(buffer);
+            buffer = newBuffer;
         }
 
         private void ProcessInstanceMessage(string message)

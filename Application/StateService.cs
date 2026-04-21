@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Channels;
+using System.Threading.Tasks;
 using Serilog.Events;
 using ToNRoundCounter.Domain;
 
@@ -14,11 +17,27 @@ namespace ToNRoundCounter.Application
         private readonly IEventLogger? _logger;
         private readonly IRoundDataRepository? _roundDataRepository;
 
+        // Background pipeline for SQLite round-log persistence. Decouples the call site
+        // (UI/event handlers) from disk I/O latency.
+        private readonly Channel<(Round Round, string LogEntry, DateTime Timestamp)>? _roundLogPersistChannel;
+        private readonly Task? _roundLogPersistTask;
+
         public string PlayerDisplayName { get; set; } = string.Empty;
         public Round? CurrentRound { get; private set; }
         public Round? PreviousRound { get; private set; }
         private readonly Dictionary<string, RoundAggregate> _roundAggregates = new();
         private readonly TerrorAggregateCollection _terrorAggregates = new();
+
+        // Structural version of _roundAggregates (incremented only when keys are added/removed,
+        // not when entry counters mutate). Lets GetRoundAggregates return a cached snapshot
+        // dictionary instead of allocating a fresh copy on every UI rebuild.
+        private long _roundAggregatesStructVersion;
+        private long _roundAggregatesSnapshotVersion = -1;
+        private IReadOnlyDictionary<string, RoundAggregate>? _roundAggregatesSnapshot;
+        // Per-round-type cache of terror aggregate snapshots. Invalidated when the structural
+        // version changes (new round type) or when terror data is recorded. Keyed by round type.
+        private long _terrorAggregatesVersion;
+        private readonly Dictionary<string, (long version, IReadOnlyDictionary<string, TerrorAggregate> snapshot)> _terrorAggregatesSnapshots = new();
         private readonly Dictionary<string, string?> _roundMapNames = new();
         private readonly TerrorMapNameCollection _terrorMapNames = new();
         private readonly List<Tuple<Round, string>> _roundLogHistory = new();
@@ -31,6 +50,45 @@ namespace ToNRoundCounter.Application
             _logger = logger;
             _roundDataRepository = roundDataRepository;
             _logger?.LogEvent("StateService", "State service instantiated.", LogEventLevel.Debug);
+
+            if (_roundDataRepository != null)
+            {
+                _roundLogPersistChannel = Channel.CreateBounded<(Round, string, DateTime)>(
+                    new BoundedChannelOptions(1024)
+                    {
+                        FullMode = BoundedChannelFullMode.DropOldest,
+                        SingleReader = true,
+                        SingleWriter = false,
+                    });
+                _roundLogPersistTask = Task.Run(RunRoundLogPersistLoopAsync);
+            }
+        }
+
+        private async Task RunRoundLogPersistLoopAsync()
+        {
+            if (_roundLogPersistChannel == null) return;
+            var reader = _roundLogPersistChannel.Reader;
+            try
+            {
+                while (await reader.WaitToReadAsync().ConfigureAwait(false))
+                {
+                    while (reader.TryRead(out var item))
+                    {
+                        try
+                        {
+                            _roundDataRepository?.AddRoundLog(item.Round, item.LogEntry, item.Timestamp);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger?.LogEvent("StateService", () => $"Background round-log persist failed: {ex.Message}", LogEventLevel.Warning);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogEvent("StateService", () => $"Round-log persist loop terminated: {ex.Message}", LogEventLevel.Warning);
+            }
         }
 
         private void NotifyStateChanged(string reason)
@@ -104,13 +162,14 @@ namespace ToNRoundCounter.Application
                 roundLogHandlers = RoundLogAdded;
             }
 
-            try
+            // Hand off the SQLite write to the background channel. The repository write is
+            // serialized in a single-reader loop and no longer blocks the calling thread.
+            // We pass the existing snapshot reference (already cloned above) instead of cloning
+            // a second time; the in-memory list also references this snapshot, but Round entries
+            // are effectively immutable after AddRoundLog returns.
+            if (_roundLogPersistChannel != null)
             {
-                _roundDataRepository?.AddRoundLog(snapshot.Clone(), logEntry, DateTime.UtcNow);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogEvent("StateService", () => $"Failed to add round log to repository: {ex.Message}", LogEventLevel.Warning);
+                _roundLogPersistChannel.Writer.TryWrite((snapshot, logEntry, DateTime.UtcNow));
             }
 
             roundLogHandlers?.Invoke(snapshot, logEntry);
@@ -164,6 +223,7 @@ namespace ToNRoundCounter.Application
                 {
                     roundAgg = new RoundAggregate();
                     _roundAggregates[roundType] = roundAgg;
+                    _roundAggregatesStructVersion++;
                 }
                 roundAgg.Total++;
                 if (survived) roundAgg.Survival++; else roundAgg.Death++;
@@ -174,6 +234,7 @@ namespace ToNRoundCounter.Application
                     var terrorAgg = _terrorAggregates.Get(roundType, safeTerrorType);
                     terrorAgg.Total++;
                     if (survived) terrorAgg.Survival++; else terrorAgg.Death++;
+                    _terrorAggregatesVersion++;
                 }
             }
             try
@@ -213,6 +274,9 @@ namespace ToNRoundCounter.Application
                 PreviousRound = null;
                 _roundAggregates.Clear();
                 _terrorAggregates.Clear();
+                _terrorAggregatesSnapshots.Clear();
+                _terrorAggregatesVersion++;
+                _roundAggregatesStructVersion++;
                 _roundMapNames.Clear();
                 _terrorMapNames.Clear();
                 _roundLogHistory.Clear();
@@ -226,10 +290,19 @@ namespace ToNRoundCounter.Application
 
         public IReadOnlyDictionary<string, RoundAggregate> GetRoundAggregates()
         {
-            Dictionary<string, RoundAggregate> snapshot;
+            IReadOnlyDictionary<string, RoundAggregate> snapshot;
             lock (_sync)
             {
-                snapshot = new Dictionary<string, RoundAggregate>(_roundAggregates);
+                if (_roundAggregatesSnapshot != null && _roundAggregatesSnapshotVersion == _roundAggregatesStructVersion)
+                {
+                    snapshot = _roundAggregatesSnapshot;
+                }
+                else
+                {
+                    snapshot = new Dictionary<string, RoundAggregate>(_roundAggregates);
+                    _roundAggregatesSnapshot = snapshot;
+                    _roundAggregatesSnapshotVersion = _roundAggregatesStructVersion;
+                }
             }
             _logger?.LogEvent("StateService", () => $"Providing round aggregates snapshot with {snapshot.Count} entries.", LogEventLevel.Debug);
             return snapshot;
@@ -240,9 +313,18 @@ namespace ToNRoundCounter.Application
             _logger?.LogEvent("StateService", () => $"Retrieving terror aggregates for round '{round}'.", LogEventLevel.Debug);
             lock (_sync)
             {
+                if (_terrorAggregatesSnapshots.TryGetValue(round, out var cached)
+                    && cached.version == _terrorAggregatesVersion
+                    && cached.snapshot is Dictionary<string, TerrorAggregate> cachedDict)
+                {
+                    terrorDict = cachedDict;
+                    return true;
+                }
+
                 if (_terrorAggregates.TryGetRound(round, out var dict))
                 {
                     var terrorDictSnapshot = new Dictionary<string, TerrorAggregate>(dict);
+                    _terrorAggregatesSnapshots[round] = (_terrorAggregatesVersion, terrorDictSnapshot);
                     terrorDict = terrorDictSnapshot;
                     _logger?.LogEvent("StateService", () => $"Terror aggregates retrieval succeeded for round '{round}' with {terrorDictSnapshot.Count} entries.", LogEventLevel.Debug);
                     return true;

@@ -30,6 +30,14 @@ namespace ToNRoundCounter.UI
 
         private const double DefaultBackgroundOpacity = 0.7d;
 
+        // Cached paint resources (colors are static readonly so these are safe to cache statically)
+        private static readonly Font s_headerFont = new Font(SystemFonts.DefaultFont.FontFamily, 8.25f, FontStyle.Bold);
+        private static readonly SolidBrush s_headerBrush = new SolidBrush(OverlayTheme.SurfaceHeader);
+        private static readonly Pen s_dividerPen = new Pen(OverlayTheme.BorderSubtle, 1f);
+        private static readonly SolidBrush s_titleBrush = new SolidBrush(OverlayTheme.TextSecondary);
+        private static readonly SolidBrush s_mutedBrush = new SolidBrush(OverlayTheme.TextMuted);
+        private static readonly SolidBrush s_editingBrush = new SolidBrush(OverlayTheme.BorderEditing);
+
         // --- Redesign state --------------------------------------------------
         private readonly string sectionTitle;
         private bool isEditMode;
@@ -290,17 +298,13 @@ namespace ToNRoundCounter.UI
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
             var headerRect = new Rectangle(0, 0, Width, OverlayTheme.HeaderHeight);
-            using (var headerBrush = new SolidBrush(OverlayTheme.SurfaceHeader))
+            using (var headerPath = OverlayTheme.CreateRoundedPath(
+                new Rectangle(0, 0, Width, Math.Min(Height, OverlayTheme.HeaderHeight + OverlayTheme.CornerRadius)),
+                OverlayTheme.CornerRadius))
             {
-                using var headerPath = OverlayTheme.CreateRoundedPath(
-                    new Rectangle(0, 0, Width, Math.Min(Height, OverlayTheme.HeaderHeight + OverlayTheme.CornerRadius)),
-                    OverlayTheme.CornerRadius);
-                graphics.FillPath(headerBrush, headerPath);
+                graphics.FillPath(s_headerBrush, headerPath);
             }
-            using (var dividerPen = new Pen(OverlayTheme.BorderSubtle, 1f))
-            {
-                graphics.DrawLine(dividerPen, 0, OverlayTheme.HeaderHeight, Width, OverlayTheme.HeaderHeight);
-            }
+            graphics.DrawLine(s_dividerPen, 0, OverlayTheme.HeaderHeight, Width, OverlayTheme.HeaderHeight);
 
             // Accent strip
             var accentRect = new Rectangle(0, 0, Width, OverlayTheme.AccentStripHeight);
@@ -312,30 +316,27 @@ namespace ToNRoundCounter.UI
             // Header text: section glyph + title
             string glyph = OverlayTheme.GetSectionGlyph(sectionKey);
             string headerText = string.IsNullOrEmpty(glyph) ? sectionTitle : $"{glyph}  {sectionTitle}";
-            using (var headerFont = new Font(SystemFonts.DefaultFont.FontFamily, 8.25f, FontStyle.Bold))
-            using (var titleBrush = new SolidBrush(OverlayTheme.TextSecondary))
             using (var glyphBrush = new SolidBrush(OverlayTheme.WithAlpha(accentColor, 230)))
             {
                 if (!string.IsNullOrEmpty(glyph))
                 {
-                    var glyphSize = graphics.MeasureString(glyph, headerFont);
-                    graphics.DrawString(glyph, headerFont, glyphBrush, 10f, (OverlayTheme.HeaderHeight - glyphSize.Height) / 2f);
+                    var glyphSize = graphics.MeasureString(glyph, s_headerFont);
+                    graphics.DrawString(glyph, s_headerFont, glyphBrush, 10f, (OverlayTheme.HeaderHeight - glyphSize.Height) / 2f);
                     float titleX = 10f + glyphSize.Width + 8f;
-                    var titleSize = graphics.MeasureString(sectionTitle, headerFont);
-                    graphics.DrawString(sectionTitle, headerFont, titleBrush, titleX, (OverlayTheme.HeaderHeight - titleSize.Height) / 2f);
+                    var titleSize = graphics.MeasureString(sectionTitle, s_headerFont);
+                    graphics.DrawString(sectionTitle, s_headerFont, s_titleBrush, titleX, (OverlayTheme.HeaderHeight - titleSize.Height) / 2f);
                 }
                 else
                 {
-                    var size = graphics.MeasureString(headerText, headerFont);
-                    graphics.DrawString(headerText, headerFont, titleBrush, 10f, (OverlayTheme.HeaderHeight - size.Height) / 2f);
+                    var size = graphics.MeasureString(headerText, s_headerFont);
+                    graphics.DrawString(headerText, s_headerFont, s_titleBrush, 10f, (OverlayTheme.HeaderHeight - size.Height) / 2f);
                 }
 
                 // Right-side status: lock or edit indicator
                 string indicator = isEditMode ? "✎ EDIT" : "● LOCKED";
-                var indColor = isEditMode ? OverlayTheme.BorderEditing : OverlayTheme.TextMuted;
-                using var indBrush = new SolidBrush(indColor);
-                var indSize = graphics.MeasureString(indicator, headerFont);
-                graphics.DrawString(indicator, headerFont, indBrush, Width - indSize.Width - 10f, (OverlayTheme.HeaderHeight - indSize.Height) / 2f);
+                var indBrush = isEditMode ? s_editingBrush : s_mutedBrush;
+                var indSize = graphics.MeasureString(indicator, s_headerFont);
+                graphics.DrawString(indicator, s_headerFont, indBrush, Width - indSize.Width - 10f, (OverlayTheme.HeaderHeight - indSize.Height) / 2f);
             }
 
             // Outer border

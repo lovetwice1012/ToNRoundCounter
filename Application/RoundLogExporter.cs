@@ -224,7 +224,9 @@ namespace ToNRoundCounter.Application
 
                 using (var command = connection.CreateCommand())
                 {
-                    command.CommandText = "SELECT Id, RoundId, RoundJson, RoundType, TerrorKey, MapName, IsDeath, CreatedAt, RoundInt, MapId, TerrorIds FROM RoundLogs";
+                    // Order at the SQL layer; cheaper than sorting in memory and lets the caller
+                    // stream-process records in chronological order.
+                    command.CommandText = "SELECT Id, RoundId, RoundJson, RoundType, TerrorKey, MapName, IsDeath, CreatedAt, RoundInt, MapId, TerrorIds FROM RoundLogs ORDER BY CreatedAt";
 
                     var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
                     using (reader)
@@ -302,6 +304,8 @@ namespace ToNRoundCounter.Application
             return results;
         }
 
+        private static readonly JsonSerializer SharedRoundDeserializer = JsonSerializer.CreateDefault();
+
         private static Round? DeserializeRound(string? roundJson)
         {
             if (string.IsNullOrWhiteSpace(roundJson))
@@ -311,7 +315,9 @@ namespace ToNRoundCounter.Application
 
             try
             {
-                return JsonConvert.DeserializeObject<Round>(roundJson!);
+                using var sr = new StringReader(roundJson!);
+                using var jr = new JsonTextReader(sr);
+                return SharedRoundDeserializer.Deserialize<Round>(jr);
             }
             catch
             {
@@ -420,11 +426,19 @@ namespace ToNRoundCounter.Application
                 return new List<string>();
             }
 
-            return key
-                .Split(TerrorSeparators, StringSplitOptions.RemoveEmptyEntries)
-                .Select(t => t.Trim())
-                .Where(t => !string.IsNullOrWhiteSpace(t))
-                .ToList();
+            // Manual loop avoids two intermediate enumerator allocations from Select+Where chain.
+            // Called once per export record; cumulatively significant during large session exports.
+            var split = key.Split(TerrorSeparators, StringSplitOptions.RemoveEmptyEntries);
+            var result = new List<string>(split.Length);
+            for (int i = 0; i < split.Length; i++)
+            {
+                var trimmed = split[i].Trim();
+                if (trimmed.Length > 0)
+                {
+                    result.Add(trimmed);
+                }
+            }
+            return result;
         }
 
         private static string FormatTimestamp(DateTime timestamp)

@@ -38,6 +38,23 @@ namespace ToNRoundCounter.UI
         private const int DefaultAutoSuicideDelaySeconds = 13;
         private const int DelayedAutoSuicideSeconds = 40;
 
+        // Cached sets used in per-round hot paths to avoid array + HashSet allocations per event.
+        private static readonly string[] NormalRoundTypeTokens = { "クラシック", "Classic", "RUN", "走れ！" };
+        private static readonly HashSet<string> OverrideRoundTypes = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "アンバウンド", "8ページ", "ゴースト", "オルタネイト"
+        };
+
+        private static bool IsNormalRoundType(string current)
+        {
+            if (string.IsNullOrEmpty(current)) return false;
+            for (int i = 0; i < NormalRoundTypeTokens.Length; i++)
+            {
+                if (current.Contains(NormalRoundTypeTokens[i])) return true;
+            }
+            return false;
+        }
+
         private Label lblStatus = null!;
         private Label lblOSCStatus = null!;
         private Button btnToggleTopMost = null!;
@@ -107,7 +124,10 @@ namespace ToNRoundCounter.UI
 
         private bool isNotifyActivated = false;
 
-        private static readonly string[] testerNames = new string[] { "yussy5373", "Kotetsu Wilde", "tofu_shoyu", "ちよ千夜", "Blackpit", "shari_1928", "MitarashiMochi", "Motimotiusa3" };
+        private static readonly HashSet<string> testerNames = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "yussy5373", "Kotetsu Wilde", "tofu_shoyu", "ちよ千夜", "Blackpit", "shari_1928", "MitarashiMochi", "Motimotiusa3"
+        };
 
         private bool isRestarted = false;
 
@@ -313,7 +333,8 @@ namespace ToNRoundCounter.UI
 
             terrorColors = new Dictionary<string, Color>();
             LoadTerrorInfo();
-            _settings.Load();
+            // Settings already loaded by AppSettings constructor during DI;
+            // skip the redundant file read to reduce startup latency.
             _lastSaveCode = _settings.LastSaveCode ?? string.Empty;
             EvaluateAutoRecording("InitialLoad");
             _soundManager.UpdateItemMusicPlayer(null);
@@ -443,6 +464,9 @@ namespace ToNRoundCounter.UI
             this.BackColor = Theme.Current.Background;
             this.Resize += MainForm_Resize;
 
+            this.SuspendLayout();
+            try
+            {
             mainMenuStrip = new MenuStrip();
             mainMenuStrip.Name = "mainMenuStrip";
             mainMenuStrip.Dock = DockStyle.Top;
@@ -566,6 +590,11 @@ namespace ToNRoundCounter.UI
             splitContainerMain.Panel2.Controls.Add(logPanel.RoundLogTextBox);
 
             this.Controls.Add(splitContainerMain);
+            }
+            finally
+            {
+                this.ResumeLayout(performLayout: true);
+            }
         }
 
         private bool AreAllRequiredControlsInitialized()
@@ -1274,7 +1303,13 @@ namespace ToNRoundCounter.UI
             {
                 LogUi("OSC repeater startup skipped by policy.", LogEventLevel.Information);
             }
-            await CheckForUpdatesAsync();
+            // Fire the update check in the background so a slow/unreachable GitHub
+            // doesn't stall the Load sequence. Errors are caught inside CheckForUpdatesAsync.
+            _ = Task.Run(async () =>
+            {
+                try { await CheckForUpdatesAsync().ConfigureAwait(false); }
+                catch (Exception ex) { LogUi($"Background update check failed: {ex.Message}", LogEventLevel.Warning); }
+            });
             LogUi("Main form load sequence completed.", LogEventLevel.Debug);
         }
 
@@ -1381,7 +1416,7 @@ namespace ToNRoundCounter.UI
         {
             Interlocked.Exchange(ref _isClosing, 1);
             LogUi("Main form closing initiated.");
-            SaveRoundLogsToFile();
+            await SaveRoundLogsToFileAsync().ConfigureAwait(true);
             _overlayManager.CapturePositions();
             try
             {
@@ -1531,7 +1566,7 @@ namespace ToNRoundCounter.UI
             base.Dispose(disposing);
         }
 
-        private void SaveRoundLogsToFile()
+        private async Task SaveRoundLogsToFileAsync()
         {
             try
             {
@@ -1550,15 +1585,21 @@ namespace ToNRoundCounter.UI
                 string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss-fff");
                 string filePath = Path.Combine(roundLogsDirectory, $"{timestamp}.log");
 
-                var logLines = history.Select(entry => entry.Item2).ToList();
-
-                if (logLines.Count == 0)
+                // Stream lines via IEnumerable instead of materialising into a List first; pairs
+                // with WriteAllLinesAsync for non-blocking I/O.
+                var buffered = new List<string>();
+                foreach (var entry in history)
                 {
-                    File.WriteAllText(filePath, "ラウンドログは記録されませんでした。");
+                    buffered.Add(entry.Item2);
+                }
+
+                if (buffered.Count == 0)
+                {
+                    await File.WriteAllTextAsync(filePath, "ラウンドログは記録されませんでした。").ConfigureAwait(false);
                 }
                 else
                 {
-                    File.WriteAllLines(filePath, logLines);
+                    await File.WriteAllLinesAsync(filePath, buffered).ConfigureAwait(false);
                 }
 
                 _logger?.LogEvent("RoundLog", $"ラウンドログをファイルに保存しました: {filePath}");
@@ -1573,18 +1614,30 @@ namespace ToNRoundCounter.UI
 
         private async Task HandleEventAsync(string message)
         {
-            LogUi($"Processing inbound WebSocket payload ({message.Length} chars).", LogEventLevel.Debug);
+            // Skip composing the debug message when the verbose UI log is disabled.
+            if (_logger?.IsEnabled(LogEventLevel.Debug) == true)
+            {
+                LogUi($"Processing inbound WebSocket payload ({message.Length} chars).", LogEventLevel.Debug);
+            }
             try
             {
                 var json = JObject.Parse(message);
                 string eventType = json.Value<string>("Type") ?? json.Value<string>("TYPE") ?? "Unknown";
-                _logger.LogEvent(eventType, message);
+                // Only persist the full payload when verbose logging is on; otherwise skip the
+                // potentially multi-KB string copy.
+                if (_logger?.IsEnabled(LogEventLevel.Verbose) == true)
+                {
+                    _logger.LogEvent(eventType, message);
+                }
                 int command = -1;
                 if (json.TryGetValue("Command", out JToken? commandToken))
                 {
                     command = commandToken.Value<int>();
                 }
-                LogUi($"WebSocket event '{eventType}' received with command {command}.", LogEventLevel.Debug);
+                if (_logger?.IsEnabled(LogEventLevel.Debug) == true)
+                {
+                    LogUi($"WebSocket event '{eventType}' received with command {command}.", LogEventLevel.Debug);
+                }
                 if (eventType == "CONNECTED")
                 {
                     stateService.PlayerDisplayName = json.Value<string>("DisplayName") ?? "";
@@ -1861,8 +1914,16 @@ namespace ToNRoundCounter.UI
                     var namesArray = json.Value<JArray>("Names");
                     if (namesArray != null && namesArray.Count > 0)
                     {
-                        var arr = namesArray.Select(token => token.ToString()).ToList();
-                        terrors = arr.Select(n => (n, 1)).ToList();
+                        // Previously: two allocations (Select→ToList × 2). Now single pass.
+                        terrors = new List<(string name, int count)>(namesArray.Count);
+                        foreach (var token in namesArray)
+                        {
+                            var n = token.ToString();
+                            if (!string.IsNullOrEmpty(n))
+                            {
+                                terrors.Add((n, 1));
+                            }
+                        }
                     }
 
                     var roundType = stateService.CurrentRound?.RoundType ?? string.Empty;
@@ -1875,12 +1936,28 @@ namespace ToNRoundCounter.UI
                         }
                     }
 
-                    var namesForLogic = terrors?.SelectMany(t => Enumerable.Repeat(t.name, t.count)).ToList();
-                    var activeRoundForNames = stateService.CurrentRound;
-                    if (activeRoundForNames != null && namesForLogic != null && namesForLogic.Count > 0)
+                    // Build joinedNames + hasLvl3 in a single pass instead of SelectMany + string.Join + Any(n.Contains)
+                    string? joinedNames = null;
+                    bool hasLvl3Terror = false;
+                    if (terrors != null && terrors.Count > 0)
                     {
-                        string joinedNames = string.Join(" & ", namesForLogic);
-
+                        var joinBuilder = new StringBuilder();
+                        bool first = true;
+                        foreach (var (name, count) in terrors)
+                        {
+                            if (name.Contains("LVL 3")) hasLvl3Terror = true;
+                            for (int c = 0; c < count; c++)
+                            {
+                                if (!first) joinBuilder.Append(" & ");
+                                joinBuilder.Append(name);
+                                first = false;
+                            }
+                        }
+                        joinedNames = joinBuilder.ToString();
+                    }
+                    var activeRoundForNames = stateService.CurrentRound;
+                    if (activeRoundForNames != null && !string.IsNullOrEmpty(joinedNames))
+                    {
                         // Check if TerrorKey has changed
                         bool terrorKeyChanged = activeRoundForNames.TerrorKey != joinedNames;
 
@@ -1931,7 +2008,7 @@ namespace ToNRoundCounter.UI
 
                         var sharedCoordinatedSkipScheduled = TryScheduleSharedCoordinatedSkip(roundType, activeRoundForAuto.TerrorKey);
 
-                        if (!sharedCoordinatedSkipScheduled && roundType == "ブラッドバス" && namesForLogic != null && namesForLogic.Any(n => n.Contains("LVL 3")))
+                        if (!sharedCoordinatedSkipScheduled && roundType == "ブラッドバス" && hasLvl3Terror)
                         {
                             roundType = "EX";
                         }
@@ -1996,8 +2073,8 @@ namespace ToNRoundCounter.UI
                             }
                         });
 
-                        // Send damage update to Cloud
-                        RunBackgroundOperation(() => UpdateCloudPlayerState(), "CloudPlayerStateDamage", LogEventLevel.Debug);
+                        // Send damage update to Cloud (coalesced)
+                        RequestCloudPlayerStateUpdate("CloudPlayerStateDamage");
                     }
                 }
                 else if (eventType == "DEATH")
@@ -2338,14 +2415,12 @@ namespace ToNRoundCounter.UI
                 _overlayManager.RefreshRoundStats();
 
                 // 次ラウンド予測ロジック
-                var normalTypes = new[] { "クラシック", "Classic", "RUN", "走れ！" };
-                var overrideTypes = new HashSet<string> { "アンバウンド", "8ページ", "ゴースト", "オルタネイト" };
                 string current = round.RoundType ?? string.Empty;
                 int roundCycleForHistory = stateService.RoundCycle;
 
                 string? historyStatusOverride = null;
-                bool isNormalRound = normalTypes.Any(type => current.Contains(type));
-                bool isOverrideRound = overrideTypes.Contains(current);
+                bool isNormalRound = IsNormalRoundType(current);
+                bool isOverrideRound = OverrideRoundTypes.Contains(current);
 
                 if (isNormalRound)
                 {
@@ -2467,7 +2542,11 @@ namespace ToNRoundCounter.UI
             // Update debug info display
             if (Interlocked.Exchange(ref oscUiUpdatePending, 0) == 1)
             {
-                lblDebugInfo.Text = $"VelocityMagnitude: {currentVelocity:F2}  Members: {connected}";
+                var newText = $"VelocityMagnitude: {currentVelocity:F2}  Members: {connected}";
+                if (!string.Equals(lblDebugInfo.Text, newText, StringComparison.Ordinal))
+                {
+                    lblDebugInfo.Text = newText;
+                }
             }
 
             // Send cloud updates (throttled)
@@ -2497,23 +2576,33 @@ namespace ToNRoundCounter.UI
             }
         }
 
+        // TickCount64-based last-update tracking for hot-path throttling. Avoids DateTime.Now's
+        // calendar/timezone lookup overhead at the 20Hz velocity timer. Initialized to MinValue
+        // (long.MinValue / 2 used to avoid overflow when subtracting from initial 0 ticks).
+        private long _lastCloudStateUpdateTicks = long.MinValue / 2;
+        private long _lastMonitoringStatusUpdateTicks = long.MinValue / 2;
+        private const long CloudStateUpdateIntervalMs = 200; // 0.2s
+        private const long MonitoringStatusUpdateIntervalMs = 30_000; // 30s
+
         /// <summary>
         /// Sends cloud state and monitoring status updates with throttling.
         /// </summary>
         private void SendCloudUpdatesAsync()
         {
-            // Send state update to Cloud (throttled - velocity timer fires at 20Hz, but cloud doesn't need that)
-            var now = DateTime.Now;
-            if ((now - lastCloudStateUpdate).TotalSeconds >= CloudStateUpdateIntervalSeconds)
+            // Single TickCount64 read per call instead of multiple DateTime.Now calls.
+            long nowTicks = Environment.TickCount64;
+
+            if (nowTicks - _lastCloudStateUpdateTicks >= CloudStateUpdateIntervalMs)
             {
-                lastCloudStateUpdate = now;
-                RunBackgroundOperation(() => UpdateCloudPlayerState(), "CloudPlayerStateUpdate", LogEventLevel.Debug);
+                _lastCloudStateUpdateTicks = nowTicks;
+                lastCloudStateUpdate = DateTime.Now; // keep legacy field in sync for any external readers
+                RequestCloudPlayerStateUpdate("CloudPlayerStateUpdate");
             }
 
-            // Send monitoring status to Cloud (throttled)
-            if ((now - lastMonitoringStatusUpdate).TotalSeconds >= MonitoringStatusUpdateIntervalSeconds)
+            if (nowTicks - _lastMonitoringStatusUpdateTicks >= MonitoringStatusUpdateIntervalMs)
             {
-                lastMonitoringStatusUpdate = now;
+                _lastMonitoringStatusUpdateTicks = nowTicks;
+                lastMonitoringStatusUpdate = DateTime.Now;
                 RunBackgroundOperation(async () =>
                 {
                     await ReportMonitoringStatusAsync().ConfigureAwait(false);
@@ -2834,7 +2923,7 @@ namespace ToNRoundCounter.UI
                 return;
             }
 
-            RunBackgroundOperation(() => UpdateCloudPlayerState(), operationName, LogEventLevel.Debug);
+            RequestCloudPlayerStateUpdate(operationName);
         }
 
         private void TryApplyItemStatUpdate(string statName, JToken valueToken)
@@ -3474,30 +3563,54 @@ namespace ToNRoundCounter.UI
                 return string.Empty;
             }
 
-            var sb = new StringBuilder();
-            var groups = currentTerrorInfoNames
-                .GroupBy(name => name)
-                .OrderBy(g => g.Key, StringComparer.Ordinal);
-
-            foreach (var group in groups)
+            // Manual count + sort to avoid GroupBy/OrderBy/Count() LINQ overhead on a hot path
+            // (this fires on every TerrorUpdated event).
+            var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (int i = 0; i < currentTerrorInfoNames.Count; i++)
             {
-                string header = group.Count() > 1 ? $"{group.Key} x{group.Count()}" : group.Key;
-                sb.AppendLine(header);
+                var name = currentTerrorInfoNames[i];
+                if (name == null) continue;
+                counts.TryGetValue(name, out int existing);
+                counts[name] = existing + 1;
+            }
 
-                if (terrorInfoData != null && terrorInfoData[group.Key] is JArray infoArray)
+            var keys = new string[counts.Count];
+            counts.Keys.CopyTo(keys, 0);
+            Array.Sort(keys, StringComparer.Ordinal);
+
+            var sb = new StringBuilder();
+            for (int k = 0; k < keys.Length; k++)
+            {
+                string key = keys[k];
+                int count = counts[key];
+                if (count > 1)
                 {
-                    foreach (JObject obj in infoArray.OfType<JObject>())
+                    sb.Append(key).Append(" x").Append(count).Append('\n');
+                }
+                else
+                {
+                    sb.AppendLine(key);
+                }
+
+                if (terrorInfoData != null && terrorInfoData[key] is JArray infoArray)
+                {
+                    for (int i = 0; i < infoArray.Count; i++)
                     {
-                        var prop = obj.Properties().FirstOrDefault();
-                        if (prop == null)
+                        if (infoArray[i] is not JObject obj)
+                        {
+                            continue;
+                        }
+                        // Get first property without allocating an enumerator/list.
+                        JProperty? first = obj.First as JProperty;
+                        if (first == null)
                         {
                             continue;
                         }
 
                         sb.Append("  • ");
-                        sb.Append(prop.Name);
+                        sb.Append(first.Name);
                         sb.Append(": ");
-                        sb.AppendLine(prop.Value.ToString());
+                        sb.AppendLine(first.Value.ToString());
                     }
                 }
 
@@ -3734,6 +3847,13 @@ namespace ToNRoundCounter.UI
             if (!combinationChanged && activeRoundBgmEntry != null && EntryMatches(activeRoundBgmEntry))
             {
                 return activeRoundBgmEntry;
+            }
+
+            // If combination hasn't changed and there is no active entry, we already
+            // searched this combination and found nothing. Skip re-scanning every tick.
+            if (!combinationChanged && activeRoundBgmEntry == null)
+            {
+                return null;
             }
 
             var matchesRoundAndTerror = new List<RoundBgmEntry>();

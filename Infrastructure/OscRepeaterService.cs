@@ -1,5 +1,7 @@
 using System;
+using System.Buffers;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -19,6 +21,9 @@ namespace ToNRoundCounter.Infrastructure
         private readonly IEventLogger _logger;
         private readonly ICancellationProvider _cancellation;
         private readonly ConcurrentBag<(string Host, int Port)> _destinations = new();
+        // Pre-resolved snapshot of destinations as concrete IPEndPoints; rebuilt only when a new
+        // destination is added. Avoids per-packet ConcurrentBag enumeration + DNS resolution.
+        private volatile IPEndPoint[] _destinationEndpoints = Array.Empty<IPEndPoint>();
 
         private CancellationTokenSource? _cts;
         private Task? _listenTask;
@@ -33,7 +38,37 @@ namespace ToNRoundCounter.Infrastructure
         public void AddDestination(string host, int port)
         {
             _destinations.Add((host, port));
+            RebuildEndpointSnapshot();
             _logger.LogEvent("OscRepeater", $"Forwarding destination added: {host}:{port}.");
+        }
+
+        private void RebuildEndpointSnapshot()
+        {
+            var list = new List<IPEndPoint>();
+            foreach (var (host, port) in _destinations)
+            {
+                IPAddress? addr = null;
+                if (!IPAddress.TryParse(host, out addr))
+                {
+                    try
+                    {
+                        var addresses = Dns.GetHostAddresses(host);
+                        if (addresses.Length > 0)
+                        {
+                            addr = addresses[0];
+                        }
+                    }
+                    catch
+                    {
+                        // Skip unresolvable hosts; we'll log on first send attempt.
+                    }
+                }
+                if (addr != null)
+                {
+                    list.Add(new IPEndPoint(addr, port));
+                }
+            }
+            _destinationEndpoints = list.ToArray();
         }
 
         public Task StartAsync(int sourcePort)
@@ -68,6 +103,7 @@ namespace ToNRoundCounter.Infrastructure
                 sender = new UdpClient();
                 _logger.LogEvent("OscRepeater", $"Repeater listening on 127.0.0.1:{sourcePort}.");
 
+                var pool = ArrayPool<byte>.Shared;
                 while (!token.IsCancellationRequested)
                 {
                     if (receiver.State != OscSocketState.Connected)
@@ -78,26 +114,43 @@ namespace ToNRoundCounter.Infrastructure
 
                     if (receiver.TryReceive(out OscPacket packet))
                     {
-                        byte[] data = packet.ToByteArray();
-                        foreach (var (host, port) in _destinations)
+                        var endpoints = _destinationEndpoints;
+                        if (endpoints.Length == 0)
                         {
-                            try
+                            continue;
+                        }
+
+                        int size = packet.SizeInBytes;
+                        byte[] buffer = pool.Rent(size);
+                        try
+                        {
+                            int written = packet.Write(buffer, 0);
+                            for (int i = 0; i < endpoints.Length; i++)
                             {
-                                sender.Send(data, data.Length, host, port);
+                                var ep = endpoints[i];
+                                try
+                                {
+                                    sender.Send(buffer, written, ep);
+                                }
+                                catch (SocketException ex)
+                                {
+                                    _logger.LogEvent("OscRepeater",
+                                        $"Failed to forward to {ep}: {ex.Message}",
+                                        Serilog.Events.LogEventLevel.Warning);
+                                }
                             }
-                            catch (SocketException ex)
-                            {
-                                _logger.LogEvent("OscRepeater",
-                                    $"Failed to forward to {host}:{port}: {ex.Message}",
-                                    Serilog.Events.LogEventLevel.Warning);
-                            }
+                        }
+                        finally
+                        {
+                            pool.Return(buffer);
                         }
 
                         forwarded++;
                         if (forwarded <= 3 || forwarded % 500 == 0)
                         {
+                            int snapshot = forwarded;
                             _logger.LogEvent("OscRepeater",
-                                () => $"Forwarded {forwarded} packet(s).",
+                                () => $"Forwarded {snapshot} packet(s).",
                                 Serilog.Events.LogEventLevel.Debug);
                         }
                     }

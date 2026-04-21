@@ -70,6 +70,13 @@ namespace ToNRoundCounter.Infrastructure.Sqlite
                 journalCommand.ExecuteNonQuery();
             }
 
+            using (var synchronousCommand = connection.CreateCommand())
+            {
+                // synchronous=NORMAL is safe with WAL and avoids fsync-per-commit overhead for batched event log writes.
+                synchronousCommand.CommandText = "PRAGMA synchronous=NORMAL;";
+                synchronousCommand.ExecuteNonQuery();
+            }
+
             using (var busyTimeoutCommand = connection.CreateCommand())
             {
                 busyTimeoutCommand.CommandText = "PRAGMA busy_timeout=5000;";

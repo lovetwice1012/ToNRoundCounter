@@ -16,14 +16,82 @@ namespace ToNRoundCounter.Infrastructure
     {
         private readonly ConcurrentDictionary<Type, ImmutableArray<Delegate>> _handlers = new();
         private readonly IEventLogger? _logger;
-        private readonly Channel<Action> _dispatchQueue;
+        private readonly Channel<IDispatchWork> _dispatchQueue;
         private static ImmutableHashSet<Type> _suppressDebugLoggingTypes = ImmutableHashSet<Type>.Empty;
         private static readonly object _suppressSync = new();
+
+        // Pooled work item per message type so steady-state Publish->dispatch generates no closure
+        // allocation. Each pool is bounded; if the pool is empty we allocate a fresh instance.
+        private interface IDispatchWork
+        {
+            void Invoke(EventBus owner);
+        }
+
+        private sealed class DispatchWork<TMessage> : IDispatchWork
+        {
+            public ImmutableArray<Delegate> Handlers;
+            public TMessage Message = default!;
+
+            // Per-T thread-local pool keeps recycling cheap and lock-free under typical load.
+            [ThreadStatic] private static Stack<DispatchWork<TMessage>>? _pool;
+            private const int PoolMaxSize = 32;
+
+            public static DispatchWork<TMessage> Rent(ImmutableArray<Delegate> handlers, TMessage message)
+            {
+                var pool = _pool;
+                DispatchWork<TMessage>? item = null;
+                if (pool != null && pool.Count > 0)
+                {
+                    item = pool.Pop();
+                }
+                item ??= new DispatchWork<TMessage>();
+                item.Handlers = handlers;
+                item.Message = message;
+                return item;
+            }
+
+            public void Invoke(EventBus owner)
+            {
+                var handlers = Handlers;
+                var message = Message;
+                // Clear references before returning to pool to avoid retaining captured objects.
+                Handlers = default;
+                Message = default!;
+                try
+                {
+                    foreach (var entry in handlers)
+                    {
+                        if (entry is Action<TMessage> action)
+                        {
+                            try
+                            {
+                                action(message);
+                            }
+                            catch (Exception ex)
+                            {
+                                owner._logger?.LogEvent(
+                                    "EventBus",
+                                    () => $"Handler '{action.Method.DeclaringType?.FullName}.{action.Method.Name}' threw: {ex}",
+                                    LogEventLevel.Error);
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    var pool = _pool ??= new Stack<DispatchWork<TMessage>>(PoolMaxSize);
+                    if (pool.Count < PoolMaxSize)
+                    {
+                        pool.Push(this);
+                    }
+                }
+            }
+        }
 
         public EventBus(IEventLogger? logger = null)
         {
             _logger = logger;
-            _dispatchQueue = Channel.CreateUnbounded<Action>(new UnboundedChannelOptions
+            _dispatchQueue = Channel.CreateUnbounded<IDispatchWork>(new UnboundedChannelOptions
             {
                 AllowSynchronousContinuations = true,
                 SingleReader = true,
@@ -104,13 +172,12 @@ namespace ToNRoundCounter.Infrastructure
                 {
                     LogDebug(() => $"Publishing message of type {messageType.FullName} to {handlers.Length} handler(s).");
                 }
-                
-                foreach (var entry in handlers)
+
+                // One pooled work item per Publish (was: one Action closure per handler).
+                var work = DispatchWork<T>.Rent(handlers, message);
+                if (!_dispatchQueue.Writer.TryWrite(work))
                 {
-                    if (entry is Action<T> action)
-                    {
-                        QueueInvocation(action, message);
-                    }
+                    _logger?.LogEvent("EventBus", () => $"Failed to enqueue dispatch for message type {messageType.FullName}.", LogEventLevel.Warning);
                 }
             }
             else
@@ -122,34 +189,13 @@ namespace ToNRoundCounter.Infrastructure
             }
         }
 
-        private void QueueInvocation<TMessage>(Action<TMessage> handler, TMessage message)
-        {
-            Action workItem = () => InvokeHandler(handler, message);
-            if (!_dispatchQueue.Writer.TryWrite(workItem))
-            {
-                _logger?.LogEvent("EventBus", () => $"Failed to enqueue handler '{handler.Method.DeclaringType?.FullName}.{handler.Method.Name}' for execution.", LogEventLevel.Warning);
-            }
-        }
-
-        private void InvokeHandler<TMessage>(Action<TMessage> handler, TMessage message)
-        {
-            try
-            {
-                handler(message);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogEvent("EventBus", () => $"Handler '{handler.Method.DeclaringType?.FullName}.{handler.Method.Name}' threw: {ex}", LogEventLevel.Error);
-            }
-        }
-
         private async Task ProcessQueueAsync()
         {
             await foreach (var workItem in _dispatchQueue.Reader.ReadAllAsync())
             {
                 try
                 {
-                    workItem();
+                    workItem.Invoke(this);
                 }
                 catch (Exception ex)
                 {
