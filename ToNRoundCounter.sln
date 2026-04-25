@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OscRepeaterDisablerModule",
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NetworkAnalyzerModule", "Modules\NetworkAnalyzerModule\NetworkAnalyzerModule.csproj", "{58F393FE-7770-41AE-B677-8A06691213FF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ToNRoundCounterSDK", "ToNRoundCounterSDK\ToNRoundCounterSDK.csproj", "{F7F572F2-DBBA-4E32-9F77-2292B59D50AB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -79,6 +81,14 @@ Global
 		{58F393FE-7770-41AE-B677-8A06691213FF}.Release|Any CPU.Build.0 = Release|Any CPU
 		{58F393FE-7770-41AE-B677-8A06691213FF}.Release|x64.ActiveCfg = Release|Any CPU
 		{58F393FE-7770-41AE-B677-8A06691213FF}.Release|x64.Build.0 = Release|Any CPU
+		{F7F572F2-DBBA-4E32-9F77-2292B59D50AB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F7F572F2-DBBA-4E32-9F77-2292B59D50AB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F7F572F2-DBBA-4E32-9F77-2292B59D50AB}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F7F572F2-DBBA-4E32-9F77-2292B59D50AB}.Debug|x64.Build.0 = Debug|Any CPU
+		{F7F572F2-DBBA-4E32-9F77-2292B59D50AB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F7F572F2-DBBA-4E32-9F77-2292B59D50AB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F7F572F2-DBBA-4E32-9F77-2292B59D50AB}.Release|x64.ActiveCfg = Release|Any CPU
+		{F7F572F2-DBBA-4E32-9F77-2292B59D50AB}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

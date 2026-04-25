@@ -26,11 +26,50 @@ export interface Session {
     session_token: string;
     player_id: string;
     client_version: string;
+    client_type: ClientType;
+    app_id?: string;
+    app_scopes?: string[];
     expires_at: Date;
     created_at: Date;
     last_activity: Date;
     ip_address?: string;
     user_agent?: string;
+}
+
+export type ClientType = 'csharp' | 'web' | 'sdk' | 'unknown';
+
+export interface DeviceInfo {
+    device_id?: string;
+    device_name?: string;
+    machine_name?: string;
+    os_description?: string;
+    os_architecture?: string;
+    processor_name?: string;
+    cpu_name?: string;
+    gpu_name?: string;
+    memory_mb?: number;
+    [key: string]: any;
+}
+
+export interface LoginDevice {
+    id: number;
+    session_id: string;
+    user_id: string;
+    player_id: string;
+    client_type: string;
+    client_version: string;
+    device_id?: string;
+    device_name?: string;
+    os_description?: string;
+    os_architecture?: string;
+    processor_name?: string;
+    gpu_name?: string;
+    memory_mb?: number;
+    ip_address?: string;
+    user_agent?: string;
+    device_info?: DeviceInfo;
+    logged_in_at: Date;
+    last_seen_at: Date;
 }
 
 // Instance related types
@@ -342,6 +381,9 @@ export interface WebSocketMessage {
     rpc?: string;
     stream?: string;
     params?: any;
+    session_id?: string;
+    app_id?: string;
+    app_token?: string;
     data?: any;
     result?: any;
     error?: WebSocketError;

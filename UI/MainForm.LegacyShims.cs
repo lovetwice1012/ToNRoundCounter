@@ -102,11 +102,44 @@ namespace ToNRoundCounter.UI
         private void EnsureRoundBgmPlayer(RoundBgmEntry? entry) => _soundManager.UpdateRoundBgmPlayer(entry);
         private void ResetRoundBgmTracking() => _soundManager.ResetRoundBgmTracking();
 
-        // Some overlay code expects an UpdateInstanceTimerOverlay method on MainForm.
-        private void UpdateInstanceTimerOverlayShim()
+        // Plays a one-shot test sound from the settings dialog using the LIVE values displayed
+        // in the panel (so the user immediately hears the effect of slider/mute changes
+        // without first applying them to AppSettings).
+        private void HandleSettingsTestSound(SettingsPanel panel, SoundTestKind kind)
         {
-            // Implementation lives in MainForm.Overlay.cs (UpdateInstanceTimerOverlay),
-            // this partial declaration intentionally has no body to avoid duplicates.
+            if (panel == null) return;
+            string path;
+            double categoryVolume;
+            bool categoryMuted;
+            switch (kind)
+            {
+                case SoundTestKind.Notification:
+                    path = "./audio/notify.mp3";
+                    categoryVolume = panel.GetNotificationSoundVolume();
+                    categoryMuted = panel.GetNotificationSoundMuted();
+                    break;
+                case SoundTestKind.Afk:
+                    path = "./audio/afk70.mp3";
+                    categoryVolume = panel.GetAfkSoundVolume();
+                    categoryMuted = panel.GetAfkSoundMuted();
+                    break;
+                case SoundTestKind.Punish:
+                    path = "./audio/punish_8page.mp3";
+                    categoryVolume = panel.GetPunishSoundVolume();
+                    categoryMuted = panel.GetPunishSoundMuted();
+                    break;
+                default:
+                    return;
+            }
+
+            if (panel.GetMasterMuted() || categoryMuted) return;
+
+            // PlayTestSound multiplies by saved AppSettings.MasterVolume internally.
+            // To honor the live panel master without requiring Save, normalize.
+            double savedMaster = Math.Max(0.0001, Math.Min(1.0, _settings.MasterVolume));
+            double normalizedCategoryVolume = (panel.GetMasterVolume() * categoryVolume) / savedMaster;
+            _soundManager.PlayTestSound(path, normalizedCategoryVolume, 1.0, false);
         }
+
     }
 }

@@ -22,6 +22,7 @@ namespace ToNRoundCounter.Application
         private InternalScreenRecorder? _recorder;
         private bool _disposed;
         private string? _currentTriggerDescription;
+        private Func<IReadOnlyList<RecordingOverlayBitmap>>? _overlaySnapshotProvider;
 
         public AutoRecordingService(StateService stateService, IAppSettings settings, IEventLogger logger)
         {
@@ -29,6 +30,14 @@ namespace ToNRoundCounter.Application
             _settings = settings;
             _logger = logger;
             _stateService.StateChanged += HandleStateChanged;
+        }
+
+        internal void SetOverlaySnapshotProvider(Func<IReadOnlyList<RecordingOverlayBitmap>>? provider)
+        {
+            lock (_sync)
+            {
+                _overlaySnapshotProvider = provider;
+            }
         }
 
         private void HandleStateChanged()
@@ -148,6 +157,7 @@ namespace ToNRoundCounter.Application
                 audioBitrate,
                 hardwareSelection,
                 captureAudio,
+                includeOverlay ? _overlaySnapshotProvider : null,
                 out var recorder,
                 out int resolvedFrameRate,
                 out Size targetResolution,
@@ -205,6 +215,7 @@ namespace ToNRoundCounter.Application
         {
             string trigger;
             string? reason = null;
+            string? audioDiagnostics = null;
             LogEventLevel level = LogEventLevel.Information;
             bool shouldLog = false;
 
@@ -232,6 +243,8 @@ namespace ToNRoundCounter.Application
                 {
                     reason = recorder.StopReason;
                 }
+
+                audioDiagnostics = recorder.AudioCaptureDiagnosticsSummary;
             }
 
             try
@@ -245,9 +258,12 @@ namespace ToNRoundCounter.Application
             if (shouldLog)
             {
                 string reasonText = reason ?? "<unknown>";
+                string diagnosticsText = string.IsNullOrWhiteSpace(audioDiagnostics)
+                    ? string.Empty
+                    : $" Audio diagnostics: {audioDiagnostics}";
                 _logger.LogEvent(
                     "AutoRecording",
-                    () => $"Recording stopped automatically. Reason: {reasonText}. Last trigger: {trigger}.",
+                    () => $"Recording stopped automatically. Reason: {reasonText}. Last trigger: {trigger}.{diagnosticsText}",
                     level);
             }
         }
@@ -266,11 +282,13 @@ namespace ToNRoundCounter.Application
 
             LogEventLevel level = LogEventLevel.Information;
             string stopReason = reason;
+            string? audioDiagnostics = null;
 
             try
             {
                 recorder.Stop(reason);
                 stopReason = recorder.StopReason;
+                audioDiagnostics = recorder.AudioCaptureDiagnosticsSummary;
                 if (recorder.HasError)
                 {
                     level = LogEventLevel.Warning;
@@ -296,7 +314,13 @@ namespace ToNRoundCounter.Application
 
                 _logger.LogEvent(
                     "AutoRecording",
-                    () => $"Recording stopped. Reason: {stopReason}. Last trigger: {trigger}.",
+                    () =>
+                    {
+                        string diagnosticsText = string.IsNullOrWhiteSpace(audioDiagnostics)
+                            ? string.Empty
+                            : $" Audio diagnostics: {audioDiagnostics}";
+                        return $"Recording stopped. Reason: {stopReason}. Last trigger: {trigger}.{diagnosticsText}";
+                    },
                     level);
             }
         }

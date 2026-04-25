@@ -513,6 +513,16 @@ namespace ToNRoundCounter.Infrastructure
                     {
                         result[prop.Name] = prop.Value;
                     }
+
+                    if (doc.RootElement.TryGetProperty("session_id", out var sessionIdElem))
+                    {
+                        _sessionId = sessionIdElem.GetString() ?? _sessionId;
+                    }
+
+                    if (doc.RootElement.TryGetProperty("player_id", out var playerIdElem))
+                    {
+                        _userId = playerIdElem.GetString() ?? _userId;
+                    }
                 }
             }
 
@@ -636,7 +646,9 @@ namespace ToNRoundCounter.Infrastructure
                 Params = new
                 {
                     player_id = playerId,
-                    client_version = clientVersion
+                    client_version = clientVersion,
+                    client_type = "csharp",
+                    device_info = CloudClientDeviceInfo.Create()
                 }
             };
 
@@ -681,7 +693,9 @@ namespace ToNRoundCounter.Infrastructure
                 {
                     player_id = playerId,
                     api_key = apiKey,
-                    client_version = clientVersion
+                    client_version = clientVersion,
+                    client_type = "csharp",
+                    device_info = CloudClientDeviceInfo.Create()
                 }
             };
 
@@ -700,7 +714,9 @@ namespace ToNRoundCounter.Infrastructure
 
                 _apiKey = apiKey;
                 _userId = playerId;
-                _sessionId = sessionToken; // Store session ID for future requests
+                _sessionId = doc.RootElement.TryGetProperty("session_id", out var sessionIdElem)
+                    ? sessionIdElem.GetString() ?? sessionToken
+                    : sessionToken;
 
                 _logger.LogEvent("CloudWebSocket", $"Logged in with API key: {playerId}, SessionId: {sessionToken}");
                 return sessionToken;

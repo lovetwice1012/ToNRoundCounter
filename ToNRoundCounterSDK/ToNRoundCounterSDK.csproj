@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <AssemblyName>ToNRoundCounterSDK</AssemblyName>
+    <RootNamespace>ToNRoundCounterSDK</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+    <PackageId>ToNRoundCounterSDK</PackageId>
+    <Description>Client SDK for ToNRoundCounter Cloud WebSocket RPC integration.</Description>
+  </PropertyGroup>
+</Project>

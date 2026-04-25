@@ -102,9 +102,14 @@ namespace ToNRoundCounter.Application
                 try
                 {
                     _currentInstanceId = instanceId;
-                    var playerName = string.IsNullOrWhiteSpace(_settings.CloudPlayerName) 
-                        ? Environment.UserName 
-                        : _settings.CloudPlayerName;
+                    var playerName = string.IsNullOrWhiteSpace(_stateService.PlayerDisplayName)
+                        ? (_settings.CloudPlayerName ?? string.Empty)
+                        : _stateService.PlayerDisplayName;
+                    if (string.IsNullOrWhiteSpace(playerName))
+                    {
+                        _logger.LogEvent("CloudSync", "Round start cloud sync skipped because the local WS CONNECTED event has not provided a player name.", LogEventLevel.Debug);
+                        return;
+                    }
                     
                     _currentRoundStartTime = DateTime.Now;
                     _currentRoundId = await _cloudClient.GameRoundStartAsync(

@@ -49,7 +49,7 @@ namespace ToNRoundCounter.UI
         public SettingsSyncForm(CloudWebSocketClient? cloudClient, string userId, IAppSettings localSettings)
         {
             _cloudClient = cloudClient;
-            _userId = userId ?? Environment.UserName;
+            _userId = userId ?? string.Empty;
             _localSettings = localSettings;
             
             InitializeComponent();
@@ -348,7 +348,6 @@ namespace ToNRoundCounter.UI
                 var localDict = new Dictionary<string, object>
                 {
                     ["CloudSyncEnabled"] = _localSettings.CloudSyncEnabled,
-                    ["CloudPlayerName"] = _localSettings.CloudPlayerName ?? "",
                     ["AutoSuicideEnabled"] = _localSettings.AutoSuicideEnabled
                 };
 
@@ -438,7 +437,6 @@ namespace ToNRoundCounter.UI
                 var localDict = new Dictionary<string, object>
                 {
                     ["CloudSyncEnabled"] = _localSettings.CloudSyncEnabled,
-                    ["CloudPlayerName"] = _localSettings.CloudPlayerName ?? "",
                     ["AutoSuicideEnabled"] = _localSettings.AutoSuicideEnabled
                 };
 
@@ -527,7 +525,6 @@ namespace ToNRoundCounter.UI
             var localDict = new Dictionary<string, object>
             {
                 ["CloudSyncEnabled"] = _localSettings.CloudSyncEnabled,
-                ["CloudPlayerName"] = _localSettings.CloudPlayerName ?? string.Empty,
                 ["AutoSuicideEnabled"] = _localSettings.AutoSuicideEnabled
             };
 
@@ -539,11 +536,6 @@ namespace ToNRoundCounter.UI
             if (TryGetBooleanValue(settingsPayload, "CloudSyncEnabled", out var cloudSyncEnabled))
             {
                 _localSettings.CloudSyncEnabled = cloudSyncEnabled;
-            }
-
-            if (TryGetStringValue(settingsPayload, "CloudPlayerName", out var cloudPlayerName))
-            {
-                _localSettings.CloudPlayerName = cloudPlayerName;
             }
 
             if (TryGetBooleanValue(settingsPayload, "AutoSuicideEnabled", out var autoSuicideEnabled))

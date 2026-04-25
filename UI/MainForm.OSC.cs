@@ -409,12 +409,7 @@ namespace ToNRoundCounter.UI
 
         private string ResolveCloudSettingsUserId()
         {
-            if (!string.IsNullOrWhiteSpace(_settings.CloudPlayerName))
-            {
-                return _settings.CloudPlayerName;
-            }
-
-            return Environment.UserName;
+            return ResolveCloudPlayerName();
         }
 
         private void CopyCachedSaveCode(string reason)

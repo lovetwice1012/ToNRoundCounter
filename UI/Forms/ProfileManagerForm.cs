@@ -46,7 +46,7 @@ namespace ToNRoundCounter.UI
         public ProfileManagerForm(CloudWebSocketClient? cloudClient, string playerId)
         {
             _cloudClient = cloudClient;
-            _playerId = playerId ?? Environment.UserName;
+            _playerId = playerId ?? string.Empty;
             
             InitializeComponent();
             InitializeCustomComponents();

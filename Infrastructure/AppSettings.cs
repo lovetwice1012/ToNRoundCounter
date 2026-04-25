@@ -150,6 +150,20 @@ namespace ToNRoundCounter.Infrastructure
         public string DiscordWebhookUrl { get; set; } = string.Empty;
         public string LastSaveCode { get; set; } = string.Empty;
         public bool AfkSoundCancelEnabled { get; set; } = true;
+        public double NotificationSoundVolume { get; set; } = 1.0;
+        public double AfkSoundVolume { get; set; } = 1.0;
+        public double PunishSoundVolume { get; set; } = 1.0;
+        public double MasterVolume { get; set; } = 1.0;
+        public bool MasterMuted { get; set; }
+        public bool NotificationSoundMuted { get; set; }
+        public bool AfkSoundMuted { get; set; }
+        public bool PunishSoundMuted { get; set; }
+        public bool ItemMusicMuted { get; set; }
+        public bool RoundBgmMuted { get; set; }
+        public int AudioOutputDeviceNumber { get; set; } = -1;
+        public string MasterMuteHotkey { get; set; } = string.Empty;
+        public bool EqualizerEnabled { get; set; }
+        public double[] EqualizerBandGains { get; set; } = new double[10];
         public bool CoordinatedAutoSuicideBrainEnabled { get; set; } = true;
         public bool NetworkAnalyzerConsentGranted { get; set; }
         public DateTimeOffset? NetworkAnalyzerConsentTimestamp { get; set; }
@@ -301,6 +315,20 @@ namespace ToNRoundCounter.Infrastructure
                             DiscordWebhookUrl = settingsData.DiscordWebhookUrl ?? string.Empty;
                             LastSaveCode = settingsData.LastSaveCode ?? string.Empty;
                             AfkSoundCancelEnabled = settingsData.AfkSoundCancelEnabled;
+                            NotificationSoundVolume = settingsData.NotificationSoundVolume;
+                            AfkSoundVolume = settingsData.AfkSoundVolume;
+                            PunishSoundVolume = settingsData.PunishSoundVolume;
+                            MasterVolume = settingsData.MasterVolume;
+                            MasterMuted = settingsData.MasterMuted;
+                            NotificationSoundMuted = settingsData.NotificationSoundMuted;
+                            AfkSoundMuted = settingsData.AfkSoundMuted;
+                            PunishSoundMuted = settingsData.PunishSoundMuted;
+                            ItemMusicMuted = settingsData.ItemMusicMuted;
+                            RoundBgmMuted = settingsData.RoundBgmMuted;
+                            AudioOutputDeviceNumber = settingsData.AudioOutputDeviceNumber;
+                            MasterMuteHotkey = settingsData.MasterMuteHotkey ?? string.Empty;
+                            EqualizerEnabled = settingsData.EqualizerEnabled;
+                            EqualizerBandGains = NormalizeEqualizerBandGains(settingsData.EqualizerBandGains);
                             CoordinatedAutoSuicideBrainEnabled = settingsData.CoordinatedAutoSuicideBrainEnabled;
                             NetworkAnalyzerConsentGranted = settingsData.NetworkAnalyzerConsentGranted;
                             NetworkAnalyzerConsentTimestamp = settingsData.NetworkAnalyzerConsentTimestamp;
@@ -395,6 +423,7 @@ namespace ToNRoundCounter.Infrastructure
                 NormalizeRoundBgmEntries();
                 NormalizeRoundBgmPreferences();
                 NormalizeAutoRecordingSettings();
+                NormalizeNotificationVolumes();
                 _logger.LogEvent("AppSettings", "Normalization of complex settings completed.");
                 success = true;
             }
@@ -589,6 +618,7 @@ namespace ToNRoundCounter.Infrastructure
                 entry.ItemName ??= string.Empty;
                 entry.SoundPath ??= string.Empty;
                 NormalizeItemMusicSpeeds(entry);
+                entry.Volume = NormalizeVolume(entry.Volume);
             }
 
             if (!string.IsNullOrWhiteSpace(ItemMusicItemName) || !string.IsNullOrWhiteSpace(ItemMusicSoundPath))
@@ -626,7 +656,28 @@ namespace ToNRoundCounter.Infrastructure
                 entry.RoundType ??= string.Empty;
                 entry.TerrorType ??= string.Empty;
                 entry.SoundPath ??= string.Empty;
+                entry.Volume = NormalizeVolume(entry.Volume);
             }
+        }
+
+        internal static double NormalizeVolume(double value)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value))
+            {
+                return 1.0;
+            }
+
+            if (value < 0.0)
+            {
+                return 0.0;
+            }
+
+            if (value > 1.0)
+            {
+                return 1.0;
+            }
+
+            return value;
         }
 
         private void NormalizeRoundBgmPreferences()
@@ -635,6 +686,34 @@ namespace ToNRoundCounter.Infrastructure
             {
                 RoundBgmItemConflictBehavior = RoundBgmItemConflictBehavior.PlayBoth;
             }
+        }
+
+        private void NormalizeNotificationVolumes()
+        {
+            NotificationSoundVolume = NormalizeVolume(NotificationSoundVolume);
+            AfkSoundVolume = NormalizeVolume(AfkSoundVolume);
+            PunishSoundVolume = NormalizeVolume(PunishSoundVolume);
+            MasterVolume = NormalizeVolume(MasterVolume);
+            EqualizerBandGains = NormalizeEqualizerBandGains(EqualizerBandGains);
+        }
+
+        private static double[] NormalizeEqualizerBandGains(double[]? gains)
+        {
+            const int bandCount = 10;
+            double[] result = new double[bandCount];
+            if (gains != null)
+            {
+                int n = Math.Min(bandCount, gains.Length);
+                for (int i = 0; i < n; i++)
+                {
+                    double v = gains[i];
+                    if (double.IsNaN(v) || double.IsInfinity(v)) v = 0;
+                    if (v < -24) v = -24;
+                    if (v > 24) v = 24;
+                    result[i] = v;
+                }
+            }
+            return result;
         }
 
         private void NormalizeAutoRecordingSettings()
@@ -804,6 +883,7 @@ namespace ToNRoundCounter.Infrastructure
             NormalizeRoundBgmEntries();
             NormalizeRoundBgmPreferences();
             NormalizeAutoRecordingSettings();
+            NormalizeNotificationVolumes();
             OverlayOpacity = NormalizeOverlayOpacity(OverlayOpacity);
             var settings = new AppSettingsData
             {
@@ -889,6 +969,20 @@ namespace ToNRoundCounter.Infrastructure
                 DiscordWebhookUrl = string.IsNullOrEmpty(DiscordWebhookUrl) ? string.Empty : _encryption.Encrypt(DiscordWebhookUrl),
                 LastSaveCode = LastSaveCode,
                 AfkSoundCancelEnabled = AfkSoundCancelEnabled,
+                NotificationSoundVolume = NotificationSoundVolume,
+                AfkSoundVolume = AfkSoundVolume,
+                PunishSoundVolume = PunishSoundVolume,
+                MasterVolume = MasterVolume,
+                MasterMuted = MasterMuted,
+                NotificationSoundMuted = NotificationSoundMuted,
+                AfkSoundMuted = AfkSoundMuted,
+                PunishSoundMuted = PunishSoundMuted,
+                ItemMusicMuted = ItemMusicMuted,
+                RoundBgmMuted = RoundBgmMuted,
+                AudioOutputDeviceNumber = AudioOutputDeviceNumber,
+                MasterMuteHotkey = MasterMuteHotkey,
+                EqualizerEnabled = EqualizerEnabled,
+                EqualizerBandGains = EqualizerBandGains,
                 CoordinatedAutoSuicideBrainEnabled = CoordinatedAutoSuicideBrainEnabled,
                 NetworkAnalyzerConsentGranted = NetworkAnalyzerConsentGranted,
                 NetworkAnalyzerConsentTimestamp = NetworkAnalyzerConsentTimestamp,
@@ -1020,6 +1114,20 @@ namespace ToNRoundCounter.Infrastructure
         public string DiscordWebhookUrl { get; set; } = string.Empty;
         public string LastSaveCode { get; set; } = string.Empty;
         public bool AfkSoundCancelEnabled { get; set; } = true;
+        public double NotificationSoundVolume { get; set; } = 1.0;
+        public double AfkSoundVolume { get; set; } = 1.0;
+        public double PunishSoundVolume { get; set; } = 1.0;
+        public double MasterVolume { get; set; } = 1.0;
+        public bool MasterMuted { get; set; }
+        public bool NotificationSoundMuted { get; set; }
+        public bool AfkSoundMuted { get; set; }
+        public bool PunishSoundMuted { get; set; }
+        public bool ItemMusicMuted { get; set; }
+        public bool RoundBgmMuted { get; set; }
+        public int AudioOutputDeviceNumber { get; set; } = -1;
+        public string MasterMuteHotkey { get; set; } = string.Empty;
+        public bool EqualizerEnabled { get; set; }
+        public double[] EqualizerBandGains { get; set; } = new double[10];
         public bool CoordinatedAutoSuicideBrainEnabled { get; set; } = true;
         public bool NetworkAnalyzerConsentGranted { get; set; }
         public DateTimeOffset? NetworkAnalyzerConsentTimestamp { get; set; }

@@ -19,7 +19,8 @@ using System.Runtime.Versioning;
 // 参照できなくなります。COM からこのアセンブリ内の型にアクセスする必要がある場合は、
 // その型の ComVisible 属性を true に設定してください。
 [assembly: ComVisible(false)]
-[assembly: SupportedOSPlatform("windows")]
+[assembly: SupportedOSPlatform("windows10.0.19041.0")]
+[assembly: InternalsVisibleTo("ToNRoundCounter.Tests")]
 
 // このプロジェクトが COM に公開される場合、次の GUID が typelib の ID になります
 [assembly: Guid("2ee5df69-2e18-419d-8efd-6ac05156c6db")]

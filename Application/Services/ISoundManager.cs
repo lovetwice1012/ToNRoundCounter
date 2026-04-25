@@ -67,5 +67,36 @@ namespace ToNRoundCounter.Application.Services
         /// Updates the round BGM player configuration.
         /// </summary>
         void UpdateRoundBgmPlayer(RoundBgmEntry? entry = null);
+
+        /// <summary>
+        /// Re-applies global notification sound volumes from settings.
+        /// </summary>
+        void ApplyNotificationVolumes();
+
+        /// <summary>
+        /// Re-applies the equalizer settings to all currently active playbacks.
+        /// </summary>
+        void ApplyEqualizer();
+
+        /// <summary>
+        /// Plays a one-shot test sound from the given file path using the supplied category-equivalent volume settings.
+        /// </summary>
+        /// <param name="path">Absolute or relative file path of the audio to test.</param>
+        /// <param name="categoryVolume">Category-level volume (0-1).</param>
+        /// <param name="entryVolume">Per-entry volume (0-1). Use 1.0 if not applicable.</param>
+        /// <param name="loop">Whether to loop the playback (false for one-shot tests).</param>
+        /// <returns>An IDisposable handle. Dispose to stop playback.</returns>
+        IDisposable PlayTestSound(string path, double categoryVolume, double entryVolume, bool loop = false);
+
+        /// <summary>
+        /// Plays a custom sound or playlist on behalf of an external caller (e.g. a module).
+        /// Supports local file paths and YouTube URLs (resolved via the configured cache).
+        /// Volume is multiplied by the global master volume and respects the master mute toggle.
+        /// </summary>
+        /// <param name="pathsOrUrls">One or more local file paths and/or YouTube URLs to play sequentially.</param>
+        /// <param name="volume">Caller volume in the range [0.0, 1.0].</param>
+        /// <param name="loop">When true, cycles through the list indefinitely.</param>
+        /// <returns>An IDisposable handle. Dispose to stop playback.</returns>
+        IDisposable PlayCustomSound(System.Collections.Generic.IReadOnlyList<string> pathsOrUrls, double volume = 1.0, bool loop = false);
     }
 }

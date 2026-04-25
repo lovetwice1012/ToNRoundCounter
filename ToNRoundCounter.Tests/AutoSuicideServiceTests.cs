@@ -1,24 +1,19 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using ToNRoundCounter.Application;
-using ToNRoundCounter.Domain;
+using ToNRoundCounter.Infrastructure;
 using Xunit;
 
 namespace ToNRoundCounter.Tests
 {
-    /// <summary>
-    /// Tests for AutoSuicideService functionality.
-    /// </summary>
     public class AutoSuicideServiceTests
     {
         [Fact]
         public void Constructor_InitializesCorrectly()
         {
-            var logger = new MockEventLogger();
-            var bus = new EventBus(logger);
-
-            var service = new AutoSuicideService(bus, logger);
+            var bus = new EventBus();
+            var service = new AutoSuicideService(bus);
 
             Assert.NotNull(service);
             Assert.False(service.HasScheduled);
@@ -27,23 +22,22 @@ namespace ToNRoundCounter.Tests
         [Fact]
         public void Schedule_SetsHasScheduledToTrue()
         {
-            var logger = new MockEventLogger();
-            var bus = new EventBus(logger);
-            var service = new AutoSuicideService(bus, logger);
+            var bus = new EventBus();
+            var service = new AutoSuicideService(bus);
 
-            service.Schedule(TimeSpan.FromSeconds(1));
+            service.Schedule(TimeSpan.FromSeconds(10), resetStartTime: true, () => { });
 
             Assert.True(service.HasScheduled);
+            service.Cancel();
         }
 
         [Fact]
         public void Cancel_ClearsSchedule()
         {
-            var logger = new MockEventLogger();
-            var bus = new EventBus(logger);
-            var service = new AutoSuicideService(bus, logger);
+            var bus = new EventBus();
+            var service = new AutoSuicideService(bus);
 
-            service.Schedule(TimeSpan.FromSeconds(10));
+            service.Schedule(TimeSpan.FromSeconds(10), resetStartTime: true, () => { });
             Assert.True(service.HasScheduled);
 
             service.Cancel();
@@ -51,196 +45,43 @@ namespace ToNRoundCounter.Tests
         }
 
         [Fact]
-        public async Task Schedule_RaisesExecuteEventAfterDelay()
+        public void Schedule_InvokesActionAfterDelay()
         {
-            var logger = new MockEventLogger();
-            var bus = new EventBus(logger);
-            var service = new AutoSuicideService(bus, logger);
+            var bus = new EventBus();
+            var service = new AutoSuicideService(bus);
+            var triggered = new ManualResetEventSlim(false);
 
-            bool eventRaised = false;
-            EventHandler? handler = null;
-            handler = (sender, e) =>
-            {
-                eventRaised = true;
-                if (handler != null)
-                {
-                    bus.AutoSuicideExecute -= handler;
-                }
-            };
-            bus.AutoSuicideExecute += handler;
+            service.Schedule(TimeSpan.FromMilliseconds(50), resetStartTime: true, () => triggered.Set());
 
-            service.Schedule(TimeSpan.FromMilliseconds(100));
-
-            // Wait for the event to be raised
-            await Task.Delay(200);
-
-            Assert.True(eventRaised);
+            Assert.True(triggered.Wait(TimeSpan.FromSeconds(2)));
         }
 
         [Fact]
-        public async Task Cancel_PreventsExecuteEvent()
+        public async Task Cancel_PreventsActionInvocation()
         {
-            var logger = new MockEventLogger();
-            var bus = new EventBus(logger);
-            var service = new AutoSuicideService(bus, logger);
+            var bus = new EventBus();
+            var service = new AutoSuicideService(bus);
+            int invokeCount = 0;
 
-            bool eventRaised = false;
-            EventHandler? handler = null;
-            handler = (sender, e) =>
-            {
-                eventRaised = true;
-                if (handler != null)
-                {
-                    bus.AutoSuicideExecute -= handler;
-                }
-            };
-            bus.AutoSuicideExecute += handler;
-
-            service.Schedule(TimeSpan.FromMilliseconds(100));
+            service.Schedule(TimeSpan.FromMilliseconds(100), resetStartTime: true, () => Interlocked.Increment(ref invokeCount));
             service.Cancel();
 
-            // Wait to ensure event doesn't fire
-            await Task.Delay(200);
+            await Task.Delay(250);
 
-            Assert.False(eventRaised);
+            Assert.Equal(0, invokeCount);
         }
 
         [Fact]
-        public void Delay_ExtendsSchedule()
+        public void Schedule_MultipleTimesReplacesPrevious()
         {
-            var logger = new MockEventLogger();
-            var bus = new EventBus(logger);
-            var service = new AutoSuicideService(bus, logger);
+            var bus = new EventBus();
+            var service = new AutoSuicideService(bus);
 
-            service.Schedule(TimeSpan.FromSeconds(1));
-            Assert.True(service.HasScheduled);
-
-            service.Delay(TimeSpan.FromSeconds(2));
+            service.Schedule(TimeSpan.FromSeconds(10), resetStartTime: true, () => { });
+            service.Schedule(TimeSpan.FromSeconds(5), resetStartTime: false, () => { });
 
             Assert.True(service.HasScheduled);
-        }
-
-        [Fact]
-        public void Delay_WithoutSchedule_DoesNothing()
-        {
-            var logger = new MockEventLogger();
-            var bus = new EventBus(logger);
-            var service = new AutoSuicideService(bus, logger);
-
-            Assert.False(service.HasScheduled);
-
-            service.Delay(TimeSpan.FromSeconds(1));
-
-            Assert.False(service.HasScheduled);
-        }
-
-        [Fact]
-        public void Schedule_MultipleTimesReplacesSchedule()
-        {
-            var logger = new MockEventLogger();
-            var bus = new EventBus(logger);
-            var service = new AutoSuicideService(bus, logger);
-
-            service.Schedule(TimeSpan.FromSeconds(10));
-            Assert.True(service.HasScheduled);
-
-            service.Schedule(TimeSpan.FromSeconds(5));
-            Assert.True(service.HasScheduled);
-        }
-
-        [Fact]
-        public async Task Schedule_WithZeroDelay_ExecutesImmediately()
-        {
-            var logger = new MockEventLogger();
-            var bus = new EventBus(logger);
-            var service = new AutoSuicideService(bus, logger);
-
-            bool eventRaised = false;
-            EventHandler? handler = null;
-            handler = (sender, e) =>
-            {
-                eventRaised = true;
-                if (handler != null)
-                {
-                    bus.AutoSuicideExecute -= handler;
-                }
-            };
-            bus.AutoSuicideExecute += handler;
-
-            service.Schedule(TimeSpan.Zero);
-
-            // Wait briefly for async execution
-            await Task.Delay(50);
-
-            Assert.True(eventRaised);
-        }
-
-        [Fact]
-        public void GetRemainingTime_ReturnsCorrectValue()
-        {
-            var logger = new MockEventLogger();
-            var bus = new EventBus(logger);
-            var service = new AutoSuicideService(bus, logger);
-
-            service.Schedule(TimeSpan.FromSeconds(10));
-
-            var remaining = service.GetRemainingTime();
-
-            Assert.True(remaining.HasValue);
-            Assert.True(remaining.Value.TotalSeconds > 0);
-            Assert.True(remaining.Value.TotalSeconds <= 10);
-        }
-
-        [Fact]
-        public void GetRemainingTime_WithoutSchedule_ReturnsNull()
-        {
-            var logger = new MockEventLogger();
-            var bus = new EventBus(logger);
-            var service = new AutoSuicideService(bus, logger);
-
-            var remaining = service.GetRemainingTime();
-
-            Assert.False(remaining.HasValue);
-        }
-
-        [Fact]
-        public async Task Dispose_CancelsScheduledTask()
-        {
-            var logger = new MockEventLogger();
-            var bus = new EventBus(logger);
-            var service = new AutoSuicideService(bus, logger);
-
-            bool eventRaised = false;
-            EventHandler? handler = null;
-            handler = (sender, e) =>
-            {
-                eventRaised = true;
-                if (handler != null)
-                {
-                    bus.AutoSuicideExecute -= handler;
-                }
-            };
-            bus.AutoSuicideExecute += handler;
-
-            service.Schedule(TimeSpan.FromMilliseconds(100));
-            service.Dispose();
-
-            // Wait to ensure event doesn't fire
-            await Task.Delay(200);
-
-            Assert.False(eventRaised);
-        }
-
-        // Mock implementation
-        private class MockEventLogger : IEventLogger
-        {
-            public void LogEvent(string category, string message, Serilog.Events.LogEventLevel level = Serilog.Events.LogEventLevel.Information)
-            {
-            }
-
-            public void LogEvent(string category, Func<string> messageFactory, Serilog.Events.LogEventLevel level = Serilog.Events.LogEventLevel.Information)
-            {
-            }
+            service.Cancel();
         }
     }
 }

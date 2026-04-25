@@ -43,7 +43,7 @@ namespace ToNRoundCounter.UI
         public BackupManagerForm(CloudWebSocketClient? cloudClient, string userId)
         {
             _cloudClient = cloudClient;
-            _userId = userId ?? Environment.UserName;
+            _userId = userId ?? string.Empty;
             
             InitializeComponent();
             InitializeCustomComponents();

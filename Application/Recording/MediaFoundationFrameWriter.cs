@@ -275,6 +275,92 @@ namespace ToNRoundCounter.Application.Recording
 
         public bool SupportsAudio => _supportsAudio;
 
+        /// <summary>
+        /// Returns an owning reference to the ID3D11Device used by this writer's hardware
+        /// encoder (if hardware encoding is active), or <see cref="IntPtr.Zero"/> otherwise.
+        /// The caller MUST <see cref="Marshal.Release(IntPtr)"/> the returned pointer when
+        /// done. Used by the zero-copy capture path so that the WGC capture session can be
+        /// re-created against the SAME device, allowing the GPU-resized capture texture to
+        /// be wrapped in an IMFDXGISurfaceBuffer and submitted to <see cref="WriteVideoFrameTexture"/>
+        /// without any cross-device copy.
+        /// </summary>
+        public IntPtr AddRefEncoderD3D11Device()
+        {
+            if (_disposed || _hardwareContext == null) return IntPtr.Zero;
+            return _hardwareContext.AddRefDevice();
+        }
+
+        /// <summary>
+        /// Same as <see cref="AddRefEncoderD3D11Device"/> but returns the immediate device context.
+        /// </summary>
+        public IntPtr AddRefEncoderD3D11Context()
+        {
+            if (_disposed || _hardwareContext == null) return IntPtr.Zero;
+            return _hardwareContext.AddRefContext();
+        }
+
+        /// <summary>
+        /// Submits a video frame whose pixel data is already on the GPU (an ID3D11Texture2D
+        /// that lives on the device returned by <see cref="AddRefEncoderD3D11Device"/>).
+        /// Wraps the texture as an IMFDXGISurfaceBuffer-backed IMFSample and forwards it to
+        /// the sink writer. This bypasses the CPU readback + CPU-side IMFMediaBuffer copy
+        /// that <see cref="WriteVideoFrame(System.Drawing.Bitmap,long)"/> performs and is the
+        /// foundation for the zero-copy recording pipeline.
+        ///
+        /// NOTE: this method is currently NOT wired into the capture loop; it exists as the
+        /// API surface that the loop will call once the capture path is migrated to share
+        /// the encoder's D3D11 device. See WgcWindowCapture.TryCreateForWindowSharingDevice.
+        /// </summary>
+        /// <param name="texture">ID3D11Texture2D pointer (caller retains its own reference).</param>
+        /// <param name="subresourceIndex">D3D subresource index inside <paramref name="texture"/> (typically 0).</param>
+        /// <param name="presentationTimeTicks">Wall-clock PTS in 100-ns ticks, or -1 for legacy frame-counted mode.</param>
+        public void WriteVideoFrameTexture(IntPtr texture, uint subresourceIndex, long presentationTimeTicks)
+        {
+            if (_disposed) throw new ObjectDisposedException(nameof(MediaFoundationFrameWriter));
+            if (texture == IntPtr.Zero) throw new ArgumentNullException(nameof(texture));
+            if (!_isHardwareAccelerated || _hardwareContext == null)
+            {
+                throw new InvalidOperationException("WriteVideoFrameTexture requires a hardware-accelerated writer.");
+            }
+
+            MediaFoundationInterop.IMFMediaBuffer? buffer = null;
+            MediaFoundationInterop.IMFSample? sample = null;
+            try
+            {
+                buffer = MediaFoundationInterop.CreateDxgiSurfaceBuffer(texture, subresourceIndex);
+                // The surface buffer doesn't track its own length; tell MF the active payload
+                // size = the full plane size so the encoder reads the whole frame.
+                MediaFoundationInterop.CheckHr(buffer.SetCurrentLength(_targetStride * _height), "IMFMediaBuffer.SetCurrentLength(DXGI)");
+
+                sample = MediaFoundationInterop.CreateSample();
+                MediaFoundationInterop.CheckHr(sample.AddBuffer(buffer), "IMFSample.AddBuffer(DXGI)");
+
+                long sampleTime;
+                long duration;
+                if (presentationTimeTicks >= 0)
+                {
+                    sampleTime = presentationTimeTicks;
+                    duration = Math.Max(1L, sampleTime - _timestamp);
+                    _timestamp = sampleTime;
+                }
+                else
+                {
+                    duration = _baseFrameDuration;
+                    sampleTime = _timestamp;
+                    _timestamp += duration;
+                }
+
+                MediaFoundationInterop.CheckHr(sample.SetSampleTime(sampleTime), "IMFSample.SetSampleTime(DXGI)");
+                MediaFoundationInterop.CheckHr(sample.SetSampleDuration(duration), "IMFSample.SetSampleDuration(DXGI)");
+                MediaFoundationInterop.CheckHr(_sinkWriter.WriteSample(_streamIndex, sample), "IMFSinkWriter.WriteSample(DXGI)");
+            }
+            finally
+            {
+                if (sample != null) Marshal.ReleaseComObject(sample);
+                if (buffer != null) Marshal.ReleaseComObject(buffer);
+            }
+        }
+
         private int InitializeAudioStream(MediaFoundationInterop.IMFSinkWriter writer, FormatDescriptor descriptor, AudioFormat format, int requestedAudioBitrate)
         {
             MediaFoundationInterop.IMFMediaType? outputAudioType = null;
@@ -291,32 +377,29 @@ namespace ToNRoundCounter.Application.Recording
 
                 int resolvedAudioBitrate = ResolveAudioBitrate(requestedAudioBitrate, descriptor.DefaultAudioBitrate, format);
 
-                // The Windows built-in AAC encoder MFT enforces a very small set of valid output
-                // media types. AddStream returns MF_E_INVALIDMEDIATYPE (0xC00D36B2) unless the
-                // output type matches one of the enumerated configurations:
-                //   - SamplesPerSecond  : 44100 or 48000
-                //   - NumChannels       : 1, 2, or 6
-                //   - BitsPerSample     : 16
-                //   - BlockAlignment    : 1
-                //   - AvgBytesPerSecond : 12000 / 16000 / 20000 / 24000
-                //                          (= 96 / 128 / 160 / 192 kbps)
-                //   - AAC payload type  : 0 (raw AAC)
                 int outChannels;
                 int outSampleRate;
                 int averageBytes;
                 if (outputIsAac)
                 {
-                    outChannels = format.Channels switch
-                    {
-                        1 => 1,
-                        2 => 2,
-                        6 => 6,
-                        _ => 2,
-                    };
-                    outSampleRate = (format.SampleRate == 44100 || format.SampleRate == 48000)
-                        ? format.SampleRate
-                        : 48000;
-                    averageBytes = SnapAacAverageBytesPerSecond(resolvedAudioBitrate, outChannels);
+                    // Do not hand-build the AAC output media type. The Windows AAC encoder
+                    // enforces a tiny whitelist of legal combinations of (samplerate,
+                    // channels, avg bytes per second, profile level, block align, payload
+                    // type, codec private data) and it changes between Windows versions
+                    // (notably 24H2 became stricter about BLOCK_ALIGNMENT / profile level
+                    // derivation). Use the official enumerator instead and pick the entry
+                    // closest to what the caller asked for.
+                    Marshal.ReleaseComObject(outputAudioType);
+                    outputAudioType = null;
+
+                    int targetChannels = format.Channels switch { 1 => 1, 2 => 2, 6 => 6, _ => 2 };
+                    int targetSampleRate = (format.SampleRate == 44100 || format.SampleRate == 48000) ? format.SampleRate : 48000;
+                    int targetAverageBytes = SnapAacAverageBytesPerSecond(resolvedAudioBitrate, targetChannels);
+
+                    outputAudioType = SelectAacOutputMediaType(
+                        format.Channels, format.SampleRate, format.BitsPerSample,
+                        targetChannels, targetSampleRate, targetAverageBytes,
+                        out outChannels, out outSampleRate, out averageBytes);
                 }
                 else
                 {
@@ -331,27 +414,19 @@ namespace ToNRoundCounter.Application.Recording
                     {
                         averageBytes = format.BytesPerSecond;
                     }
-                }
 
-                MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_NUM_CHANNELS, outChannels), "Audio channels");
-                MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_SAMPLES_PER_SECOND, outSampleRate), "Audio sample rate");
-                MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_AVG_BYTES_PER_SECOND, averageBytes), "Audio average bytes");
+                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_NUM_CHANNELS, outChannels), "Audio channels");
+                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_SAMPLES_PER_SECOND, outSampleRate), "Audio sample rate");
+                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_AVG_BYTES_PER_SECOND, averageBytes), "Audio average bytes");
 
-                if (outputIsAac)
-                {
-                    // Required by the AAC encoder MFT.
-                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BITS_PER_SAMPLE, 16), "AAC bits per sample");
-                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BLOCK_ALIGNMENT, 1), "AAC block alignment");
-                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AAC_PAYLOAD_TYPE, 0), "Audio AAC payload");
-                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AAC_AUDIO_PROFILE_LEVEL_INDICATION, 0x29), "Audio AAC profile");
-                }
-                else if (outputIsPcm)
-                {
-                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BLOCK_ALIGNMENT, format.BlockAlign), "Audio block alignment");
-                    MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BITS_PER_SAMPLE, format.BitsPerSample), "Audio bits per sample");
-                    if (format.ChannelMask != 0)
+                    if (outputIsPcm)
                     {
-                        MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_CHANNEL_MASK, unchecked((int)format.ChannelMask)), "Audio channel mask");
+                        MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BLOCK_ALIGNMENT, format.BlockAlign), "Audio block alignment");
+                        MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BITS_PER_SAMPLE, format.BitsPerSample), "Audio bits per sample");
+                        if (format.ChannelMask != 0)
+                        {
+                            MediaFoundationInterop.CheckHr(outputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_CHANNEL_MASK, unchecked((int)format.ChannelMask)), "Audio channel mask");
+                        }
                     }
                 }
 
@@ -364,21 +439,64 @@ namespace ToNRoundCounter.Application.Recording
                 // every captured packet to interleaved PCM 16-bit stereo at 44100 or
                 // 48000 Hz. That format is the canonical input the Windows AAC encoder
                 // MFT (and the WMA / MPEG audio encoders) accept directly, with no
-                // SinkWriter-inserted converter MFT required. Declaring exactly that
-                // here avoids the environment-dependent SetInputMediaType(Audio)
-                // negotiation failures that occur when raw WASAPI float / 5.1
-                // formats are exposed to MF.
+                // SinkWriter-inserted converter MFT required.
+                //
+                // CRITICAL: the AAC encoder MFT documentation
+                // (https://learn.microsoft.com/en-us/windows/win32/medfound/aac-encoder)
+                // lists exactly five REQUIRED input attributes:
+                //   MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MF_MT_AUDIO_BITS_PER_SAMPLE,
+                //   MF_MT_AUDIO_SAMPLES_PER_SECOND, MF_MT_AUDIO_NUM_CHANNELS.
+                // It then says: "After the input type is set, the encoder DERIVES the
+                // following values and ADDS them to the media type:
+                //   MF_MT_AUDIO_AVG_BYTES_PER_SECOND
+                //   MF_MT_AUDIO_BLOCK_ALIGNMENT
+                //   MF_MT_AVG_BITRATE"
+                // On Windows 11 24H2 this derivation step became strict: pre-setting
+                // BLOCK_ALIGNMENT and/or AVG_BYTES_PER_SECOND on the input type (even to
+                // the mathematically correct values that the encoder would itself derive)
+                // causes MFCreateSinkWriter's internal topology to reject the input with
+                // MF_E_INVALIDMEDIATYPE (0xC00D36B4) from SetInputMediaType(Audio). Older
+                // Windows versions (7/8/10) did not hit this rejection because they only
+                // DERIVED the missing attributes and ignored user-supplied values that
+                // happened to match. The fix is to pass ONLY the five required attributes
+                // and let the encoder derive the rest, matching the exact contract the
+                // AAC encoder MFT declares.
                 inputAudioType = MediaFoundationInterop.CreateMediaType();
                 MediaFoundationInterop.CheckHr(inputAudioType.SetGUID(MediaFoundationInterop.MF_MT_MAJOR_TYPE, MediaFoundationInterop.MFMediaType_Audio), "Audio input MF_MT_MAJOR_TYPE");
                 MediaFoundationInterop.CheckHr(inputAudioType.SetGUID(MediaFoundationInterop.MF_MT_SUBTYPE, MediaFoundationInterop.MFAudioFormat_PCM), "Audio input MF_MT_SUBTYPE");
                 MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_NUM_CHANNELS, format.Channels), "Audio input channels");
                 MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_SAMPLES_PER_SECOND, format.SampleRate), "Audio input sample rate");
                 MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BITS_PER_SAMPLE, format.BitsPerSample), "Audio input bits per sample");
-                MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_BLOCK_ALIGNMENT, format.BlockAlign), "Audio input block alignment");
-                MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_AUDIO_AVG_BYTES_PER_SECOND, format.BytesPerSecond), "Audio input average bytes");
-                MediaFoundationInterop.CheckHr(inputAudioType.SetUINT32(MediaFoundationInterop.MF_MT_ALL_SAMPLES_INDEPENDENT, 1), "Audio input MF_MT_ALL_SAMPLES_INDEPENDENT");
 
-                MediaFoundationInterop.CheckHr(writer.SetInputMediaType(streamIndex, inputAudioType, null), "IMFSinkWriter.SetInputMediaType(Audio)");
+                int audioInputHr = writer.SetInputMediaType(streamIndex, inputAudioType, null);
+                if (audioInputHr < 0)
+                {
+                    string available;
+                    try
+                    {
+                        available = DescribeStandaloneAacEncoderInputTypes();
+                    }
+                    catch (Exception describeEx)
+                    {
+                        available = $"<describe threw {describeEx.GetType().Name}: {describeEx.Message}>";
+                    }
+                    string outputDump;
+                    try
+                    {
+                        outputDump = DescribeMediaType(outputAudioType!);
+                    }
+                    catch (Exception dumpEx)
+                    {
+                        outputDump = $"<dump threw {dumpEx.GetType().Name}: {dumpEx.Message}>";
+                    }
+                    string detail = $"IMFSinkWriter.SetInputMediaType(Audio) failed with HRESULT 0x{audioInputHr:X8}. " +
+                                    $"InputType={{subtype=PCM, channels={format.Channels}, sampleRate={format.SampleRate}, bits={format.BitsPerSample}}}. " +
+                                    $"OutputType={{subtype={(outputIsAac ? "AAC" : (outputIsPcm ? "PCM" : "?"))}, " +
+                                    $"channels={outChannels}, sampleRate={outSampleRate}, avgBytes={averageBytes}}}. " +
+                                    $"OutputTypeFullDump=[{outputDump}]. " +
+                                    $"StandaloneAacEncoderInputTypes=[{Environment.NewLine}{available}].";
+                    throw new InvalidOperationException(detail);
+                }
 
                 return streamIndex;
             }
@@ -415,6 +533,134 @@ namespace ToNRoundCounter.Application.Recording
 
             return new MediaFoundationFrameWriter(extension, codecId, path, width, height, frameRate, descriptor, audioFormat, videoBitrate, audioBitrate, selection);
         }
+
+        private static string DescribeMediaType(MediaFoundationInterop.IMFMediaType mt)
+        {
+            var sb = new System.Text.StringBuilder();
+            void TryGuid(Guid key, string name)
+            {
+                try
+                {
+                    Guid k = key;
+                    if (mt.GetGUID(ref k, out Guid v) >= 0)
+                    {
+                        string s;
+                        if (v == MediaFoundationInterop.MFAudioFormat_PCM) s = "PCM";
+                        else if (v == MediaFoundationInterop.MFAudioFormat_Float) s = "Float";
+                        else if (v == MediaFoundationInterop.MFAudioFormat_AAC) s = "AAC";
+                        else if (v == MediaFoundationInterop.MFMediaType_Audio) s = "Audio";
+                        else s = v.ToString("N").Substring(0, 8);
+                        sb.Append(name).Append('=').Append(s).Append(' ');
+                    }
+                }
+                catch { }
+            }
+            void TryU32(Guid key, string name)
+            {
+                try
+                {
+                    Guid k = key;
+                    if (mt.GetUINT32(ref k, out int v) >= 0)
+                    {
+                        sb.Append(name).Append('=').Append(v).Append(' ');
+                    }
+                }
+                catch { }
+            }
+            TryGuid(MediaFoundationInterop.MF_MT_MAJOR_TYPE, "major");
+            TryGuid(MediaFoundationInterop.MF_MT_SUBTYPE, "sub");
+            TryU32(MediaFoundationInterop.MF_MT_AUDIO_NUM_CHANNELS, "ch");
+            TryU32(MediaFoundationInterop.MF_MT_AUDIO_SAMPLES_PER_SECOND, "sr");
+            TryU32(MediaFoundationInterop.MF_MT_AUDIO_BITS_PER_SAMPLE, "bits");
+            TryU32(MediaFoundationInterop.MF_MT_AUDIO_BLOCK_ALIGNMENT, "blockAlign");
+            TryU32(MediaFoundationInterop.MF_MT_AUDIO_AVG_BYTES_PER_SECOND, "avg");
+            TryU32(MediaFoundationInterop.MF_MT_AAC_PAYLOAD_TYPE, "payload");
+            TryU32(MediaFoundationInterop.MF_MT_AAC_AUDIO_PROFILE_LEVEL_INDICATION, "profile");
+            return sb.ToString().TrimEnd();
+        }
+
+        /// <summary>
+        /// Directly instantiate the Windows built-in AAC encoder MFT
+        /// (CLSID_AACMFTEncoder = {93AF0C51-2275-45D2-A35B-F2BA21CAED00}) via
+        /// CoCreateInstance and enumerate its accepted input media types. This
+        /// bypasses the SinkWriter entirely so we see what the encoder itself
+        /// actually wants -- independent of SinkWriter topology resolution.
+        /// </summary>
+        private static unsafe string DescribeStandaloneAacEncoderInputTypes()
+        {
+            Guid clsidAac = new Guid("93AF0C51-2275-45D2-A35B-F2BA21CAED00");
+            Guid iidTransform = new Guid("BF94C121-5B05-4E6F-8000-BA598961414D");
+            int hr = CoCreateInstance(ref clsidAac, IntPtr.Zero, /*CLSCTX_INPROC_SERVER*/ 1, ref iidTransform, out IntPtr transformPtr);
+            if (hr < 0 || transformPtr == IntPtr.Zero)
+            {
+                return $"<CoCreateInstance(CLSID_AACMFTEncoder) failed HRESULT 0x{hr:X8}>";
+            }
+
+            try
+            {
+                var sb = new System.Text.StringBuilder();
+                void** tVtbl = *(void***)transformPtr;
+                // IMFTransform::GetInputAvailableType is slot 13 (3 IUnknown + 10).
+                var getInput = (delegate* unmanaged[Stdcall]<IntPtr, int, int, IntPtr*, int>)tVtbl[13];
+                for (int i = 0; i < 64; i++)
+                {
+                    IntPtr typePtr;
+                    int thr = getInput(transformPtr, 0, i, &typePtr);
+                    if (thr == unchecked((int)0xC00D36B3))
+                    {
+                        break;
+                    }
+                    if (thr < 0 || typePtr == IntPtr.Zero)
+                    {
+                        sb.AppendLine($"[idx={i}] <enum error HRESULT 0x{thr:X8}>");
+                        break;
+                    }
+                    try
+                    {
+                        void** mtVtbl = *(void***)typePtr;
+                        var getUint32 = (delegate* unmanaged[Stdcall]<IntPtr, Guid*, int*, int>)mtVtbl[7];
+                        var getGuid = (delegate* unmanaged[Stdcall]<IntPtr, Guid*, Guid*, int>)mtVtbl[10];
+
+                        Guid subKey = MediaFoundationInterop.MF_MT_SUBTYPE;
+                        Guid subVal;
+                        string subtype = getGuid(typePtr, &subKey, &subVal) < 0
+                            ? "?"
+                            : subVal == MediaFoundationInterop.MFAudioFormat_PCM ? "PCM"
+                                : subVal == MediaFoundationInterop.MFAudioFormat_Float ? "Float"
+                                : subVal == MediaFoundationInterop.MFAudioFormat_AAC ? "AAC"
+                                : subVal.ToString("N").Substring(0, 8);
+
+                        int ch = -1, sr = -1, bits = -1, blockAlign = -1, avg = -1;
+                        Guid k;
+                        int v;
+                        k = MediaFoundationInterop.MF_MT_AUDIO_NUM_CHANNELS;
+                        if (getUint32(typePtr, &k, &v) >= 0) ch = v;
+                        k = MediaFoundationInterop.MF_MT_AUDIO_SAMPLES_PER_SECOND;
+                        if (getUint32(typePtr, &k, &v) >= 0) sr = v;
+                        k = MediaFoundationInterop.MF_MT_AUDIO_BITS_PER_SAMPLE;
+                        if (getUint32(typePtr, &k, &v) >= 0) bits = v;
+                        k = MediaFoundationInterop.MF_MT_AUDIO_BLOCK_ALIGNMENT;
+                        if (getUint32(typePtr, &k, &v) >= 0) blockAlign = v;
+                        k = MediaFoundationInterop.MF_MT_AUDIO_AVG_BYTES_PER_SECOND;
+                        if (getUint32(typePtr, &k, &v) >= 0) avg = v;
+
+                        sb.AppendLine($"[idx={i}] subtype={subtype} ch={ch} sr={sr} bits={bits} blockAlign={blockAlign} avg={avg}");
+                    }
+                    finally
+                    {
+                        Marshal.Release(typePtr);
+                    }
+                }
+                return sb.Length == 0 ? "<no input types enumerated>" : sb.ToString();
+            }
+            finally
+            {
+                Marshal.Release(transformPtr);
+            }
+        }
+
+        [DllImport("ole32.dll")]
+        private static extern int CoCreateInstance(ref Guid clsid, IntPtr outer, int clsCtx, ref Guid iid, out IntPtr ppv);
 
         private static MediaFoundationInterop.IMFSinkWriter CreateSinkWriter(string path, FormatDescriptor descriptor, HardwareEncoderSelection selection, out bool hardwareEnabled, out HardwareDeviceContext? hardwareContext, out string? fallbackReason)
         {
@@ -477,8 +723,21 @@ namespace ToNRoundCounter.Application.Recording
                 {
                     MediaFoundationInterop.CheckHr(attributes.SetUINT32(MediaFoundationInterop.MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, 1), "IMFAttributes.SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS)");
                     hardwareContext = HardwareDeviceContext.Create(selection);
+                    // Required so SinkWriter picks the HW encoder MFT (without this attribute
+                    // it falls back to the software H.264 encoder which cannot keep up with
+                    // 4K30). Per MSDN MFT_MESSAGE_SET_D3D_MANAGER is only sent to MFTs that
+                    // advertise MF_SA_D3D11_AWARE=TRUE, so the AAC audio MFT should not be
+                    // affected.
                     var sinkWriterD3DManager = MediaFoundationInterop.MF_SINK_WRITER_D3D_MANAGER;
-                    MediaFoundationInterop.CheckHr(attributes.SetUnknown(ref sinkWriterD3DManager, hardwareContext.DeviceManager), "IMFAttributes.SetUnknown(MF_SINK_WRITER_D3D_MANAGER)");
+                    object managerCom = Marshal.GetUniqueObjectForIUnknown(hardwareContext.DeviceManager.UnknownPtr);
+                    try
+                    {
+                        MediaFoundationInterop.CheckHr(attributes.SetUnknown(ref sinkWriterD3DManager, managerCom), "IMFAttributes.SetUnknown(MF_SINK_WRITER_D3D_MANAGER)");
+                    }
+                    finally
+                    {
+                        Marshal.ReleaseComObject(managerCom);
+                    }
                 }
 
                 var writer = MediaFoundationInterop.CreateSinkWriter(path, attributes);
@@ -501,6 +760,11 @@ namespace ToNRoundCounter.Application.Recording
 
         public void WriteVideoFrame(Bitmap frame)
         {
+            WriteVideoFrame(frame, -1);
+        }
+
+        public void WriteVideoFrame(Bitmap frame, long presentationTimeTicks)
+        {
             if (frame == null)
             {
                 throw new ArgumentNullException(nameof(frame));
@@ -521,7 +785,7 @@ namespace ToNRoundCounter.Application.Recording
 
             try
             {
-                WriteFrameInternal(data.Scan0, data.Stride);
+                WriteFrameInternal(data.Scan0, data.Stride, presentationTimeTicks);
             }
             finally
             {
@@ -529,7 +793,7 @@ namespace ToNRoundCounter.Application.Recording
             }
         }
 
-        private void WriteFrameInternal(IntPtr scan0, int stride)
+        private void WriteFrameInternal(IntPtr scan0, int stride, long presentationTimeTicks)
         {
             MediaFoundationInterop.IMFMediaBuffer? buffer = null;
             MediaFoundationInterop.IMFSample? sample = null;
@@ -556,21 +820,38 @@ namespace ToNRoundCounter.Application.Recording
                 sample = MediaFoundationInterop.CreateSample();
                 MediaFoundationInterop.CheckHr(sample.AddBuffer(buffer), "IMFSample.AddBuffer");
 
-                long duration = _baseFrameDuration;
-                if (_durationRemainder > 0)
+                long sampleTime;
+                long duration;
+                if (presentationTimeTicks >= 0)
                 {
-                    _durationAccumulator += _durationRemainder;
-                    if (_durationAccumulator >= _frameRate)
+                    // Wall-clock mode. duration[N] is the gap between consecutive presentation
+                    // times so the muxed stts table reflects real wall-clock pacing. The
+                    // earlier formulation (`_timestamp = sampleTime + duration`) double-counted
+                    // the gap, producing alternating (delta, 1) duration pairs whose sum was
+                    // half the wall-clock span -- making playback run at ~2x slow motion.
+                    sampleTime = presentationTimeTicks;
+                    duration = Math.Max(1L, sampleTime - _timestamp);
+                    _timestamp = sampleTime;
+                }
+                else
+                {
+                    // Legacy frame-counted mode.
+                    duration = _baseFrameDuration;
+                    if (_durationRemainder > 0)
                     {
-                        duration += 1;
-                        _durationAccumulator -= _frameRate;
+                        _durationAccumulator += _durationRemainder;
+                        if (_durationAccumulator >= _frameRate)
+                        {
+                            duration += 1;
+                            _durationAccumulator -= _frameRate;
+                        }
                     }
+                    sampleTime = _timestamp;
+                    _timestamp += duration;
                 }
 
-                MediaFoundationInterop.CheckHr(sample.SetSampleTime(_timestamp), "IMFSample.SetSampleTime");
+                MediaFoundationInterop.CheckHr(sample.SetSampleTime(sampleTime), "IMFSample.SetSampleTime");
                 MediaFoundationInterop.CheckHr(sample.SetSampleDuration(duration), "IMFSample.SetSampleDuration");
-
-                _timestamp += duration;
 
                 MediaFoundationInterop.CheckHr(_sinkWriter.WriteSample(_streamIndex, sample), "IMFSinkWriter.WriteSample");
             }
@@ -726,6 +1007,20 @@ namespace ToNRoundCounter.Application.Recording
                 }
             }
 
+            public IntPtr AddRefDevice()
+            {
+                if (_disposed || _device == IntPtr.Zero) return IntPtr.Zero;
+                Marshal.AddRef(_device);
+                return _device;
+            }
+
+            public IntPtr AddRefContext()
+            {
+                if (_disposed || _deviceContext == IntPtr.Zero) return IntPtr.Zero;
+                Marshal.AddRef(_deviceContext);
+                return _deviceContext;
+            }
+
             public static HardwareDeviceContext Create(HardwareEncoderSelection selection)
             {
                 if (selection.Api == HardwareAccelerationApi.Software)
@@ -782,7 +1077,7 @@ namespace ToNRoundCounter.Application.Recording
                 {
                     if (manager != null)
                     {
-                        Marshal.ReleaseComObject(manager);
+                        manager.Dispose();
                     }
 
                     if (context != IntPtr.Zero)
@@ -1147,7 +1442,7 @@ namespace ToNRoundCounter.Application.Recording
                 {
                     if (_deviceManager != null)
                     {
-                        Marshal.ReleaseComObject(_deviceManager);
+                        _deviceManager.Dispose();
                         _deviceManager = null;
                     }
 
@@ -1341,6 +1636,143 @@ namespace ToNRoundCounter.Application.Recording
             return best;
         }
 
+        // Use MFTranscodeGetAudioOutputAvailableTypes -- the documented API that
+        // internally walks the AAC encoder MFT's output profile table and returns a
+        // collection of fully-populated IMFMediaType objects (MAJOR, SUBTYPE,
+        // NUM_CHANNELS, SAMPLES_PER_SECOND, AVG_BYTES_PER_SECOND, BLOCK_ALIGNMENT,
+        // BITS_PER_SAMPLE, AAC_PAYLOAD_TYPE, AAC_AUDIO_PROFILE_LEVEL_INDICATION,
+        // and USER_DATA/codec private data). Using the API avoids the
+        // SetOutputType-then-SetInputType ordering requirement of the raw AAC
+        // encoder MFT (which returns MF_E_ATTRIBUTENOTFOUND / 0xC00D36E6 when
+        // SetInputType is called before SetOutputType).
+        //
+        // If the API returns media types that appear empty, we diagnose via
+        // IMFAttributes::GetCount and include the raw attribute count in the
+        // exception so the caller can log meaningful data.
+        private static unsafe MediaFoundationInterop.IMFMediaType SelectAacOutputMediaType(
+            int sourceChannels, int sourceSampleRate, int sourceBitsPerSample,
+            int targetChannels, int targetSampleRate, int targetAverageBytes,
+            out int outChannels, out int outSampleRate, out int averageBytes)
+        {
+            _ = sourceChannels; _ = sourceSampleRate; _ = sourceBitsPerSample;
+
+            Guid aacSubtype = MediaFoundationInterop.MFAudioFormat_AAC;
+            int hr = MediaFoundationInterop.MFTranscodeGetAudioOutputAvailableTypes(
+                ref aacSubtype, MediaFoundationInterop.MFT_ENUM_FLAG_ALL, null, out var collection);
+            if (hr < 0 || collection == null)
+            {
+                throw new InvalidOperationException(
+                    $"MFTranscodeGetAudioOutputAvailableTypes(AAC) failed with HRESULT 0x{hr:X8}.");
+            }
+
+            try
+            {
+                MediaFoundationInterop.CheckHr(collection.GetElementCount(out int count), "IMFCollection.GetElementCount");
+                if (count <= 0)
+                {
+                    throw new InvalidOperationException(
+                        "MFTranscodeGetAudioOutputAvailableTypes returned no AAC output media types.");
+                }
+
+                IntPtr bestRawPtr = IntPtr.Zero;
+                long bestScore = long.MaxValue;
+                int bestCh = 0, bestSr = 0, bestAvg = 0, bestAttrCount = 0;
+                int firstAttrCount = -1;
+
+                for (int i = 0; i < count; i++)
+                {
+                    MediaFoundationInterop.CheckHr(collection.GetElement(i, out object element), "IMFCollection.GetElement");
+                    // Drop the RCW and use raw vtable dispatch -- .NET's COM interop has
+                    // occasionally been observed to return stale GetUINT32 values for
+                    // MFTranscodeGetAudioOutputAvailableTypes results (possibly due to
+                    // free-threaded marshaler interaction). Raw dispatch removes that
+                    // variable entirely.
+                    IntPtr rawPtr = Marshal.GetIUnknownForObject(element);
+                    Marshal.ReleaseComObject(element);
+
+                    void** mtVtbl = *(void***)rawPtr;
+                    // IMFAttributes vtable slots:
+                    //   7 GetUINT32
+                    //  27 GetCount
+                    var getUint32 = (delegate* unmanaged[Stdcall]<IntPtr, Guid*, int*, int>)mtVtbl[7];
+                    var getCount = (delegate* unmanaged[Stdcall]<IntPtr, int*, int>)mtVtbl[27];
+
+                    int attrCount = 0;
+                    getCount(rawPtr, &attrCount);
+                    if (firstAttrCount < 0) firstAttrCount = attrCount;
+
+                    int ch = 0, sr = 0, avg = 0;
+                    Guid k;
+                    int v;
+                    k = MediaFoundationInterop.MF_MT_AUDIO_NUM_CHANNELS;
+                    if (getUint32(rawPtr, &k, &v) >= 0) ch = v;
+                    k = MediaFoundationInterop.MF_MT_AUDIO_SAMPLES_PER_SECOND;
+                    if (getUint32(rawPtr, &k, &v) >= 0) sr = v;
+                    k = MediaFoundationInterop.MF_MT_AUDIO_AVG_BYTES_PER_SECOND;
+                    if (getUint32(rawPtr, &k, &v) >= 0) avg = v;
+
+                    long score = 0;
+                    score += Math.Abs(ch - targetChannels) * 1_000_000_000L;
+                    score += Math.Abs(sr - targetSampleRate) * 1_000L;
+                    score += Math.Abs(avg - targetAverageBytes);
+
+                    if (score < bestScore)
+                    {
+                        if (bestRawPtr != IntPtr.Zero)
+                        {
+                            Marshal.Release(bestRawPtr);
+                        }
+                        bestRawPtr = rawPtr;
+                        bestScore = score;
+                        bestCh = ch;
+                        bestSr = sr;
+                        bestAvg = avg;
+                        bestAttrCount = attrCount;
+                    }
+                    else
+                    {
+                        Marshal.Release(rawPtr);
+                    }
+                }
+
+                if (bestRawPtr == IntPtr.Zero)
+                {
+                    throw new InvalidOperationException(
+                        $"Failed to pick an AAC output media type (count={count}, firstAttrCount={firstAttrCount}).");
+                }
+
+                // If the selected type is completely empty (no channels / sr / avg),
+                // MFTranscodeGetAudioOutputAvailableTypes on this OS build is not
+                // populating the types. Surface diagnostic info instead of silently
+                // returning a shell that would later fail SetInputMediaType.
+                if (bestCh == 0 && bestSr == 0 && bestAvg == 0)
+                {
+                    Marshal.Release(bestRawPtr);
+                    throw new InvalidOperationException(
+                        $"MFTranscodeGetAudioOutputAvailableTypes returned unpopulated AAC media types " +
+                        $"(count={count}, selectedAttrCount={bestAttrCount}). " +
+                        $"Cannot build a usable AAC output type on this OS build.");
+                }
+
+                try
+                {
+                    var mt = (MediaFoundationInterop.IMFMediaType)Marshal.GetObjectForIUnknown(bestRawPtr);
+                    outChannels = bestCh;
+                    outSampleRate = bestSr;
+                    averageBytes = bestAvg;
+                    return mt;
+                }
+                finally
+                {
+                    Marshal.Release(bestRawPtr);
+                }
+            }
+            finally
+            {
+                Marshal.ReleaseComObject(collection);
+            }
+        }
+
         private static int CalculateBitrate(int width, int height, int frameRate)
         {
             // Use a perceptual bits-per-pixel coefficient instead of treating every pixel as 8 bits.
@@ -1461,6 +1893,15 @@ namespace ToNRoundCounter.Application.Recording
             public static readonly Guid MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS = new Guid("A634A91C-822B-41B9-A494-4DE4643612B0");
             public static readonly Guid MF_SINK_WRITER_DISABLE_THROTTLING = new Guid("08B845D8-2B74-4AFE-9D53-BE16D2D5AE4F");
             public static readonly Guid MF_SINK_WRITER_D3D_MANAGER = new Guid("EC82238C-1EA6-4DBF-8451-4D3EBE0B6837");
+            // IID_IMFSinkWriterEx -- the extended IMFSinkWriter that exposes
+            // GetTransformForStream so we can address the underlying H.264 encoder MFT
+            // directly and send it MFT_MESSAGE_SET_D3D_MANAGER without polluting the
+            // audio AAC encoder MFT (which would otherwise reject SetInputMediaType
+            // after the SinkWriter broadcasts the D3D manager via the global
+            // MF_SINK_WRITER_D3D_MANAGER attribute -- observed as repeated
+            // 'IMFSinkWriter.SetInputMediaType(Audio) failed with HRESULT 0xC00D36B4'
+            // on Windows 11 24H2 with NVENC enabled).
+            public static readonly Guid IID_IMFSinkWriterEx = new Guid("588D72AB-5BC1-496A-8714-B70617141B25");
             public static readonly Guid MF_TRANSCODE_CONTAINERTYPE = new Guid("150FF23F-4ABC-478B-AC4F-E1916FBA1CCA");
             public static readonly Guid MF_MT_MAJOR_TYPE = new Guid("48EBA18E-F8C9-4687-BF11-0A74C9F96A8F");
             public static readonly Guid MF_MT_SUBTYPE = new Guid("F7E34C9A-42E8-4714-B74B-CB29D72C35E5");
@@ -1599,10 +2040,51 @@ namespace ToNRoundCounter.Application.Recording
                 return buffer ?? throw new InvalidOperationException("MFCreateMemoryBuffer returned a null buffer instance.");
             }
 
+            /// <summary>
+            /// Wraps an ID3D11Texture2D as an MF media buffer that exposes its data to the
+            /// pipeline as a DXGI surface — the encoder MFT can pull the surface into NVENC
+            /// (or another HW encoder) without any CPU-side copy.
+            ///
+            /// Per MSDN, MFCreateDXGISurfaceBuffer queries the resource for IDXGISurface, so
+            /// the texture must NOT have a typeless format and must be on the same device as
+            /// the encoder's IMFDXGIDeviceManager (otherwise the encoder will fail to map it).
+            /// </summary>
+            public static IMFMediaBuffer CreateDxgiSurfaceBuffer(IntPtr texture, uint subresourceIndex)
+            {
+                // IID_ID3D11Texture2D
+                Guid iid = new Guid("6f15aaf2-d208-4e89-9ab4-489535d34f9c");
+                CheckHr(
+                    MFCreateDXGISurfaceBuffer(ref iid, texture, subresourceIndex, /* fBottomUpWhenLinear */ false, out var buffer),
+                    nameof(MFCreateDXGISurfaceBuffer));
+                return buffer ?? throw new InvalidOperationException("MFCreateDXGISurfaceBuffer returned a null buffer instance.");
+            }
+
             public static IMFDXGIDeviceManager CreateDxgiDeviceManager(out uint resetToken)
             {
-                CheckHr(MFCreateDXGIDeviceManager(out resetToken, out var manager), nameof(MFCreateDXGIDeviceManager));
-                return manager ?? throw new InvalidOperationException("MFCreateDXGIDeviceManager returned a null manager instance.");
+                IntPtr rawPtr = IntPtr.Zero;
+                bool ownershipTransferred = false;
+                try
+                {
+                    CheckHr(MFCreateDXGIDeviceManager(out resetToken, out rawPtr), nameof(MFCreateDXGIDeviceManager));
+                    if (rawPtr == IntPtr.Zero)
+                    {
+                        throw new InvalidOperationException("MFCreateDXGIDeviceManager returned a null manager pointer.");
+                    }
+
+                    // Wrap the raw IMFDXGIDeviceManager* directly to avoid Marshal.
+                    // GetObjectForIUnknown + InterfaceIsIUnknown cast (see wrapper class
+                    // remarks). The wrapper takes ownership of exactly one ref count.
+                    var manager = new IMFDXGIDeviceManager(rawPtr);
+                    ownershipTransferred = true;
+                    return manager;
+                }
+                finally
+                {
+                    if (!ownershipTransferred && rawPtr != IntPtr.Zero)
+                    {
+                        Marshal.Release(rawPtr);
+                    }
+                }
             }
 
             public static void SetAttributeSize(IMFMediaType type, Guid key, int width, int height)
@@ -1648,7 +2130,41 @@ namespace ToNRoundCounter.Application.Recording
             private static extern int MFCreateMemoryBuffer(int cbMaxLength, out IMFMediaBuffer ppBuffer);
 
             [DllImport("mfplat.dll")]
-            private static extern int MFCreateDXGIDeviceManager(out uint resetToken, out IMFDXGIDeviceManager? ppDeviceManager);
+            private static extern int MFCreateDXGIDeviceManager(out uint resetToken, out IntPtr ppDeviceManager);
+
+            [DllImport("mfplat.dll")]
+            private static extern int MFCreateDXGISurfaceBuffer(
+                [In] ref Guid riid,
+                IntPtr punkSurface,
+                uint uSubresourceIndex,
+                [MarshalAs(UnmanagedType.Bool)] bool fBottomUpWhenLinear,
+                out IMFMediaBuffer ppBuffer);
+
+            // Official helper: enumerates the AAC (or other audio codec) encoder output
+            // media types supported on this OS, fully populated (sample rate / channels /
+            // bitrate / profile / block align / avg bytes per second / payload type /
+            // user data). Using this API means we never have to guess which combination
+            // of those attributes the Windows AAC encoder MFT will accept.
+            // https://learn.microsoft.com/en-us/windows/win32/api/mfidl/nf-mfidl-mftranscodegetaudiooutputavailabletypes
+            [DllImport("mf.dll")]
+            public static extern int MFTranscodeGetAudioOutputAvailableTypes(
+                [In] ref Guid guidSubType,
+                int dwMFTFlags,
+                IMFAttributes? pCodecConfig,
+                out IMFCollection ppAvailableTypes);
+
+            [ComImport, Guid("5BC8A76B-869A-46A3-9B03-FA218A66AEBE"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+            public interface IMFCollection
+            {
+                [PreserveSig] int GetElementCount(out int pcElements);
+                [PreserveSig] int GetElement(int dwElementIndex, [MarshalAs(UnmanagedType.IUnknown)] out object ppUnkElement);
+                [PreserveSig] int AddElement([MarshalAs(UnmanagedType.IUnknown)] object pUnkElement);
+                [PreserveSig] int RemoveElement(int dwElementIndex, [MarshalAs(UnmanagedType.IUnknown)] out object ppUnkElement);
+                [PreserveSig] int InsertElementAt(int dwIndex, [MarshalAs(UnmanagedType.IUnknown)] object pUnknown);
+                [PreserveSig] int RemoveAllElements();
+            }
+
+            public const int MFT_ENUM_FLAG_ALL = 0x3F;
 
             [ComImport]
             [Guid("2cd2d921-c447-44a7-a13c-4adabfc247e3")]
@@ -1903,20 +2419,282 @@ namespace ToNRoundCounter.Application.Recording
                     var fn = (delegate* unmanaged[Stdcall]<IntPtr, int>)vtbl[11];
                     return fn(ptr);
                 }
+
+                /// <summary>
+                /// Attach the given DXGI device manager IUnknown to the encoder MFT for
+                /// <paramref name="streamIndex"/> by QI'ing the underlying sink writer for
+                /// IMFSinkWriterEx (IID {588D72AB-5BC1-496A-8714-B70617141B25}), retrieving
+                /// transform index 0 (the encoder) via GetTransformForStream, and calling
+                /// IMFTransform::ProcessMessage(MFT_MESSAGE_SET_D3D_MANAGER=2, manager).
+                ///
+                /// This replaces the global MF_SINK_WRITER_D3D_MANAGER SinkWriter attribute.
+                /// That attribute would broadcast the manager to EVERY encoder MFT (including
+                /// the AAC audio encoder MFT on audio streams) via the same ProcessMessage
+                /// call, and on Windows 11 24H2 the AAC encoder's handling of that message
+                /// corrupts its type-negotiation state such that the subsequent
+                /// SetInputMediaType(Audio) call returns MF_E_INVALIDMEDIATYPE (0xC00D36B4).
+                /// By attaching the manager ONLY to the video stream's encoder MFT, the
+                /// audio encoder is left untouched and SetInputMediaType(Audio) succeeds.
+                /// </summary>
+                public unsafe int SetD3DManagerOnStream(int streamIndex, IntPtr managerUnknown)
+                {
+                    if (managerUnknown == IntPtr.Zero)
+                    {
+                        throw new ArgumentNullException(nameof(managerUnknown));
+                    }
+
+                    IntPtr ptr = GetPtrOrThrow();
+                    Guid iidEx = MediaFoundationInterop.IID_IMFSinkWriterEx;
+                    int qiHr = Marshal.QueryInterface(ptr, in iidEx, out IntPtr exPtr);
+                    if (qiHr < 0 || exPtr == IntPtr.Zero)
+                    {
+                        return qiHr;
+                    }
+
+                    IntPtr transformPtr = IntPtr.Zero;
+                    try
+                    {
+                        void** exVtbl = *(void***)exPtr;
+                        // IMFSinkWriterEx::GetTransformForStream is slot 14 (inherits 14 slots
+                        // 0-13 from IMFSinkWriter: 3 IUnknown + 11 declared methods).
+                        var getTransform = (delegate* unmanaged[Stdcall]<IntPtr, int, int, Guid*, IntPtr*, int>)exVtbl[14];
+                        Guid category;
+                        IntPtr raw;
+                        int hr = getTransform(exPtr, streamIndex, 0, &category, &raw);
+                        if (hr < 0)
+                        {
+                            return hr;
+                        }
+
+                        transformPtr = raw;
+                        if (transformPtr == IntPtr.Zero)
+                        {
+                            return unchecked((int)0x80004005); // E_FAIL: SinkWriter returned null transform
+                        }
+
+                        void** tVtbl = *(void***)transformPtr;
+                        // IMFTransform::ProcessMessage is slot 21. Signature:
+                        //   HRESULT ProcessMessage(MFT_MESSAGE_TYPE eMessage, ULONG_PTR ulParam);
+                        // MFT_MESSAGE_SET_D3D_MANAGER = 2.
+                        var processMessage = (delegate* unmanaged[Stdcall]<IntPtr, int, IntPtr, int>)tVtbl[21];
+                        return processMessage(transformPtr, 2, managerUnknown);
+                    }
+                    finally
+                    {
+                        if (transformPtr != IntPtr.Zero)
+                        {
+                            Marshal.Release(transformPtr);
+                        }
+                        Marshal.Release(exPtr);
+                    }
+                }
+
+                /// <summary>
+                /// Retrieve the encoder MFT for <paramref name="streamIndex"/> via
+                /// IMFSinkWriter::GetServiceForStream(GUID_NULL, IID_IMFTransform) and
+                /// enumerate its accepted input media types, returning a human-readable
+                /// multi-line string. Used by the audio initialization failure path to
+                /// surface what the MFT actually wants in the exception message so the
+                /// observed MF_E_INVALIDMEDIATYPE can be diagnosed without adding extra
+                /// debug builds or MF tracing.
+                /// </summary>
+                public unsafe string DescribeAvailableInputTypes(int streamIndex)
+                {
+                    IntPtr ptr = GetPtrOrThrow();
+                    Guid iidEx = MediaFoundationInterop.IID_IMFSinkWriterEx;
+                    int qiHr = Marshal.QueryInterface(ptr, in iidEx, out IntPtr exPtr);
+                    if (qiHr < 0 || exPtr == IntPtr.Zero)
+                    {
+                        return $"<QI(IMFSinkWriterEx) failed HRESULT 0x{qiHr:X8}>";
+                    }
+                    IntPtr transformPtr = IntPtr.Zero;
+                    try
+                    {
+                        void** exVtbl = *(void***)exPtr;
+                        // IMFSinkWriterEx::GetTransformForStream is slot 14 (11 IMFSinkWriter
+                        // methods + 3 IUnknown). Signature:
+                        //   HRESULT GetTransformForStream(DWORD streamIndex, DWORD transformIndex,
+                        //                                 GUID* guidCategory, IMFTransform** ppTransform);
+                        var getTransform = (delegate* unmanaged[Stdcall]<IntPtr, int, int, Guid*, IntPtr*, int>)exVtbl[14];
+                        Guid category;
+                        IntPtr raw;
+                        int hr = getTransform(exPtr, streamIndex, 0, &category, &raw);
+                        if (hr < 0 || raw == IntPtr.Zero)
+                        {
+                            return $"<GetTransformForStream failed HRESULT 0x{hr:X8}>";
+                        }
+                        transformPtr = raw;
+
+                        var sb = new System.Text.StringBuilder();
+                        void** tVtbl = *(void***)transformPtr;
+                        // GetInputAvailableType is slot 13. Signature:
+                        //   HRESULT GetInputAvailableType(DWORD inputStreamId, DWORD typeIndex,
+                        //                                 IMFMediaType** ppType);
+                        var getInput = (delegate* unmanaged[Stdcall]<IntPtr, int, int, IntPtr*, int>)tVtbl[13];
+                        // IMFMediaType vtable slots we need (after IUnknown's 3 and IMFAttributes 30 = 33 offset):
+                        //   [11] GetUINT32   (IMFAttributes slot 4  = vtbl slot 7)
+                        //   [15] GetGUID     (IMFAttributes slot 8  = vtbl slot 11)
+                        // These correspond to slot 7 (GetUINT32) and slot 11 (GetGUID) directly
+                        // on the IMFAttributes vtable portion (since IMFMediaType inherits it).
+                        //   IUnknown: 0-2
+                        //   IMFAttributes: 3=GetItem, 4=GetItemType, 5=CompareItem, 6=Compare,
+                        //                  7=GetUINT32, 8=GetUINT64, 9=GetDouble, 10=GetGUID, ...
+                        // So GetUINT32 = slot 7, GetGUID = slot 10.
+                        for (int i = 0; i < 64; i++)
+                        {
+                            IntPtr typePtr;
+                            int thr = getInput(transformPtr, 0, i, &typePtr);
+                            if (thr == unchecked((int)0xC00D36B3)) // MF_E_NO_MORE_TYPES
+                            {
+                                break;
+                            }
+                            if (thr < 0 || typePtr == IntPtr.Zero)
+                            {
+                                sb.AppendLine($"[idx={i}] <enum error HRESULT 0x{thr:X8}>");
+                                break;
+                            }
+
+                            try
+                            {
+                                void** mtVtbl = *(void***)typePtr;
+                                var getUint32 = (delegate* unmanaged[Stdcall]<IntPtr, Guid*, int*, int>)mtVtbl[7];
+                                var getGuid = (delegate* unmanaged[Stdcall]<IntPtr, Guid*, Guid*, int>)mtVtbl[10];
+
+                                // subtype
+                                Guid subKey = MediaFoundationInterop.MF_MT_SUBTYPE;
+                                Guid subVal;
+                                string subtype = getGuid(typePtr, &subKey, &subVal) < 0
+                                    ? "?"
+                                    : subVal == MediaFoundationInterop.MFAudioFormat_PCM ? "PCM"
+                                        : subVal == MediaFoundationInterop.MFAudioFormat_Float ? "Float"
+                                        : subVal == MediaFoundationInterop.MFAudioFormat_AAC ? "AAC"
+                                        : subVal.ToString("N").Substring(0, 8);
+
+                                int ch = -1, sr = -1, bits = -1, blockAlign = -1, avg = -1;
+                                Guid k;
+                                int v;
+                                k = MediaFoundationInterop.MF_MT_AUDIO_NUM_CHANNELS;
+                                if (getUint32(typePtr, &k, &v) >= 0) ch = v;
+                                k = MediaFoundationInterop.MF_MT_AUDIO_SAMPLES_PER_SECOND;
+                                if (getUint32(typePtr, &k, &v) >= 0) sr = v;
+                                k = MediaFoundationInterop.MF_MT_AUDIO_BITS_PER_SAMPLE;
+                                if (getUint32(typePtr, &k, &v) >= 0) bits = v;
+                                k = MediaFoundationInterop.MF_MT_AUDIO_BLOCK_ALIGNMENT;
+                                if (getUint32(typePtr, &k, &v) >= 0) blockAlign = v;
+                                k = MediaFoundationInterop.MF_MT_AUDIO_AVG_BYTES_PER_SECOND;
+                                if (getUint32(typePtr, &k, &v) >= 0) avg = v;
+
+                                sb.AppendLine($"[idx={i}] subtype={subtype} channels={ch} sr={sr} bits={bits} blockAlign={blockAlign} avgBytes={avg}");
+                            }
+                            finally
+                            {
+                                Marshal.Release(typePtr);
+                            }
+                        }
+                        return sb.Length == 0 ? "<no input types enumerated>" : sb.ToString();
+                    }
+                    catch (Exception ex)
+                    {
+                        return $"<enumeration threw: {ex.GetType().Name}: {ex.Message}>";
+                    }
+                    finally
+                    {
+                        if (transformPtr != IntPtr.Zero)
+                        {
+                            Marshal.Release(transformPtr);
+                        }
+                        Marshal.Release(exPtr);
+                    }
+                }
             }
 
-            [ComImport]
-            [Guid("ca86aa50-c46e-429e-9866-2fc0ba7a656f")]
-            [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-            public interface IMFDXGIDeviceManager
+            // IMFDXGIDeviceManager is exposed via a raw IntPtr + vtable wrapper for the
+            // exact same reason as IMFSinkWriter (see comment block above): on this Windows
+            // 11 build the COM object returned by MFCreateDXGIDeviceManager has a wrapped
+            // canonical IUnknown that intermittently returns E_NOINTERFACE on a re-QI for
+            // its own IID. Marshal.GetObjectForIUnknown forces such a re-QI when the PInvoke
+            // out parameter is typed as the [ComImport] interface, surfacing as
+            //   System.InvalidCastException: Unable to cast COM object of type
+            //   'System.__ComObject' to interface type 'IMFDXGIDeviceManager'.
+            // Bypass the RCW dance entirely: keep the raw pointer and dispatch ResetDevice
+            // through the vtable.
+            //
+            // CRITICAL: the vtable order is what MIDL produced for mfobjects.h, which is
+            // ALPHABETICAL among the derived methods, NOT the order they appear in the
+            // header text. Verified against the Windows 10 SDK definition of
+            // IMFDXGIDeviceManager (IID = {eb533d5d-2db6-40f8-97a9-494692014f07}).
+            // Slot layout (after IUnknown's 3 slots):
+            //   [3]  CloseDeviceHandle(HANDLE hDevice)
+            //   [4]  GetVideoService(HANDLE hDevice, REFIID riid, void** ppService)
+            //   [5]  LockDevice(HANDLE hDevice, REFIID riid, void** ppUnkDevice, BOOL fBlock)
+            //   [6]  OpenDeviceHandle(HANDLE* phDevice)
+            //   [7]  ResetDevice(IUnknown* pUnkDevice, UINT resetToken)
+            //   [8]  TestDevice(HANDLE hDevice)
+            //   [9]  UnlockDevice(HANDLE hDevice, BOOL fSaveState)
+            //
+            // The previous incarnation of this wrapper put ResetDevice at slot 3, which
+            // actually invoked CloseDeviceHandle. CloseDeviceHandle then tried to interpret
+            // the ID3D11Device pointer we passed as a HANDLE returned by OpenDeviceHandle
+            // and returned E_HANDLE (0x80070006) -- the symptom we observed.
+            public sealed class IMFDXGIDeviceManager : IDisposable
             {
-                [PreserveSig] int ResetDevice(IntPtr pDevice, uint resetToken);
-                [PreserveSig] int OpenDeviceHandle(out IntPtr phDevice);
-                [PreserveSig] int CloseDeviceHandle(IntPtr hDevice);
-                [PreserveSig] int TestDevice(IntPtr hDevice);
-                [PreserveSig] int LockDevice(IntPtr hDevice, Guid riid, out IntPtr ppv, bool block);
-                [PreserveSig] int UnlockDevice(IntPtr hDevice, bool saveState);
-                [PreserveSig] int GetVideoService(IntPtr hDevice, Guid riid, out IntPtr ppService);
+                private IntPtr _ptr;
+
+                public IMFDXGIDeviceManager(IntPtr ptr)
+                {
+                    if (ptr == IntPtr.Zero)
+                    {
+                        throw new ArgumentNullException(nameof(ptr));
+                    }
+
+                    _ptr = ptr;
+                }
+
+                ~IMFDXGIDeviceManager()
+                {
+                    DisposeCore();
+                }
+
+                /// <summary>
+                /// Raw IUnknown pointer. The wrapper retains ownership; callers MUST NOT
+                /// release it. Used by IMFAttributes::SetUnknown so that MF stores its own
+                /// AddRef'd reference to the underlying COM identity.
+                /// </summary>
+                public IntPtr UnknownPtr
+                {
+                    get
+                    {
+                        IntPtr ptr = _ptr;
+                        if (ptr == IntPtr.Zero)
+                        {
+                            throw new ObjectDisposedException(nameof(IMFDXGIDeviceManager));
+                        }
+                        return ptr;
+                    }
+                }
+
+                public void Dispose()
+                {
+                    DisposeCore();
+                    GC.SuppressFinalize(this);
+                }
+
+                private void DisposeCore()
+                {
+                    IntPtr ptr = Interlocked.Exchange(ref _ptr, IntPtr.Zero);
+                    if (ptr != IntPtr.Zero)
+                    {
+                        Marshal.Release(ptr);
+                    }
+                }
+
+                public unsafe int ResetDevice(IntPtr pDevice, uint resetToken)
+                {
+                    IntPtr ptr = UnknownPtr;
+                    void** vtbl = *(void***)ptr;
+                    var fn = (delegate* unmanaged[Stdcall]<IntPtr, IntPtr, uint, int>)vtbl[7];
+                    return fn(ptr, pDevice, resetToken);
+                }
             }
 
             // NOTE: IMFSample inherits IMFAttributes in C++. See the IMFMediaType comment

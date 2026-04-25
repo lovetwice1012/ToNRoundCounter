@@ -68,6 +68,8 @@ namespace ToNRoundCounter.Application.Recording
             }
         }
 
+        public void WriteVideoFrame(Bitmap frame, long presentationTimeTicks) => WriteVideoFrame(frame);
+
         public void WriteAudioSample(ReadOnlySpan<byte> data, int frames)
         {
             throw new NotSupportedException("Audio capture is not supported for GIF recordings.");

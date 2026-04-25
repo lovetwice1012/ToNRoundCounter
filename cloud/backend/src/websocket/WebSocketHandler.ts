@@ -33,8 +33,12 @@ interface ExtendedWebSocket extends WebSocket {
     instanceId?: string;
     /** All instance IDs this socket is currently subscribed to. */
     subscribedInstances?: Set<string>;
-    /** Distinguishes between c#-app and web clients (defaults to 'csharp'). */
-    clientType?: 'csharp' | 'web';
+    /** Distinguishes between desktop, web, and external SDK clients (defaults to 'csharp'). */
+    clientType?: 'csharp' | 'web' | 'sdk' | 'unknown';
+    appId?: string;
+    appScopes?: string[];
+    deviceId?: string;
+    deviceName?: string;
 }
 
 export class WebSocketHandler {
@@ -243,21 +247,28 @@ export class WebSocketHandler {
             return;
         }
 
-        logger.debug({ rpc, params, clientId }, 'Handling RPC');
+        logger.debug({ rpc, params: this.sanitizeRpcParams(params), clientId }, 'Handling RPC');
 
         try {
+            await this.enforceSdkAppAuthorization(ws, message);
+            const dispatchRpc = this.getDispatchRpc(ws, rpc);
+            this.enforceSdkScope(ws, dispatchRpc);
+
             let result: any;
 
-            switch (rpc) {
+            switch (dispatchRpc) {
                 // Auth methods
                 case 'auth.register':
-                    result = await this.handleAuthRegister(params);
+                    result = await this.handleAuthRegister(ws, params, clientId);
                     break;
                 case 'auth.login':
                     result = await this.handleAuthLogin(ws, params, clientId);
                     break;
                 case 'auth.loginWithApiKey':
                     result = await this.handleAuthLoginWithApiKey(ws, params, clientId);
+                    break;
+                case 'auth.revokeAppToken':
+                    result = await this.handleAuthRevokeAppToken(params);
                     break;
                 case 'auth.generateOneTimeToken':
                     result = await this.handleAuthGenerateOneTimeToken(params);
@@ -272,7 +283,10 @@ export class WebSocketHandler {
                     result = await this.handleAuthRefresh(ws);
                     break;
                 case 'auth.validateSession':
-                    result = await this.handleAuthValidateSession(ws, params, clientId);
+                    result = await this.handleAuthValidateSession(ws, message, clientId);
+                    break;
+                case 'custom.rpc.send':
+                    result = await this.handleSdkCustomRpcSend(ws, params);
                     break;
 
                 // Instance methods
@@ -458,20 +472,28 @@ export class WebSocketHandler {
             this.sendResponse(ws, rpc, result, id);
             logger.info({ rpc, id }, 'Response sent');
         } catch (error: any) {
-            logger.error({ error, rpc, params }, 'Error executing RPC');
+            logger.error({ error, rpc, params: this.sanitizeRpcParams(params) }, 'Error executing RPC');
             this.sendError(ws, ErrorCodes.INTERNAL_ERROR, error.message, id);
         }
     }
 
     // Auth handlers
-    private async handleAuthRegister(params: any): Promise<any> {
-        const { player_id, client_version } = params;
+    private async handleAuthRegister(ws: ExtendedWebSocket, params: any, clientId: string): Promise<any> {
+        const { player_id, client_version, client_type } = params;
 
         if (!player_id || !client_version) {
             throw new Error('player_id and client_version are required');
         }
 
-        const result = await this.authService.registerUser(player_id, client_version);
+        const normalizedClientType = this.normalizeClientType(client_type) ?? 'unknown';
+        const ipAddress = (ws as any)._socket?.remoteAddress || undefined;
+
+        const result = await this.authService.registerUser(
+            player_id,
+            client_version,
+            normalizedClientType,
+            ipAddress
+        );
 
         return {
             user_id: result.user_id,
@@ -479,14 +501,14 @@ export class WebSocketHandler {
             is_new: result.is_new,
             message: result.is_new 
                 ? 'User registered successfully. Please save your API key securely!'
-                : 'API key regenerated successfully. Your previous API key is now invalid.',
+                : 'User registered successfully. Please save your API key securely!',
         };
     }
 
     private async handleAuthLoginWithApiKey(ws: ExtendedWebSocket, params: any, clientId: string): Promise<any> {
-        const { player_id, api_key, client_version, client_type } = params;
+        const { player_id, api_key, client_version, client_type, device_info, app_id, app_token } = params;
 
-        logger.info({ player_id, hasApiKey: !!api_key, client_version }, 'Auth.loginWithApiKey called');
+        logger.info({ player_id, hasApiKey: !!api_key, hasAppId: !!app_id, hasAppToken: !!app_token, client_version }, 'Auth.loginWithApiKey called');
 
         if (!player_id || !api_key || !client_version) {
             throw new Error('player_id, api_key, and client_version are required');
@@ -494,19 +516,37 @@ export class WebSocketHandler {
 
         const ipAddress = (ws as any)._socket?.remoteAddress || undefined;
         const userAgent = (ws as any).upgradeReq?.headers['user-agent'] || undefined;
+        const normalizedClientType = this.normalizeClientType(client_type) ?? 'csharp';
 
         const session = await this.authService.createSessionWithApiKey(
             player_id,
             api_key,
             client_version,
             ipAddress,
-            userAgent
+            userAgent,
+            normalizedClientType,
+            device_info,
+            app_id,
+            app_token
         );
+
+        if (normalizedClientType === 'csharp' && this.hasOtherOpenCSharpClient(session.user_id, ws)) {
+            await SessionRepository.deleteSession(session.session_id);
+            await SessionRepository.deleteLoginDeviceForSession(session.session_id);
+            logger.warn({ userId: session.user_id, playerId: session.player_id, clientId }, 'Rejected duplicate C# client login');
+            throw new Error('A C# client is already connected for this API key');
+        }
 
         ws.sessionId = session.session_id;
         ws.userId = session.user_id;
         ws.playerId = session.player_id;
-        ws.clientType = this.normalizeClientType(client_type);
+        ws.clientType = normalizedClientType;
+        ws.appId = normalizedClientType === 'sdk' ? session.app_id : undefined;
+        ws.appScopes = normalizedClientType === 'sdk' ? session.app_scopes : undefined;
+        ws.deviceId = typeof device_info?.device_id === 'string' ? device_info.device_id : undefined;
+        ws.deviceName = typeof device_info?.device_name === 'string'
+            ? device_info.device_name
+            : (typeof device_info?.machine_name === 'string' ? device_info.machine_name : undefined);
 
         logger.info({ 
             sessionId: ws.sessionId, 
@@ -515,9 +555,27 @@ export class WebSocketHandler {
         }, 'Auth.loginWithApiKey successful - credentials set');
 
         return {
+            session_id: session.session_id,
             session_token: session.session_token,
             player_id: session.player_id,
+            user_id: session.user_id,
+            scopes: session.app_scopes ?? [],
             expires_at: session.expires_at.toISOString(),
+        };
+    }
+
+    private async handleAuthRevokeAppToken(params: any): Promise<any> {
+        const { player_id, api_key, app_id } = params;
+
+        if (!player_id || !api_key || !app_id) {
+            throw new Error('player_id, api_key, and app_id are required');
+        }
+
+        await this.authService.revokeUserAppToken(player_id, api_key, app_id);
+
+        return {
+            success: true,
+            app_id,
         };
     }
 
@@ -533,43 +591,16 @@ export class WebSocketHandler {
         return {
             token,
             expires_in: 300, // 5 minutes in seconds
-            login_url: `http://localhost:8080/login?token=${token}`,
+            login_url: `${this.getFrontendBaseUrl()}/api/auth/one-time-token`,
         };
     }
 
     private async handleAuthLoginWithOneTimeToken(ws: ExtendedWebSocket, params: any, clientId: string): Promise<any> {
-        const { token, client_version, client_type } = params;
-
-        if (!token || !client_version) {
-            throw new Error('token and client_version are required');
-        }
-
-        const ipAddress = (ws as any)._socket?.remoteAddress || undefined;
-        const userAgent = (ws as any).upgradeReq?.headers['user-agent'] || undefined;
-
-        const session = await this.authService.loginWithOneTimeToken(
-            token,
-            client_version,
-            ipAddress,
-            userAgent
-        );
-
-        ws.sessionId = session.session_id;
-        ws.userId = session.user_id;
-        ws.playerId = session.player_id;
-        // One-time tokens are produced by the C# client to allow the web UI to log in
-        // on its behalf, so the resulting socket is web unless callers say otherwise.
-        ws.clientType = this.normalizeClientType(client_type) ?? 'web';
-
-        return {
-            session_token: session.session_token,
-            player_id: session.player_id,
-            expires_at: session.expires_at.toISOString(),
-        };
+        throw new Error('One-time token login must use POST /api/auth/one-time-token');
     }
 
     private async handleAuthLogin(ws: ExtendedWebSocket, params: any, clientId: string): Promise<any> {
-        const { player_id, client_version, access_key, client_type } = params;
+        const { player_id, client_version, access_key, client_type, device_info } = params;
 
         if (!player_id || !client_version) {
             throw new Error('player_id and client_version are required');
@@ -585,7 +616,9 @@ export class WebSocketHandler {
             client_version,
             ipAddress,
             userAgent,
-            access_key
+            access_key,
+            this.normalizeClientType(client_type) ?? 'unknown',
+            device_info
         );
         
         ws.sessionId = session.session_id;
@@ -594,8 +627,11 @@ export class WebSocketHandler {
         ws.clientType = this.normalizeClientType(client_type);
 
         return {
+            session_id: session.session_id,
             session_token: session.session_token,
             player_id: session.player_id,
+            user_id: session.user_id,
+            scopes: session.app_scopes ?? [],
             expires_at: session.expires_at.toISOString(),
         };
     }
@@ -612,15 +648,31 @@ export class WebSocketHandler {
         this.requireAuth(ws);
 
         const session = await this.authService.refreshSession(ws.sessionId!);
+        const effectiveAppScopes = session.client_type === 'sdk'
+            ? (ws.appScopes ?? session.app_scopes ?? [])
+            : undefined;
+        ws.sessionId = session.session_id;
+        ws.userId = session.user_id;
+        ws.playerId = session.player_id;
+        ws.clientType = session.client_type;
+        ws.appId = session.client_type === 'sdk' ? session.app_id : undefined;
+        ws.appScopes = session.client_type === 'sdk' ? effectiveAppScopes : undefined;
 
         return {
+            session_id: session.session_id,
             session_token: session.session_token,
+            player_id: session.player_id,
+            user_id: session.user_id,
+            scopes: effectiveAppScopes ?? [],
             expires_at: session.expires_at.toISOString(),
         };
     }
 
-    private async handleAuthValidateSession(ws: ExtendedWebSocket, params: any, clientId: string): Promise<any> {
-        const { session_token, player_id, client_type } = params;
+    private async handleAuthValidateSession(ws: ExtendedWebSocket, message: WebSocketMessage, clientId: string): Promise<any> {
+        const params = message.params && typeof message.params === 'object' && !Array.isArray(message.params)
+            ? message.params
+            : {};
+        const { session_token, player_id, client_type, app_id, app_token } = params;
 
         if (!session_token || !player_id) {
             throw new Error('session_token and player_id are required');
@@ -632,18 +684,132 @@ export class WebSocketHandler {
         if (!session) {
             throw new Error('Invalid session token');
         }
+
+        const normalizedClientType = this.normalizeClientType(client_type);
+        const effectiveClientType = normalizedClientType ?? session.client_type;
+        let effectiveAppScopes: string[] | undefined;
+        if (session.client_type === 'sdk' || normalizedClientType === 'sdk') {
+            if (session.client_type !== 'sdk' || !session.app_id) {
+                throw new Error('Session was not created for an SDK app authorization');
+            }
+
+            const credentials = this.getMessageAppCredentials(message);
+            const ipAddress = (ws as any)._socket?.remoteAddress || undefined;
+            const appAuthorization = await this.authService.validateExternalAppAuthorization(
+                session.user_id,
+                credentials.appId ?? app_id,
+                credentials.appToken ?? app_token,
+                ipAddress
+            );
+
+            if (appAuthorization.appId !== session.app_id) {
+                throw new Error('SDK app authorization does not match the session');
+            }
+
+            effectiveAppScopes = appAuthorization.scopes;
+        }
+
+        if (normalizedClientType === 'csharp' && this.hasOtherOpenCSharpClient(session.user_id, ws)) {
+            logger.warn({ userId: session.user_id, playerId: session.player_id, clientId }, 'Rejected duplicate C# client session validation');
+            throw new Error('A C# client is already connected for this API key');
+        }
         
         // Set WebSocket authentication
         ws.sessionId = session.session_id;
         ws.userId = session.user_id;
-        ws.playerId = player_id;
-        ws.clientType = this.normalizeClientType(client_type);
+        ws.playerId = session.player_id;
+        ws.clientType = effectiveClientType;
+        ws.appId = ws.clientType === 'sdk' ? session.app_id : undefined;
+        ws.appScopes = ws.clientType === 'sdk' ? effectiveAppScopes ?? session.app_scopes : undefined;
 
         return {
+            session_id: session.session_id,
             session_token: session.session_token,
-            player_id,
+            player_id: session.player_id,
             user_id: session.user_id,
+            scopes: ws.appScopes ?? [],
             expires_at: session.expires_at.toISOString(),
+        };
+    }
+
+    private async handleSdkCustomRpcSend(ws: ExtendedWebSocket, params: any): Promise<any> {
+        this.requireAuth(ws);
+
+        if (ws.clientType !== 'sdk' || !ws.appId) {
+            throw new Error('Custom app RPC is only available to authenticated SDK clients');
+        }
+
+        const method = typeof params?.method === 'string' ? params.method.trim() : '';
+        if (!method || method.length > 128) {
+            throw new Error('method is required and must be 128 characters or fewer');
+        }
+
+        if (method.startsWith('SDK.app.') || method.startsWith('auth.')) {
+            throw new Error('method must be an app-local custom method name');
+        }
+
+        const instanceId = typeof params?.instance_id === 'string' && params.instance_id.trim()
+            ? params.instance_id.trim()
+            : undefined;
+        const includeSelf = params?.include_self === true;
+        const targetUserIds = Array.isArray(params?.target_user_ids)
+            ? new Set(
+                params.target_user_ids
+                    .filter((value: any) => typeof value === 'string' && value.trim())
+                    .slice(0, 100)
+                    .map((value: string) => value.trim())
+            )
+            : undefined;
+
+        const stream = `SDK.app.${ws.appId}.custom.rpc`;
+        const timestamp = new Date().toISOString();
+        let deliveredCount = 0;
+
+        for (const client of this.clients.values()) {
+            if (client.readyState !== WebSocket.OPEN) {
+                continue;
+            }
+            if (client.clientType !== 'sdk' || client.appId !== ws.appId) {
+                continue;
+            }
+            if (!this.hasSdkScope(client, 'app:custom_rpc')) {
+                continue;
+            }
+            if (!includeSelf && client === ws) {
+                continue;
+            }
+            if (targetUserIds && !targetUserIds.has(client.userId ?? '') && !targetUserIds.has(client.playerId ?? '')) {
+                continue;
+            }
+            if (instanceId && client.instanceId !== instanceId && !client.subscribedInstances?.has(instanceId)) {
+                continue;
+            }
+
+            this.send(client, {
+                type: 'sdk_app_rpc',
+                stream,
+                app_id: ws.appId,
+                data: {
+                    method,
+                    payload: params?.payload ?? null,
+                    from_user_id: ws.userId,
+                    from_player_id: ws.playerId,
+                    instance_id: instanceId,
+                    timestamp,
+                },
+                timestamp,
+            });
+            deliveredCount++;
+        }
+
+        return {
+            success: true,
+            app_id: ws.appId,
+            method,
+            instance_id: instanceId,
+            delivered_count: deliveredCount,
+            target_user_count: targetUserIds?.size ?? null,
+            timestamp,
         };
     }
 
@@ -1421,7 +1587,32 @@ export class WebSocketHandler {
     }
 
     // Helper methods
-    private normalizeClientType(clientType: any): 'csharp' | 'web' | undefined {
+    private getFrontendBaseUrl(): string {
+        return (process.env.FRONTEND_URL || 'http://localhost:8080').replace(/\/$/, '');
+    }
+
+    private hasOtherOpenCSharpClient(userId: string, currentWs: ExtendedWebSocket): boolean {
+        for (const client of this.clients.values()) {
+            if (client === currentWs) {
+                continue;
+            }
+            if (client.readyState !== WebSocket.OPEN) {
+                continue;
+            }
+            if (client.userId !== userId) {
+                continue;
+            }
+
+            const effectiveType = client.clientType ?? 'csharp';
+            if (effectiveType === 'csharp') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private normalizeClientType(clientType: any): 'csharp' | 'web' | 'sdk' | undefined {
         if (typeof clientType !== 'string') {
             return undefined;
         }
@@ -1429,10 +1620,255 @@ export class WebSocketHandler {
         if (lower === 'web' || lower === 'browser' || lower === 'frontend') {
             return 'web';
         }
+        if (lower === 'sdk' || lower === 'external-sdk' || lower === 'external' || lower === 'third-party') {
+            return 'sdk';
+        }
         if (lower === 'csharp' || lower === 'c#' || lower === 'dotnet' || lower === 'app' || lower === 'desktop') {
             return 'csharp';
         }
         return undefined;
+    }
+
+    private getMessageAppCredentials(message: WebSocketMessage): { appId?: string; appToken?: string } {
+        const params = message.params && typeof message.params === 'object' && !Array.isArray(message.params)
+            ? message.params
+            : {};
+
+        return {
+            appId: typeof message.app_id === 'string'
+                ? message.app_id
+                : (typeof params.app_id === 'string' ? params.app_id : undefined),
+            appToken: typeof message.app_token === 'string'
+                ? message.app_token
+                : (typeof params.app_token === 'string' ? params.app_token : undefined),
+        };
+    }
+
+    private isSdkSessionControlRpc(rpc?: string): boolean {
+        return rpc === 'auth.loginWithApiKey'
+            || rpc === 'auth.logout'
+            || rpc === 'auth.refresh'
+            || rpc === 'auth.validateSession'
+            || rpc === 'auth.generateOneTimeToken'
+            || rpc === 'auth.revokeAppToken';
+    }
+
+    private getSdkRpcPrefix(appId: string): string {
+        return `SDK.app.${appId}.`;
+    }
+
+    private isSdkAppCustomRpc(rpc: string): boolean {
+        return rpc === 'custom.rpc.send';
+    }
+
+    private isSdkDataSendRpc(rpc: string): boolean {
+        return new Set([
+            'auth.register',
+            'auth.login',
+            'auth.loginWithOneTimeToken',
+            'custom.rpc.send',
+            'instance.create',
+            'instance.join',
+            'instance.leave',
+            'instance.update',
+            'instance.delete',
+            'player.state.update',
+            'round.report',
+            'threat.announce',
+            'threat.response',
+            'coordinated.voting.start',
+            'coordinated.voting.vote',
+            'coordinated.autoSuicide.update',
+            'wished.terrors.update',
+            'profile.update',
+            'settings.update',
+            'settings.sync',
+            'monitoring.report',
+            'backup.create',
+            'backup.restore',
+            'backup.delete',
+        ]).has(rpc);
+    }
+
+    private isSdkReadOnlyRpc(rpc: string): boolean {
+        return new Set([
+            'instance.list',
+            'instance.get',
+            'player.states.get',
+            'player.state.get',
+            'player.instance.get',
+            'round.list',
+            'coordinated.voting.getCampaign',
+            'coordinated.voting.getActive',
+            'coordinated.voting.getVotes',
+            'coordinated.autoSuicide.get',
+            'wished.terrors.get',
+            'wished.terrors.findDesirePlayers',
+            'profile.get',
+            'settings.get',
+            'settings.history',
+            'monitoring.status',
+            'monitoring.errors',
+            'client.status.get',
+            'analytics.player',
+            'analytics.terror',
+            'analytics.trends',
+            'analytics.export',
+            'analytics.instance',
+            'analytics.voting',
+            'analytics.roundTypes',
+            'backup.list',
+        ]).has(rpc);
+    }
+
+    private getDispatchRpc(ws: ExtendedWebSocket, rpc: string): string {
+        if (ws.clientType !== 'sdk' || this.isSdkSessionControlRpc(rpc)) {
+            return rpc;
+        }
+
+        if (!ws.appId) {
+            throw new Error('SDK app_id is missing from the authenticated session');
+        }
+
+        const expectedPrefix = this.getSdkRpcPrefix(ws.appId);
+        if (!rpc.startsWith(expectedPrefix)) {
+            if (rpc.startsWith('SDK.app.')) {
+                throw new Error(`SDK app RPC must start with ${expectedPrefix}`);
+            }
+
+            if (this.isSdkReadOnlyRpc(rpc)) {
+                return rpc;
+            }
+
+            if (this.isSdkDataSendRpc(rpc)) {
+                return rpc;
+            }
+
+            throw new Error(`SDK direct RPC is limited to known scoped methods. App custom RPCs must start with ${expectedPrefix}`);
+        }
+
+        const innerRpc = rpc.substring(expectedPrefix.length);
+        if (!innerRpc) {
+            throw new Error('SDK RPC must include a method name after the app namespace');
+        }
+        if (!this.isSdkAppCustomRpc(innerRpc)) {
+            throw new Error('SDK.app namespace is reserved for app-local custom sync RPCs');
+        }
+
+        return innerRpc;
+    }
+
+    private getRequiredSdkScope(rpc: string): string | undefined {
+        const scopeByRpc: Record<string, string> = {
+            'custom.rpc.send': 'app:custom_rpc',
+            'instance.list': 'read:instances',
+            'instance.get': 'read:instances',
+            'player.instance.get': 'read:instances',
+            'player.states.get': 'read:player_state',
+            'player.state.get': 'read:player_state',
+            'round.list': 'read:rounds',
+            'coordinated.voting.getCampaign': 'read:voting',
+            'coordinated.voting.getActive': 'read:voting',
+            'coordinated.voting.getVotes': 'read:voting',
+            'coordinated.autoSuicide.get': 'read:auto_suicide',
+            'wished.terrors.get': 'read:wished_terrors',
+            'wished.terrors.findDesirePlayers': 'read:wished_terrors',
+            'profile.get': 'read:profiles',
+            'settings.get': 'read:settings',
+            'settings.history': 'read:settings',
+            'monitoring.status': 'read:monitoring',
+            'monitoring.errors': 'read:monitoring',
+            'client.status.get': 'read:monitoring',
+            'analytics.player': 'read:analytics',
+            'analytics.terror': 'read:analytics',
+            'analytics.trends': 'read:analytics',
+            'analytics.export': 'read:analytics',
+            'analytics.instance': 'read:analytics',
+            'analytics.voting': 'read:analytics',
+            'analytics.roundTypes': 'read:analytics',
+            'backup.list': 'read:backups',
+            'instance.create': 'cloud:instances:write',
+            'instance.join': 'cloud:instances:write',
+            'instance.leave': 'cloud:instances:write',
+            'instance.update': 'cloud:instances:write',
+            'instance.delete': 'cloud:instances:write',
+            'player.state.update': 'cloud:player_state:write',
+            'round.report': 'cloud:rounds:write',
+            'threat.announce': 'cloud:threats:write',
+            'threat.response': 'cloud:threats:write',
+            'coordinated.voting.start': 'cloud:voting:write',
+            'coordinated.voting.vote': 'cloud:voting:write',
+            'coordinated.autoSuicide.update': 'cloud:auto_suicide:write',
+            'wished.terrors.update': 'cloud:wished_terrors:write',
+            'profile.update': 'cloud:profiles:write',
+            'settings.update': 'cloud:settings:write',
+            'settings.sync': 'cloud:settings:write',
+            'monitoring.report': 'cloud:monitoring:write',
+            'backup.create': 'cloud:backups:write',
+            'backup.restore': 'cloud:backups:write',
+            'backup.delete': 'cloud:backups:write',
+        };
+
+        return scopeByRpc[rpc];
+    }
+
+    private hasSdkScope(ws: ExtendedWebSocket, requiredScope: string): boolean {
+        const scopes = new Set(ws.appScopes ?? []);
+        return scopes.has(requiredScope) || scopes.has('*');
+    }
+
+    private enforceSdkScope(ws: ExtendedWebSocket, rpc: string): void {
+        if (ws.clientType !== 'sdk' || this.isSdkSessionControlRpc(rpc)) {
+            return;
+        }
+
+        const requiredScope = this.getRequiredSdkScope(rpc);
+        if (!requiredScope) {
+            throw new Error('SDK RPC is not available');
+        }
+
+        if (!this.hasSdkScope(ws, requiredScope)) {
+            throw new Error(`Scope '${requiredScope}' is required for RPC '${rpc}'`);
+        }
+    }
+
+    private async enforceSdkAppAuthorization(ws: ExtendedWebSocket, message: WebSocketMessage): Promise<void> {
+        if (ws.clientType !== 'sdk' || message.rpc === 'auth.loginWithApiKey') {
+            return;
+        }
+
+        this.requireAuth(ws);
+
+        const { appId, appToken } = this.getMessageAppCredentials(message);
+        const ipAddress = (ws as any)._socket?.remoteAddress || undefined;
+        const appAuthorization = await this.authService.validateExternalAppAuthorization(
+            ws.userId!,
+            appId,
+            appToken,
+            ipAddress
+        );
+
+        if (!ws.appId || appAuthorization.appId !== ws.appId) {
+            logger.warn({ userId: ws.userId, sessionAppId: ws.appId, requestAppId: appAuthorization.appId }, 'SDK app_id does not match authenticated session');
+            throw new Error('SDK app authorization does not match the authenticated session');
+        }
+
+        ws.appScopes = appAuthorization.scopes;
+    }
+
+    private sanitizeRpcParams(params: any): any {
+        if (!params || typeof params !== 'object' || Array.isArray(params)) {
+            return params;
+        }
+
+        const sanitized = { ...params };
+        for (const key of ['api_key', 'app_token', 'session_token', 'access_key', 'token']) {
+            if (key in sanitized) {
+                sanitized[key] = '[REDACTED]';
+            }
+        }
+
+        return sanitized;
     }
 
     private requireAuth(ws: ExtendedWebSocket): void {
@@ -1654,6 +2090,8 @@ export class WebSocketHandler {
                 player_id: client.playerId,
                 user_id: client.userId,
                 session_id: client.sessionId,
+                device_id: client.deviceId,
+                device_name: client.deviceName,
             };
 
             // Default to csharp when the client did not advertise its type;
@@ -1666,10 +2104,35 @@ export class WebSocketHandler {
             }
         });
 
+        const recentDevices = await SessionRepository.getRecentLoginDevices(targetUserId, 10);
+
         return {
             player_id: targetUserId,
             csharp_client: csharpClient || { connected: false },
             web_client: webClient || { connected: false },
+            recent_devices: recentDevices.map(device => ({
+                id: device.id,
+                session_id: device.session_id,
+                user_id: device.user_id,
+                player_id: device.player_id,
+                client_type: device.client_type,
+                client_version: device.client_version,
+                device_id: device.device_id,
+                device_name: device.device_name,
+                os_description: device.os_description,
+                os_architecture: device.os_architecture,
+                processor_name: device.processor_name,
+                gpu_name: device.gpu_name,
+                memory_mb: device.memory_mb,
+                ip_address: device.ip_address,
+                logged_in_at: device.logged_in_at.toISOString(),
+                last_seen_at: device.last_seen_at.toISOString(),
+                connected: Array.from(this.clients.values()).some(client =>
+                    client.userId === targetUserId &&
+                    client.readyState === WebSocket.OPEN &&
+                    (client.sessionId === device.session_id || (!!device.device_id && client.deviceId === device.device_id))
+                ),
+            })),
             timestamp: new Date().toISOString(),
         };
     }

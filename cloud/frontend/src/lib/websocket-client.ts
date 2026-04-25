@@ -49,6 +49,26 @@ export interface PlayerState {
     timestamp?: string;
 }
 
+export interface LoginDevice {
+    id: number;
+    session_id: string;
+    user_id: string;
+    player_id: string;
+    client_type: string;
+    client_version: string;
+    device_id?: string;
+    device_name?: string;
+    os_description?: string;
+    os_architecture?: string;
+    processor_name?: string;
+    gpu_name?: string;
+    memory_mb?: number;
+    ip_address?: string;
+    logged_in_at: string;
+    last_seen_at: string;
+    connected?: boolean;
+}
+
 export type StreamCallback = (data: any) => void;
 export type ConnectionStateCallback = (state: 'connected' | 'disconnected' | 'reconnecting' | 'auth-required') => void;
 
@@ -213,21 +233,9 @@ export class ToNRoundCloudClient {
      * Login with one-time token
      */
     async loginWithOneTimeToken(token: string, clientVersion: string): Promise<Session> {
-        const result = await this.call('auth.loginWithOneTimeToken', {
-            token,
-            client_version: clientVersion,
-            client_type: 'web',
-        });
-
-        this.sessionToken = result.session_token;
-        this.playerId = result.player_id;
-        if (typeof result.user_id === 'string') {
-            this._userId = result.user_id;
-        }
-
-        console.log('[ToNRoundCloud] Session token set after login:', !!this.sessionToken, 'Player ID:', this.playerId);
-
-        return result;
+        void token;
+        void clientVersion;
+        throw new Error('One-time token login is only supported via POST /api/auth/one-time-token');
     }
 
     /**
@@ -601,8 +609,9 @@ export class ToNRoundCloudClient {
     // Client Status
     async getClientStatus(playerId?: string): Promise<{
         player_id: string;
-        csharp_client: { connected: boolean; player_id?: string; user_id?: string; session_id?: string; };
-        web_client: { connected: boolean; player_id?: string; user_id?: string; session_id?: string; };
+        csharp_client: { connected: boolean; player_id?: string; user_id?: string; session_id?: string; device_id?: string; device_name?: string; };
+        web_client: { connected: boolean; player_id?: string; user_id?: string; session_id?: string; device_id?: string; device_name?: string; };
+        recent_devices: LoginDevice[];
         timestamp: string;
     }> {
         return await this.call('client.status.get', { player_id: playerId });

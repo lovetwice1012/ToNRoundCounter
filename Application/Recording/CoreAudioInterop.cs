@@ -252,5 +252,152 @@ namespace ToNRoundCounter.Application.Recording
             [PreserveSig]
             int GetNextPacketSize(out int numFramesInNextPacket);
         }
+
+        // IAudioEndpointVolume gives access to the Windows per-endpoint master volume
+        // slider. This is essential for loopback capture: WASAPI's capture client
+        // returns samples at their FULL pre-mix-volume level (i.e. independent of the
+        // slider), so a recording made while the user is listening at 20% master
+        // volume would play back 5x louder than the user heard live. Multiplying the
+        // captured samples by GetMasterVolumeLevelScalar() restores the signal the
+        // user actually heard, dynamically following slider changes without needing
+        // any fixed compensation constant.
+        [ComImport]
+        [Guid("5CDF2C82-841E-4546-9722-0CF74078229A")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        public interface IAudioEndpointVolume
+        {
+            [PreserveSig] int RegisterControlChangeNotify(IntPtr notify);
+            [PreserveSig] int UnregisterControlChangeNotify(IntPtr notify);
+            [PreserveSig] int GetChannelCount(out uint channelCount);
+            [PreserveSig] int SetMasterVolumeLevel(float levelDb, Guid eventContext);
+            [PreserveSig] int SetMasterVolumeLevelScalar(float levelScalar, Guid eventContext);
+            [PreserveSig] int GetMasterVolumeLevel(out float levelDb);
+            [PreserveSig] int GetMasterVolumeLevelScalar(out float levelScalar);
+            [PreserveSig] int SetChannelVolumeLevel(uint channel, float levelDb, Guid eventContext);
+            [PreserveSig] int SetChannelVolumeLevelScalar(uint channel, float levelScalar, Guid eventContext);
+            [PreserveSig] int GetChannelVolumeLevel(uint channel, out float levelDb);
+            [PreserveSig] int GetChannelVolumeLevelScalar(uint channel, out float levelScalar);
+            [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool mute, Guid eventContext);
+            [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool mute);
+            [PreserveSig] int GetVolumeStepInfo(out uint step, out uint stepCount);
+            [PreserveSig] int VolumeStepUp(Guid eventContext);
+            [PreserveSig] int VolumeStepDown(Guid eventContext);
+            [PreserveSig] int QueryHardwareSupport(out uint hardwareSupportMask);
+            [PreserveSig] int GetVolumeRange(out float minDb, out float maxDb, out float incrementDb);
+        }
+
+        // IAudioMeterInformation reports the peak value of the signal actually sent to
+        // the endpoint AFTER every stage of the audio engine (master volume, per-app
+        // session volume, loudness equalization, bass boost, etc.). Because WASAPI
+        // loopback taps the mix BEFORE master volume and enhancements, comparing our
+        // captured-buffer peak against the meter's live peak gives the exact scalar
+        // needed to make the recording match what the user heard. This is the only
+        // measurement that handles all Windows audio-processing paths uniformly.
+        [ComImport]
+        [Guid("C02216F6-8C67-4B5B-9D00-D008E73E0064")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        public interface IAudioMeterInformation
+        {
+            [PreserveSig] int GetPeakValue(out float peak);
+            [PreserveSig] int GetMeteringChannelCount(out uint channelCount);
+            [PreserveSig] int GetChannelsPeakValues(uint channelCount, [Out] float[] peakValues);
+            [PreserveSig] int QueryHardwareSupport(out uint hardwareSupportMask);
+        }
+
+        // ---- Process Loopback support (Windows 10 build 20348+ / Windows 11) ----
+        //
+        // Process loopback is the modern API used by OBS / Discord / etc. to capture
+        // audio for a specific process tree WITHOUT going through the system mix.
+        // This bypasses every per-endpoint Windows audio enhancement (Loudness
+        // Equalization, Bass Boost, exclusive-mode session compressors, etc.) which
+        // are the root cause of "音割れ" reports where the captured WAV shows extreme
+        // dynamic range compression (crest factor ~ 1.2) even though no clipping is
+        // present and the source content has wide natural dynamics.
+        //
+        // The activation flow is:
+        //   1. Build an AUDIOCLIENT_ACTIVATION_PARAMS struct identifying the target PID
+        //   2. Wrap it in a PROPVARIANT (VT_BLOB) and pass it to ActivateAudioInterfaceAsync
+        //   3. The async completion handler hands back an IAudioClient bound to the
+        //      virtual `VAD\Process_Loopback` endpoint.
+        //   4. Initialize that client with PCM/float 48 kHz stereo + LOOPBACK | EVENTCALLBACK
+        //   5. Drive the same capture loop as the legacy WASAPI loopback path.
+
+        public const string VirtualAudioDeviceProcessLoopback = "VAD\\Process_Loopback";
+
+        public const uint AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM = 0x80000000;
+        public const uint AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY = 0x08000000;
+
+        public static readonly Guid IID_IAudioClient = new Guid("1CB9AD4C-DBFA-4C32-B178-C2F568A703B2");
+
+        public enum AUDIOCLIENT_ACTIVATION_TYPE
+        {
+            Default = 0,
+            ProcessLoopback = 1,
+        }
+
+        public enum PROCESS_LOOPBACK_MODE
+        {
+            IncludeTargetProcessTree = 0,
+            ExcludeTargetProcessTree = 1,
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS
+        {
+            public uint TargetProcessId;
+            public PROCESS_LOOPBACK_MODE ProcessLoopbackMode;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct AUDIOCLIENT_ACTIVATION_PARAMS
+        {
+            public AUDIOCLIENT_ACTIVATION_TYPE ActivationType;
+            public AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS ProcessLoopbackParams;
+        }
+
+        // PROPVARIANT for VT_BLOB. Layout MUST match Win32 PROPVARIANT exactly: 24 bytes on x64.
+        //   Offsets: vt=0(2), wReserved1=2(2), wReserved2=4(2), wReserved3=6(2),
+        //            blob.cbSize=8(4), padding=12(4), blob.pBlobData=16(8) -> total 24.
+        // No trailing padding: the audio service does not read past offset 24 for VT_BLOB,
+        // and adding trailing fields silently grows the struct and is just wrong.
+        [StructLayout(LayoutKind.Sequential, Size = 24)]
+        public struct PROPVARIANT_BLOB
+        {
+            public ushort vt;
+            public ushort wReserved1;
+            public ushort wReserved2;
+            public ushort wReserved3;
+            public uint cbSize;
+            public uint cbSize_padding; // align pBlobData on 8-byte boundary for x64
+            public IntPtr pBlobData;
+        }
+
+        public const ushort VT_BLOB = 0x0041;
+
+        [ComImport]
+        [Guid("72A22D78-CDE4-431D-B8CC-843A71199B6D")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        public interface IActivateAudioInterfaceAsyncOperation
+        {
+            [PreserveSig]
+            int GetActivateResult(out int activateResult, [MarshalAs(UnmanagedType.IUnknown)] out object activatedInterface);
+        }
+
+        [ComImport]
+        [Guid("41D949AB-9862-444A-80F6-C261334DA5EB")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        public interface IActivateAudioInterfaceCompletionHandler
+        {
+            [PreserveSig]
+            int ActivateCompleted(IActivateAudioInterfaceAsyncOperation activateOperation);
+        }
+
+        [DllImport("Mmdevapi.dll", ExactSpelling = true, PreserveSig = false)]
+        public static extern void ActivateAudioInterfaceAsync(
+            [In, MarshalAs(UnmanagedType.LPWStr)] string deviceInterfacePath,
+            [In] ref Guid riid,
+            [In] IntPtr activationParams,
+            [In] IActivateAudioInterfaceCompletionHandler completionHandler,
+            out IActivateAudioInterfaceAsyncOperation activationOperation);
     }
 }

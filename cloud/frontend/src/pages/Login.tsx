@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/appStore';
 import { ToNRoundCloudClient } from '../lib/websocket-client';
 import { createRestClient } from '../lib/rest-client';
+import { getApiBaseUrl, getWebSocketUrl } from '../lib/cloud-url';
 
 export const Login: React.FC = () => {
     const navigate = useNavigate();
@@ -21,7 +22,7 @@ export const Login: React.FC = () => {
         pushToast,
         touchSyncTime,
     } = useAppStore();
-    const [serverUrl] = useState((import.meta as any).env?.VITE_WS_URL || 'ws://localhost:8080/ws');
+    const [serverUrl] = useState(getWebSocketUrl);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [autoReconnecting, setAutoReconnecting] = useState(false);
@@ -30,11 +31,10 @@ export const Login: React.FC = () => {
     // ワンタイムトークンでのログインをチェック
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
-        const token = params.get('token');
-        
-        if (token) {
-            setWaitingForToken(false);
-            loginWithOneTimeToken(token);
+        if (params.has('token')) {
+            window.history.replaceState({}, document.title, '/login');
+            setError('ワンタイムトークンはURLでは受け付けません。ToNRoundCounterアプリからダッシュボードを開き直してください。');
+            setWaitingForToken(true);
             return;
         }
 
@@ -55,9 +55,11 @@ export const Login: React.FC = () => {
             setError(null);
 
             // Create REST client
-            const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+            const apiUrl = getApiBaseUrl();
             const restClient = createRestClient(apiUrl);
             setRestClient(restClient);
+
+            const session = await restClient.loginWithOneTimeToken(token, '1.0.0');
 
             // Create WebSocket client
             const client = new ToNRoundCloudClient(serverUrl);
@@ -73,22 +75,17 @@ export const Login: React.FC = () => {
 
             // Connect
             await client.connect();
-            
-            // Login with one-time token
-            const session = await client.loginWithOneTimeToken(token, '1.0.0');
+            const validated = await client.validateSession(session.session_token, session.player_id);
             
             // Update REST client with session token
-            restClient.setSessionToken(session.session_token);
+            restClient.setSessionToken(validated.session_token);
             
             // Save to store (after this, the connection state callback will be handled by Dashboard useEffect)
             setClient(client);
             // Clean up the temporary subscription now that client is in store
             unsubscribe();
             
-            setSession(session.session_token, session.player_id, session.user_id);
-            
-            // Clear URL parameters
-            window.history.replaceState({}, document.title, '/login');
+            setSession(validated.session_token, validated.player_id, validated.user_id);
             
             // Navigate to dashboard
             navigate('/dashboard');
@@ -107,7 +104,7 @@ export const Login: React.FC = () => {
             setError(null);
 
             // Create REST client
-            const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+            const apiUrl = getApiBaseUrl();
             const restClient = createRestClient(apiUrl, sessionToken || undefined);
             setRestClient(restClient);
 

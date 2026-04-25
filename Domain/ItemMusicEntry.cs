@@ -14,6 +14,11 @@ namespace ToNRoundCounter.Domain
 
         public double MaxSpeed { get; set; }
 
+        /// <summary>
+        /// Playback volume in the range [0.0, 1.0]. Defaults to 1.0 (100%).
+        /// </summary>
+        public double Volume { get; set; } = 1.0;
+
         public ItemMusicEntry Clone()
         {
             return new ItemMusicEntry
@@ -22,7 +27,8 @@ namespace ToNRoundCounter.Domain
                 ItemName = ItemName ?? string.Empty,
                 SoundPath = SoundPath ?? string.Empty,
                 MinSpeed = MinSpeed,
-                MaxSpeed = MaxSpeed
+                MaxSpeed = MaxSpeed,
+                Volume = Volume
             };
         }
     }

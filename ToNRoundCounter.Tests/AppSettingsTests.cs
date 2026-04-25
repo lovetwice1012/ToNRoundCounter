@@ -190,29 +190,25 @@ namespace ToNRoundCounter.Tests
             {
                 // Mock implementation - do nothing
             }
+
+            public bool IsEnabled(Serilog.Events.LogEventLevel level) => true;
         }
 
         private class MockEventBus : IEventBus
         {
-            public void Publish<T>(T ev) where T : class
+            public void Publish<T>(T ev)
             {
                 // Mock implementation - do nothing
             }
 
-            public IDisposable Subscribe<T>(Action<T> handler) where T : class
-            {
-                // Mock implementation - return dummy disposable
-                return new DummyDisposable();
-            }
-
-            public void Unsubscribe<T>(IDisposable subscription) where T : class
+            public void Subscribe<T>(Action<T> handler)
             {
                 // Mock implementation - do nothing
             }
 
-            private class DummyDisposable : IDisposable
+            public void Unsubscribe<T>(Action<T> handler)
             {
-                public void Dispose() { }
+                // Mock implementation - do nothing
             }
         }
     }

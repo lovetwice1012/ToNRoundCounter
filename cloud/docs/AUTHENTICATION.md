@@ -88,13 +88,18 @@ if (token) {
 
 **RPC**: `auth.register`
 
+APIキー発行は公式 C# クライアント向けの新規ユーザー登録用 RPC です。Cloud Backend は `client_type: "csharp"` を確認します。
+
+既存ユーザーに対して `auth.register` が呼ばれた場合、API キーは再発行されずエラーになります。配布クライアントに共有登録キーを埋め込む方式は、逆コンパイルで抽出できるため使用しません。
+
 **リクエスト**:
 ```json
 {
     "rpc": "auth.register",
     "params": {
         "player_id": "PlayerName",
-        "client_version": "1.0.0"
+        "client_version": "1.0.0",
+        "client_type": "csharp"
     }
 }
 ```

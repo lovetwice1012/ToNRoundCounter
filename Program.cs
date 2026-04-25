@@ -172,7 +172,7 @@ namespace ToNRoundCounter
                 sp.GetRequiredService<ICancellationProvider>(),
                 sp.GetRequiredService<IEventLogger>(),
                 cloudApiKey,      // Pass API key from bootstrap settings
-                cloudPlayerName)); // Pass player name as userId
+                null));           // Player identity is accepted only from the local WS CONNECTED event
             
             services.AddSingleton(sp => new AutoSuicideService(sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<StateService>();
@@ -188,9 +188,15 @@ namespace ToNRoundCounter
             services.AddSingleton<IErrorReporter>(sp => new ErrorReporter(sp.GetRequiredService<IEventLogger>(), sp.GetRequiredService<IEventBus>()));
             services.AddSingleton<IHttpClient, HttpClientWrapper>();
             services.AddSingleton<IUiDispatcher, WinFormsDispatcher>();
+            services.AddSingleton<ToNRoundCounter.Infrastructure.Services.YoutubeAudioCache>(sp =>
+                new ToNRoundCounter.Infrastructure.Services.YoutubeAudioCache(sp.GetRequiredService<IEventLogger>()));
             services.AddSingleton<ISoundManager>(sp => new SoundManager(
                 sp.GetRequiredService<IAppSettings>(),
-                sp.GetRequiredService<IEventLogger>()));
+                sp.GetRequiredService<IEventLogger>(),
+                sp.GetRequiredService<ToNRoundCounter.Infrastructure.Services.YoutubeAudioCache>()));
+            services.AddSingleton<IModuleSoundApi>(sp => new ToNRoundCounter.Infrastructure.Services.ModuleSoundApi(
+                sp.GetRequiredService<ISoundManager>(),
+                sp.GetRequiredService<IAppSettings>()));
             services.AddSingleton<IOverlayManager>(sp => new OverlayManager(
                 sp.GetRequiredService<IAppSettings>(),
                 sp.GetRequiredService<IEventLogger>(),

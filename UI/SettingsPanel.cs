@@ -13,10 +13,21 @@ using System.Globalization;
 using Newtonsoft.Json;
 using System.Text;
 using System.Diagnostics;
+using System.Net;
 using Serilog;
 
 namespace ToNRoundCounter.UI
 {
+    /// <summary>
+    /// Identifies which fixed sound the user requested to test from the settings panel.
+    /// </summary>
+    public enum SoundTestKind
+    {
+        Notification,
+        Afk,
+        Punish,
+    }
+
     public class SettingsPanel : UserControl
     {
         private readonly IAppSettings _settings;
@@ -113,6 +124,34 @@ namespace ToNRoundCounter.UI
         private ComboBox roundBgmConflictBehaviorComboBox = null!;
         private Label roundBgmConflictBehaviorLabel = null!;
         private List<RoundBgmConflictOption> roundBgmConflictOptions = new List<RoundBgmConflictOption>();
+        public TrackBar NotificationVolumeTrackBar { get; private set; } = null!;
+        public TrackBar AfkVolumeTrackBar { get; private set; } = null!;
+        public TrackBar PunishVolumeTrackBar { get; private set; } = null!;
+        public TrackBar MasterVolumeTrackBar { get; private set; } = null!;
+        private Label notificationVolumeValueLabel = null!;
+        private Label afkVolumeValueLabel = null!;
+        private Label punishVolumeValueLabel = null!;
+        private Label masterVolumeValueLabel = null!;
+        public CheckBox MasterMutedCheckBox { get; private set; } = null!;
+        public CheckBox NotificationMutedCheckBox { get; private set; } = null!;
+        public CheckBox AfkMutedCheckBox { get; private set; } = null!;
+        public CheckBox PunishMutedCheckBox { get; private set; } = null!;
+        public CheckBox ItemMusicMutedCheckBox { get; private set; } = null!;
+        public CheckBox RoundBgmMutedCheckBox { get; private set; } = null!;
+        public CheckBox DbDisplayCheckBox { get; private set; } = null!;
+        public ComboBox AudioOutputDeviceComboBox { get; private set; } = null!;
+        public TextBox MasterMuteHotkeyTextBox { get; private set; } = null!;
+        public CheckBox EqualizerEnabledCheckBox { get; private set; } = null!;
+        public ComboBox EqualizerPresetComboBox { get; private set; } = null!;
+        private TrackBar[] _equalizerBandTrackBars = Array.Empty<TrackBar>();
+        private Label[] _equalizerBandValueLabels = Array.Empty<Label>();
+        private readonly List<TrackBar> _volumeTrackBars = new List<TrackBar>();
+        private readonly Dictionary<TrackBar, Label> _volumeValueLabels = new Dictionary<TrackBar, Label>();
+
+        /// <summary>
+        /// Raised when the user clicks a "test play" button next to a fixed-sound volume slider.
+        /// </summary>
+        public event EventHandler<SoundTestKind>? TestSoundRequested;
         public TextBox DiscordWebhookUrlTextBox { get; private set; } = null!;
         public CheckBox AutoRecordingEnabledCheckBox { get; private set; } = null!;
         public TextBox AutoRecordingWindowTitleTextBox { get; private set; } = null!;
@@ -148,10 +187,12 @@ namespace ToNRoundCounter.UI
         private const string ItemMusicPathColumnName = "ItemMusicPath";
         private const string ItemMusicMinSpeedColumnName = "ItemMusicMinSpeed";
         private const string ItemMusicMaxSpeedColumnName = "ItemMusicMaxSpeed";
+        private const string ItemMusicVolumeColumnName = "ItemMusicVolume";
         private const string RoundBgmEnabledColumnName = "RoundBgmEnabled";
         private const string RoundBgmRoundColumnName = "RoundBgmRound";
         private const string RoundBgmTerrorColumnName = "RoundBgmTerror";
         private const string RoundBgmPathColumnName = "RoundBgmPath";
+        private const string RoundBgmVolumeColumnName = "RoundBgmVolume";
 
         private static readonly (string Code, string ResourceKey)[] LanguageDisplayKeys = new[]
         {
@@ -1673,6 +1714,7 @@ namespace ToNRoundCounter.UI
             var itemMusicPathColumn = new DataGridViewTextBoxColumn();
             itemMusicPathColumn.Name = ItemMusicPathColumnName;
             itemMusicPathColumn.HeaderText = LanguageManager.Translate("再生する音声");
+            itemMusicPathColumn.ToolTipText = LanguageManager.Translate("複数のファイルを '|' で区切って指定するとプレイリストとして順番に再生されます。 YouTube URL (youtube.com / youtu.be) も指定可能で、初回ダウンロード後に再生されます。");
             itemMusicPathColumn.FillWeight = 35;
             itemMusicEntriesGrid.Columns.Add(itemMusicPathColumn);
 
@@ -1692,6 +1734,15 @@ namespace ToNRoundCounter.UI
             itemMusicMaxSpeedColumn.FillWeight = 15;
             itemMusicEntriesGrid.Columns.Add(itemMusicMaxSpeedColumn);
 
+            var itemMusicVolumeColumn = new DataGridViewTextBoxColumn();
+            itemMusicVolumeColumn.Name = ItemMusicVolumeColumnName;
+            itemMusicVolumeColumn.HeaderText = LanguageManager.Translate("音量(%)");
+            itemMusicVolumeColumn.ValueType = typeof(int);
+            itemMusicVolumeColumn.DefaultCellStyle.Format = "0";
+            itemMusicVolumeColumn.ToolTipText = LanguageManager.Translate("0〜100の範囲で再生音量を指定します。");
+            itemMusicVolumeColumn.FillWeight = 15;
+            itemMusicEntriesGrid.Columns.Add(itemMusicVolumeColumn);
+
             grpItemMusic.Controls.Add(itemMusicEntriesGrid);
 
             itemMusicAddButton = new Button();
@@ -1700,7 +1751,7 @@ namespace ToNRoundCounter.UI
             itemMusicAddButton.Location = new Point(innerMargin, itemMusicEntriesGrid.Bottom + 10);
             itemMusicAddButton.Click += (s, e) =>
             {
-                itemMusicEntriesGrid.Rows.Add(true, string.Empty, string.Empty, 0d, 0d);
+                itemMusicEntriesGrid.Rows.Add(true, string.Empty, string.Empty, 0d, 0d, 100);
                 if (itemMusicEntriesGrid.Rows.Count > 0)
                 {
                     itemMusicEntriesGrid.ClearSelection();
@@ -1797,8 +1848,18 @@ namespace ToNRoundCounter.UI
             var roundBgmPathColumn = new DataGridViewTextBoxColumn();
             roundBgmPathColumn.Name = RoundBgmPathColumnName;
             roundBgmPathColumn.HeaderText = LanguageManager.Translate("再生する音声");
+            roundBgmPathColumn.ToolTipText = LanguageManager.Translate("複数のファイルを '|' で区切って指定するとプレイリストとして順番に再生されます。 YouTube URL (youtube.com / youtu.be) も指定可能で、初回ダウンロード後に再生されます。");
             roundBgmPathColumn.FillWeight = 40;
             roundBgmEntriesGrid.Columns.Add(roundBgmPathColumn);
+
+            var roundBgmVolumeColumn = new DataGridViewTextBoxColumn();
+            roundBgmVolumeColumn.Name = RoundBgmVolumeColumnName;
+            roundBgmVolumeColumn.HeaderText = LanguageManager.Translate("音量(%)");
+            roundBgmVolumeColumn.ValueType = typeof(int);
+            roundBgmVolumeColumn.DefaultCellStyle.Format = "0";
+            roundBgmVolumeColumn.ToolTipText = LanguageManager.Translate("0〜100の範囲で再生音量を指定します。");
+            roundBgmVolumeColumn.FillWeight = 15;
+            roundBgmEntriesGrid.Columns.Add(roundBgmVolumeColumn);
 
             grpRoundBgm.Controls.Add(roundBgmEntriesGrid);
 
@@ -1808,7 +1869,7 @@ namespace ToNRoundCounter.UI
             roundBgmAddButton.Location = new Point(innerMargin, roundBgmEntriesGrid.Bottom + 10);
             roundBgmAddButton.Click += (s, e) =>
             {
-                roundBgmEntriesGrid.Rows.Add(true, string.Empty, string.Empty, string.Empty);
+                roundBgmEntriesGrid.Rows.Add(true, string.Empty, string.Empty, string.Empty, 100);
                 if (roundBgmEntriesGrid.Rows.Count > 0)
                 {
                     roundBgmEntriesGrid.ClearSelection();
@@ -1879,6 +1940,12 @@ namespace ToNRoundCounter.UI
             SetRoundBgmItemConflictBehavior(_settings.RoundBgmItemConflictBehavior);
 
             rightColumnY += grpRoundBgm.Height + margin;
+
+            BuildNotificationVolumesGroup(margin * 2 + columnWidth, rightColumnY, columnWidth, innerMargin, out int notificationVolumesHeight);
+            rightColumnY += notificationVolumesHeight + margin;
+
+            BuildEqualizerGroup(margin * 2 + columnWidth, rightColumnY, columnWidth, innerMargin, out int equalizerHeight);
+            rightColumnY += equalizerHeight + margin;
 
             GroupBox grpAdditional = new GroupBox();
             grpAdditional.Text = LanguageManager.Translate("追加設定");
@@ -2050,7 +2117,7 @@ namespace ToNRoundCounter.UI
             {
                 try
                 {
-                    var cloudPlayerName = CloudPlayerNameTextBox.Text?.Trim() ?? string.Empty;
+                    var cloudPlayerName = _settings.CloudPlayerName?.Trim() ?? string.Empty;
                     if (string.IsNullOrEmpty(cloudPlayerName))
                     {
                         MessageBox.Show(
@@ -2127,16 +2194,14 @@ namespace ToNRoundCounter.UI
                         tokenTimeoutCts.Token
                     );
 
-                    // Prefer backend-provided login URL; fallback to local dashboard URL.
                     string dashboardUrl = !string.IsNullOrWhiteSpace(loginUrl)
                         ? loginUrl
-                        : $"http://localhost:8080/login?token={Uri.EscapeDataString(token)}";
+                        : "http://localhost:8080/api/auth/one-time-token";
 
                     _settings.CloudPlayerName = cloudPlayerName;
                     await _settings.SaveAsync();
 
-                    var psi = new ProcessStartInfo(dashboardUrl) { UseShellExecute = true };
-                    Process.Start(psi);
+                    OpenOneTimeTokenPostLogin(dashboardUrl, token);
                 }
                 catch (OperationCanceledException)
                 {
@@ -2183,6 +2248,9 @@ namespace ToNRoundCounter.UI
             CloudPlayerNameTextBox.Width = 250;
             CloudPlayerNameTextBox.Location = new Point(cloudPlayerNameLabel.Right + 10, apiInnerY - 3);
             CloudPlayerNameTextBox.Text = _settings.CloudPlayerName ?? string.Empty;
+            CloudPlayerNameTextBox.ReadOnly = true;
+            CloudPlayerNameTextBox.TabStop = false;
+            CloudPlayerNameTextBox.BackColor = SystemColors.Control;
             grpApiKey.Controls.Add(CloudPlayerNameTextBox);
             apiInnerY += CloudPlayerNameTextBox.Height + 10;
 
@@ -2227,7 +2295,8 @@ namespace ToNRoundCounter.UI
             {
                 try
                 {
-                    if (string.IsNullOrEmpty(CloudPlayerNameTextBox.Text))
+                    var cloudPlayerName = _settings.CloudPlayerName?.Trim() ?? string.Empty;
+                    if (string.IsNullOrEmpty(cloudPlayerName))
                     {
                         MessageBox.Show(
                             LanguageManager.Translate("クラウドプレイヤー名を先に設定してください。"),
@@ -2300,7 +2369,7 @@ namespace ToNRoundCounter.UI
                         // 既存のCloudWebSocketClientを使用してAPIキー生成
                         using var registerTimeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                         var (userId, apiKey) = await _cloudClient.RegisterUserAsync(
-                            CloudPlayerNameTextBox.Text,
+                            cloudPlayerName,
                             System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0.0",
                             registerTimeoutCts.Token
                         );
@@ -2325,7 +2394,7 @@ namespace ToNRoundCounter.UI
                         }
 
                         _settings.ApiKey = apiKey;
-                        _settings.CloudPlayerName = CloudPlayerNameTextBox.Text.Trim();
+                        _settings.CloudPlayerName = cloudPlayerName;
 
                         // 設定を永続化
                         await _settings.SaveAsync();
@@ -2446,6 +2515,42 @@ namespace ToNRoundCounter.UI
             this.Width = totalWidth;
             this.Height = Math.Max(Math.Max(currentY, rightColumnY), thirdColumnY) + margin;
 
+        }
+
+        private static void OpenOneTimeTokenPostLogin(string loginUrl, string token)
+        {
+            string tempPath = Path.Combine(Path.GetTempPath(), $"tonround-cloud-login-{Guid.NewGuid():N}.html");
+            string html = $@"<!doctype html>
+<html lang=""ja"">
+<head>
+  <meta charset=""utf-8"">
+  <meta name=""referrer"" content=""no-referrer"">
+  <title>ToNRoundCounter Cloud</title>
+</head>
+<body>
+  <form id=""login"" method=""post"" action=""{WebUtility.HtmlEncode(loginUrl)}"">
+    <input type=""hidden"" name=""token"" value=""{WebUtility.HtmlEncode(token)}"">
+    <input type=""hidden"" name=""client_version"" value=""1.0.0"">
+    <input type=""hidden"" name=""redirect"" value=""1"">
+  </form>
+  <script>document.getElementById('login').submit();</script>
+</body>
+</html>";
+
+            File.WriteAllText(tempPath, html, Encoding.UTF8);
+            Process.Start(new ProcessStartInfo(tempPath) { UseShellExecute = true });
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromMinutes(2)).ConfigureAwait(false);
+                    File.Delete(tempPath);
+                }
+                catch
+                {
+                }
+            });
         }
 
         private async Task<bool> EnsureCloudClientConnectedAsync(TimeSpan timeout, CancellationToken cancellationToken)
@@ -3310,7 +3415,8 @@ namespace ToNRoundCounter.UI
                         entry.ItemName ?? string.Empty,
                         entry.SoundPath ?? string.Empty,
                         entry.MinSpeed,
-                        entry.MaxSpeed);
+                        entry.MaxSpeed,
+                        ClampVolumePercent((int)Math.Round(entry.Volume * 100)));
                 }
             }
 
@@ -3338,7 +3444,8 @@ namespace ToNRoundCounter.UI
                     roundBgmEntriesGrid.Rows.Add(entry.Enabled,
                         entry.RoundType ?? string.Empty,
                         entry.TerrorType ?? string.Empty,
-                        entry.SoundPath ?? string.Empty);
+                        entry.SoundPath ?? string.Empty,
+                        ClampVolumePercent((int)Math.Round(entry.Volume * 100)));
                 }
             }
 
@@ -3403,13 +3510,16 @@ namespace ToNRoundCounter.UI
                     maxSpeed = minSpeed;
                 }
 
+                double volume = GetVolumeFromCell(row.Cells[ItemMusicVolumeColumnName].Value);
+
                 result.Add(new ItemMusicEntry
                 {
                     Enabled = enabled,
                     ItemName = itemName.Trim(),
                     SoundPath = soundPath?.Trim() ?? string.Empty,
                     MinSpeed = minSpeed,
-                    MaxSpeed = maxSpeed
+                    MaxSpeed = maxSpeed,
+                    Volume = volume
                 });
             }
 
@@ -3447,7 +3557,8 @@ namespace ToNRoundCounter.UI
                     Enabled = enabled,
                     RoundType = roundName?.Trim() ?? string.Empty,
                     TerrorType = terrorName?.Trim() ?? string.Empty,
-                    SoundPath = soundPath?.Trim() ?? string.Empty
+                    SoundPath = soundPath?.Trim() ?? string.Empty,
+                    Volume = GetVolumeFromCell(row.Cells[RoundBgmVolumeColumnName].Value)
                 });
             }
 
@@ -3491,15 +3602,18 @@ namespace ToNRoundCounter.UI
             using (OpenFileDialog dialog = new OpenFileDialog())
             {
                 dialog.Filter = "音声ファイル|*.mp3;*.wav;*.ogg;*.flac;*.wma;*.aac;*.m4a|すべてのファイル|*.*";
+                dialog.Multiselect = true;
+                dialog.Title = LanguageManager.Translate("音声ファイル選択 (複数選択でプレイリスト化)");
                 string current = Convert.ToString(row.Cells[ItemMusicPathColumnName].Value) ?? string.Empty;
-                if (!string.IsNullOrWhiteSpace(current))
+                string firstExisting = current.Split('|')[0].Trim();
+                if (!string.IsNullOrWhiteSpace(firstExisting))
                 {
-                    dialog.FileName = current;
+                    dialog.FileName = firstExisting;
                 }
 
                 if (dialog.ShowDialog() == DialogResult.OK)
                 {
-                    row.Cells[ItemMusicPathColumnName].Value = dialog.FileName;
+                    row.Cells[ItemMusicPathColumnName].Value = string.Join("|", dialog.FileNames);
                 }
             }
         }
@@ -3516,15 +3630,18 @@ namespace ToNRoundCounter.UI
             using (OpenFileDialog dialog = new OpenFileDialog())
             {
                 dialog.Filter = "音声ファイル|*.mp3;*.wav;*.ogg;*.flac;*.wma;*.aac;*.m4a|すべてのファイル|*.*";
+                dialog.Multiselect = true;
+                dialog.Title = LanguageManager.Translate("音声ファイル選択 (複数選択でプレイリスト化)");
                 string current = Convert.ToString(row.Cells[RoundBgmPathColumnName].Value) ?? string.Empty;
-                if (!string.IsNullOrWhiteSpace(current))
+                string firstExisting = current.Split('|')[0].Trim();
+                if (!string.IsNullOrWhiteSpace(firstExisting))
                 {
-                    dialog.FileName = current;
+                    dialog.FileName = firstExisting;
                 }
 
                 if (dialog.ShowDialog() == DialogResult.OK)
                 {
-                    row.Cells[RoundBgmPathColumnName].Value = dialog.FileName;
+                    row.Cells[RoundBgmPathColumnName].Value = string.Join("|", dialog.FileNames);
                 }
             }
         }
@@ -3658,6 +3775,547 @@ namespace ToNRoundCounter.UI
             UpdateAutoRecordingFrameRateLimitLabel();
         }
 
+        private void BuildNotificationVolumesGroup(int x, int y, int columnWidth, int innerMargin, out int totalHeight)
+        {
+            GroupBox grpVolumes = new GroupBox();
+            grpVolumes.Text = LanguageManager.Translate("サウンド音量設定");
+            grpVolumes.Location = new Point(x, y);
+            grpVolumes.Size = new Size(columnWidth, 200);
+            grpVolumes.Tag = SettingsCategory.General;
+            this.Controls.Add(grpVolumes);
+
+            int innerY = 25;
+
+            DbDisplayCheckBox = new CheckBox
+            {
+                AutoSize = true,
+                Text = LanguageManager.Translate("音量をdB表示"),
+                Location = new Point(innerMargin, innerY)
+            };
+            DbDisplayCheckBox.CheckedChanged += (_, _) => RefreshAllVolumeLabels();
+            grpVolumes.Controls.Add(DbDisplayCheckBox);
+            innerY = DbDisplayCheckBox.Bottom + 6;
+
+            // Output device selector
+            Label deviceLabel = new Label
+            {
+                AutoSize = true,
+                Text = LanguageManager.Translate("出力デバイス"),
+                Location = new Point(innerMargin, innerY)
+            };
+            grpVolumes.Controls.Add(deviceLabel);
+            innerY = deviceLabel.Bottom + 2;
+
+            AudioOutputDeviceComboBox = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Location = new Point(innerMargin, innerY),
+                Width = columnWidth - innerMargin * 2,
+            };
+            PopulateAudioOutputDevices(_settings.AudioOutputDeviceNumber);
+            grpVolumes.Controls.Add(AudioOutputDeviceComboBox);
+            innerY = AudioOutputDeviceComboBox.Bottom + 8;
+
+            MasterVolumeTrackBar = CreateVolumeTrackBar();
+            masterVolumeValueLabel = new Label();
+            innerY = AddVolumeRow(grpVolumes, LanguageManager.Translate("マスター音量"), MasterVolumeTrackBar, masterVolumeValueLabel, columnWidth, innerMargin, innerY, _settings.MasterVolume, null);
+
+            MasterMutedCheckBox = AddMuteCheckBox(grpVolumes, LanguageManager.Translate("全体ミュート"), columnWidth, innerMargin, ref innerY, _settings.MasterMuted);
+
+            innerY += 4;
+
+            NotificationVolumeTrackBar = CreateVolumeTrackBar();
+            notificationVolumeValueLabel = new Label();
+            innerY = AddVolumeRow(grpVolumes, LanguageManager.Translate("通知音"), NotificationVolumeTrackBar, notificationVolumeValueLabel, columnWidth, innerMargin, innerY, _settings.NotificationSoundVolume, SoundTestKind.Notification);
+            NotificationMutedCheckBox = AddMuteCheckBox(grpVolumes, LanguageManager.Translate("通知音をミュート"), columnWidth, innerMargin, ref innerY, _settings.NotificationSoundMuted);
+
+            AfkVolumeTrackBar = CreateVolumeTrackBar();
+            afkVolumeValueLabel = new Label();
+            innerY = AddVolumeRow(grpVolumes, LanguageManager.Translate("AFK警告音"), AfkVolumeTrackBar, afkVolumeValueLabel, columnWidth, innerMargin, innerY, _settings.AfkSoundVolume, SoundTestKind.Afk);
+            AfkMutedCheckBox = AddMuteCheckBox(grpVolumes, LanguageManager.Translate("AFK警告音をミュート"), columnWidth, innerMargin, ref innerY, _settings.AfkSoundMuted);
+
+            PunishVolumeTrackBar = CreateVolumeTrackBar();
+            punishVolumeValueLabel = new Label();
+            innerY = AddVolumeRow(grpVolumes, LanguageManager.Translate("ペナルティ検知音"), PunishVolumeTrackBar, punishVolumeValueLabel, columnWidth, innerMargin, innerY, _settings.PunishSoundVolume, SoundTestKind.Punish);
+            PunishMutedCheckBox = AddMuteCheckBox(grpVolumes, LanguageManager.Translate("ペナルティ検知音をミュート"), columnWidth, innerMargin, ref innerY, _settings.PunishSoundMuted);
+
+            ItemMusicMutedCheckBox = AddMuteCheckBox(grpVolumes, LanguageManager.Translate("アイテム音楽をミュート"), columnWidth, innerMargin, ref innerY, _settings.ItemMusicMuted);
+            RoundBgmMutedCheckBox = AddMuteCheckBox(grpVolumes, LanguageManager.Translate("ラウンドBGMをミュート"), columnWidth, innerMargin, ref innerY, _settings.RoundBgmMuted);
+
+            // Master mute global hotkey
+            innerY += 4;
+            Label hotkeyLabel = new Label
+            {
+                AutoSize = true,
+                Text = LanguageManager.Translate("マスターミュート切替ホットキー"),
+                Location = new Point(innerMargin, innerY)
+            };
+            grpVolumes.Controls.Add(hotkeyLabel);
+            innerY = hotkeyLabel.Bottom + 2;
+
+            MasterMuteHotkeyTextBox = new TextBox
+            {
+                ReadOnly = true,
+                Location = new Point(innerMargin, innerY),
+                Width = columnWidth - innerMargin * 2 - 64,
+                Text = _settings.MasterMuteHotkey ?? string.Empty,
+                Cursor = Cursors.Hand,
+            };
+            MasterMuteHotkeyTextBox.GotFocus += (_, _) => MasterMuteHotkeyTextBox.BackColor = SystemColors.Highlight;
+            MasterMuteHotkeyTextBox.LostFocus += (_, _) => MasterMuteHotkeyTextBox.BackColor = SystemColors.Window;
+            MasterMuteHotkeyTextBox.KeyDown += (s, e) =>
+            {
+                e.SuppressKeyPress = true;
+                e.Handled = true;
+                string formatted = ToNRoundCounter.Infrastructure.Interop.GlobalHotkey.Format(e.KeyData);
+                if (!string.IsNullOrEmpty(formatted))
+                {
+                    MasterMuteHotkeyTextBox.Text = formatted;
+                }
+            };
+            grpVolumes.Controls.Add(MasterMuteHotkeyTextBox);
+
+            Button hotkeyClearButton = new Button
+            {
+                Text = LanguageManager.Translate("クリア"),
+                Location = new Point(MasterMuteHotkeyTextBox.Right + 4, innerY - 1),
+                Width = 56,
+                Height = MasterMuteHotkeyTextBox.Height + 2,
+            };
+            hotkeyClearButton.Click += (_, _) => MasterMuteHotkeyTextBox.Text = string.Empty;
+            grpVolumes.Controls.Add(hotkeyClearButton);
+            innerY = MasterMuteHotkeyTextBox.Bottom + 4;
+
+            grpVolumes.Height = innerY + 10;
+            totalHeight = grpVolumes.Height;
+        }
+
+        private static CheckBox AddMuteCheckBox(GroupBox group, string labelText, int columnWidth, int innerMargin, ref int y, bool initialValue)
+        {
+            CheckBox cb = new CheckBox
+            {
+                AutoSize = true,
+                Text = labelText,
+                Checked = initialValue,
+                Location = new Point(innerMargin, y)
+            };
+            group.Controls.Add(cb);
+            y = cb.Bottom + 4;
+            return cb;
+        }
+
+        private static readonly string[] EqualizerBandLabels = { "31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k" };
+
+        private static readonly (string Name, double[] Gains)[] EqualizerPresets = new[]
+        {
+            ("フラット",       new double[] {  0,  0,  0,  0,  0,  0,  0,  0,  0,  0 }),
+            ("ボーカル強調",   new double[] { -3, -2, -1,  1,  3,  4,  3,  1, -1, -2 }),
+            ("バス強調",       new double[] {  6,  5,  4,  2,  0,  0,  0,  0,  0,  0 }),
+            ("トレブル強調",   new double[] {  0,  0,  0,  0,  0,  1,  3,  5,  6,  6 }),
+            ("ロック",         new double[] {  4,  3,  2,  0, -1,  0,  2,  4,  5,  5 }),
+            ("ポップ",         new double[] { -1,  0,  2,  4,  5,  4,  2,  0, -1, -2 }),
+            ("ジャズ",         new double[] {  3,  2,  1,  2,  0,  1,  0,  2,  3,  3 }),
+            ("クラシック",     new double[] {  4,  3,  2,  2,  0,  0,  0,  2,  3,  4 }),
+        };
+
+        private void BuildEqualizerGroup(int x, int y, int columnWidth, int innerMargin, out int totalHeight)
+        {
+            int bandCount = 10;
+            GroupBox grpEq = new GroupBox
+            {
+                Text = LanguageManager.Translate("イコライザー (10 バンド)"),
+                Location = new Point(x, y),
+                Size = new Size(columnWidth, 240),
+                Tag = SettingsCategory.General,
+            };
+            this.Controls.Add(grpEq);
+
+            int innerY = 25;
+
+            EqualizerEnabledCheckBox = new CheckBox
+            {
+                AutoSize = true,
+                Text = LanguageManager.Translate("イコライザーを有効化"),
+                Checked = _settings.EqualizerEnabled,
+                Location = new Point(innerMargin, innerY),
+            };
+            grpEq.Controls.Add(EqualizerEnabledCheckBox);
+            innerY = EqualizerEnabledCheckBox.Bottom + 4;
+
+            Label presetLabel = new Label
+            {
+                AutoSize = true,
+                Text = LanguageManager.Translate("プリセット"),
+                Location = new Point(innerMargin, innerY + 4),
+            };
+            grpEq.Controls.Add(presetLabel);
+
+            EqualizerPresetComboBox = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Location = new Point(presetLabel.Right + 6, innerY),
+                Width = columnWidth - presetLabel.Right - 6 - innerMargin - 64,
+            };
+            foreach (var p in EqualizerPresets)
+            {
+                EqualizerPresetComboBox.Items.Add(p.Name);
+            }
+            EqualizerPresetComboBox.Items.Add(LanguageManager.Translate("カスタム"));
+            EqualizerPresetComboBox.SelectedIndex = EqualizerPresetComboBox.Items.Count - 1;
+            grpEq.Controls.Add(EqualizerPresetComboBox);
+
+            Button applyPresetButton = new Button
+            {
+                Text = LanguageManager.Translate("適用"),
+                Location = new Point(EqualizerPresetComboBox.Right + 4, innerY - 1),
+                Width = 56,
+                Height = EqualizerPresetComboBox.Height + 2,
+            };
+            applyPresetButton.Click += (_, _) => ApplySelectedEqualizerPreset();
+            grpEq.Controls.Add(applyPresetButton);
+            innerY = EqualizerPresetComboBox.Bottom + 8;
+
+            // 10 vertical sliders.
+            int availableWidth = columnWidth - innerMargin * 2;
+            int bandWidth = availableWidth / bandCount;
+            int sliderHeight = 110;
+            int labelHeight = 14;
+
+            _equalizerBandTrackBars = new TrackBar[bandCount];
+            _equalizerBandValueLabels = new Label[bandCount];
+
+            double[] initialGains = _settings.EqualizerBandGains ?? new double[bandCount];
+
+            for (int i = 0; i < bandCount; i++)
+            {
+                int bx = innerMargin + i * bandWidth;
+                int initialValue = (int)Math.Round(i < initialGains.Length ? initialGains[i] : 0);
+                if (initialValue < -12) initialValue = -12;
+                if (initialValue > 12) initialValue = 12;
+
+                Label valueLabel = new Label
+                {
+                    AutoSize = false,
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    Text = $"{initialValue:+0;-0;0}dB",
+                    Location = new Point(bx, innerY),
+                    Size = new Size(bandWidth, labelHeight),
+                    Font = new Font(this.Font.FontFamily, 7f),
+                };
+                grpEq.Controls.Add(valueLabel);
+
+                TrackBar bar = new TrackBar
+                {
+                    Orientation = Orientation.Vertical,
+                    Minimum = -12,
+                    Maximum = 12,
+                    TickFrequency = 3,
+                    Value = initialValue,
+                    Size = new Size(bandWidth, sliderHeight),
+                    Location = new Point(bx, valueLabel.Bottom),
+                    AutoSize = false,
+                };
+                int captured = i;
+                bar.ValueChanged += (_, _) =>
+                {
+                    int v = bar.Value;
+                    valueLabel.Text = $"{v:+0;-0;0}dB";
+                    // mark as custom on user edit (not when applying preset).
+                    if (!_suppressEqPresetReset && EqualizerPresetComboBox != null)
+                    {
+                        EqualizerPresetComboBox.SelectedIndex = EqualizerPresetComboBox.Items.Count - 1;
+                    }
+                };
+
+                Label freqLabel = new Label
+                {
+                    AutoSize = false,
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    Text = EqualizerBandLabels[i],
+                    Location = new Point(bx, bar.Bottom),
+                    Size = new Size(bandWidth, labelHeight),
+                    Font = new Font(this.Font.FontFamily, 7f),
+                };
+                grpEq.Controls.Add(bar);
+                grpEq.Controls.Add(freqLabel);
+
+                _equalizerBandTrackBars[i] = bar;
+                _equalizerBandValueLabels[i] = valueLabel;
+            }
+
+            int bottom = (_equalizerBandTrackBars.Length > 0 ? _equalizerBandTrackBars[0].Bottom : innerY) + labelHeight + 10;
+            grpEq.Height = bottom + 6;
+            totalHeight = grpEq.Height;
+        }
+
+        private bool _suppressEqPresetReset;
+
+        private void ApplySelectedEqualizerPreset()
+        {
+            if (EqualizerPresetComboBox == null || _equalizerBandTrackBars.Length == 0) return;
+            int idx = EqualizerPresetComboBox.SelectedIndex;
+            if (idx < 0 || idx >= EqualizerPresets.Length) return; // "カスタム" is past presets
+            double[] gains = EqualizerPresets[idx].Gains;
+            _suppressEqPresetReset = true;
+            try
+            {
+                for (int i = 0; i < _equalizerBandTrackBars.Length; i++)
+                {
+                    int v = (int)Math.Round(i < gains.Length ? gains[i] : 0);
+                    if (v < -12) v = -12;
+                    if (v > 12) v = 12;
+                    _equalizerBandTrackBars[i].Value = v;
+                }
+            }
+            finally
+            {
+                _suppressEqPresetReset = false;
+            }
+        }
+
+        public bool GetEqualizerEnabled() => EqualizerEnabledCheckBox?.Checked ?? false;
+        public void SetEqualizerEnabled(bool value) { if (EqualizerEnabledCheckBox != null) EqualizerEnabledCheckBox.Checked = value; }
+
+        public double[] GetEqualizerBandGains()
+        {
+            double[] result = new double[10];
+            for (int i = 0; i < result.Length && i < _equalizerBandTrackBars.Length; i++)
+            {
+                result[i] = _equalizerBandTrackBars[i].Value;
+            }
+            return result;
+        }
+
+        public void SetEqualizerBandGains(double[]? gains)
+        {
+            if (_equalizerBandTrackBars.Length == 0) return;
+            _suppressEqPresetReset = true;
+            try
+            {
+                for (int i = 0; i < _equalizerBandTrackBars.Length; i++)
+                {
+                    int v = 0;
+                    if (gains != null && i < gains.Length)
+                    {
+                        v = (int)Math.Round(gains[i]);
+                        if (v < -12) v = -12;
+                        if (v > 12) v = 12;
+                    }
+                    _equalizerBandTrackBars[i].Value = v;
+                }
+            }
+            finally
+            {
+                _suppressEqPresetReset = false;
+            }
+        }
+
+        private static TrackBar CreateVolumeTrackBar()
+        {
+            return new TrackBar
+            {
+                Minimum = 0,
+                Maximum = 100,
+                TickFrequency = 10,
+                SmallChange = 1,
+                LargeChange = 10,
+                AutoSize = false,
+                Height = 32,
+            };
+        }
+
+        private int AddVolumeRow(GroupBox group, string labelText, TrackBar trackBar, Label valueLabel, int columnWidth, int innerMargin, int y, double initialVolume, SoundTestKind? testKind)
+        {
+            Label nameLabel = new Label();
+            nameLabel.AutoSize = true;
+            nameLabel.Text = labelText;
+            nameLabel.Location = new Point(innerMargin, y);
+            group.Controls.Add(nameLabel);
+
+            int valueLabelWidth = 70;
+            valueLabel.AutoSize = false;
+            valueLabel.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
+            valueLabel.Width = valueLabelWidth;
+            valueLabel.Height = 20;
+            valueLabel.Location = new Point(columnWidth - innerMargin - valueLabelWidth, y);
+            group.Controls.Add(valueLabel);
+
+            int trackY = nameLabel.Bottom + 2;
+            int trackWidth = columnWidth - innerMargin * 2;
+            int testButtonWidth = 0;
+            Button? testButton = null;
+            if (testKind.HasValue)
+            {
+                testButtonWidth = 56;
+                testButton = new Button
+                {
+                    Text = LanguageManager.Translate("試聴"),
+                    Width = testButtonWidth,
+                    Height = 28,
+                    Location = new Point(innerMargin + trackWidth - testButtonWidth, trackY + 2)
+                };
+                var kind = testKind.Value;
+                testButton.Click += (_, _) => TestSoundRequested?.Invoke(this, kind);
+                group.Controls.Add(testButton);
+                trackWidth -= testButtonWidth + 6;
+            }
+
+            trackBar.Location = new Point(innerMargin, trackY);
+            trackBar.Width = trackWidth;
+            int initialPercent = ClampVolumePercent((int)Math.Round(initialVolume * 100));
+            trackBar.Value = initialPercent;
+            valueLabel.Text = FormatVolumeLabel(initialPercent);
+            trackBar.ValueChanged += (s, e) => valueLabel.Text = FormatVolumeLabel(trackBar.Value);
+            group.Controls.Add(trackBar);
+
+            _volumeTrackBars.Add(trackBar);
+            _volumeValueLabels[trackBar] = valueLabel;
+
+            return trackBar.Bottom + 8;
+        }
+
+        private string FormatVolumeLabel(int percent)
+        {
+            if (DbDisplayCheckBox != null && DbDisplayCheckBox.Checked)
+            {
+                if (percent <= 0) return "-∞ dB";
+                double db = 20.0 * Math.Log10(percent / 100.0);
+                return db.ToString("0.0") + " dB";
+            }
+            return percent + "%";
+        }
+
+        private void RefreshAllVolumeLabels()
+        {
+            foreach (var tb in _volumeTrackBars)
+            {
+                if (_volumeValueLabels.TryGetValue(tb, out var lbl))
+                {
+                    lbl.Text = FormatVolumeLabel(tb.Value);
+                }
+            }
+        }
+
+        public double GetNotificationSoundVolume() => (NotificationVolumeTrackBar?.Value ?? 100) / 100.0;
+        public double GetAfkSoundVolume() => (AfkVolumeTrackBar?.Value ?? 100) / 100.0;
+        public double GetPunishSoundVolume() => (PunishVolumeTrackBar?.Value ?? 100) / 100.0;
+
+        public void SetNotificationSoundVolume(double volume)
+        {
+            if (NotificationVolumeTrackBar == null) return;
+            int percent = ClampVolumePercent((int)Math.Round(volume * 100));
+            NotificationVolumeTrackBar.Value = percent;
+            if (notificationVolumeValueLabel != null) notificationVolumeValueLabel.Text = FormatVolumeLabel(percent);
+        }
+
+        public void SetAfkSoundVolume(double volume)
+        {
+            if (AfkVolumeTrackBar == null) return;
+            int percent = ClampVolumePercent((int)Math.Round(volume * 100));
+            AfkVolumeTrackBar.Value = percent;
+            if (afkVolumeValueLabel != null) afkVolumeValueLabel.Text = FormatVolumeLabel(percent);
+        }
+
+        public void SetPunishSoundVolume(double volume)
+        {
+            if (PunishVolumeTrackBar == null) return;
+            int percent = ClampVolumePercent((int)Math.Round(volume * 100));
+            PunishVolumeTrackBar.Value = percent;
+            if (punishVolumeValueLabel != null) punishVolumeValueLabel.Text = FormatVolumeLabel(percent);
+        }
+
+        public double GetMasterVolume() => (MasterVolumeTrackBar?.Value ?? 100) / 100.0;
+        public void SetMasterVolume(double volume)
+        {
+            if (MasterVolumeTrackBar == null) return;
+            int percent = ClampVolumePercent((int)Math.Round(volume * 100));
+            MasterVolumeTrackBar.Value = percent;
+            if (masterVolumeValueLabel != null) masterVolumeValueLabel.Text = FormatVolumeLabel(percent);
+        }
+
+        public bool GetMasterMuted() => MasterMutedCheckBox?.Checked ?? false;
+        public void SetMasterMuted(bool value) { if (MasterMutedCheckBox != null) MasterMutedCheckBox.Checked = value; }
+        public bool GetNotificationSoundMuted() => NotificationMutedCheckBox?.Checked ?? false;
+        public void SetNotificationSoundMuted(bool value) { if (NotificationMutedCheckBox != null) NotificationMutedCheckBox.Checked = value; }
+        public bool GetAfkSoundMuted() => AfkMutedCheckBox?.Checked ?? false;
+        public void SetAfkSoundMuted(bool value) { if (AfkMutedCheckBox != null) AfkMutedCheckBox.Checked = value; }
+        public bool GetPunishSoundMuted() => PunishMutedCheckBox?.Checked ?? false;
+        public void SetPunishSoundMuted(bool value) { if (PunishMutedCheckBox != null) PunishMutedCheckBox.Checked = value; }
+        public bool GetItemMusicMuted() => ItemMusicMutedCheckBox?.Checked ?? false;
+        public void SetItemMusicMuted(bool value) { if (ItemMusicMutedCheckBox != null) ItemMusicMutedCheckBox.Checked = value; }
+        public bool GetRoundBgmMuted() => RoundBgmMutedCheckBox?.Checked ?? false;
+        public void SetRoundBgmMuted(bool value) { if (RoundBgmMutedCheckBox != null) RoundBgmMutedCheckBox.Checked = value; }
+
+        private sealed class AudioDeviceItem
+        {
+            public int DeviceNumber { get; }
+            public string DisplayName { get; }
+            public AudioDeviceItem(int deviceNumber, string displayName)
+            {
+                DeviceNumber = deviceNumber;
+                DisplayName = displayName;
+            }
+            public override string ToString() => DisplayName;
+        }
+
+        private void PopulateAudioOutputDevices(int currentDeviceNumber)
+        {
+            if (AudioOutputDeviceComboBox == null) return;
+            AudioOutputDeviceComboBox.Items.Clear();
+            AudioOutputDeviceComboBox.Items.Add(new AudioDeviceItem(-1, LanguageManager.Translate("システム既定 (WAVE_MAPPER)")));
+            try
+            {
+                int count = NAudio.Wave.WaveOut.DeviceCount;
+                for (int i = 0; i < count; i++)
+                {
+                    string name;
+                    try
+                    {
+                        var caps = NAudio.Wave.WaveOut.GetCapabilities(i);
+                        name = string.IsNullOrWhiteSpace(caps.ProductName) ? $"Device {i}" : caps.ProductName;
+                    }
+                    catch
+                    {
+                        name = $"Device {i}";
+                    }
+                    AudioOutputDeviceComboBox.Items.Add(new AudioDeviceItem(i, $"{i}: {name}"));
+                }
+            }
+            catch
+            {
+                // ignore enumeration failures; default item remains.
+            }
+            SelectAudioOutputDevice(currentDeviceNumber);
+        }
+
+        private void SelectAudioOutputDevice(int deviceNumber)
+        {
+            if (AudioOutputDeviceComboBox == null) return;
+            for (int i = 0; i < AudioOutputDeviceComboBox.Items.Count; i++)
+            {
+                if (AudioOutputDeviceComboBox.Items[i] is AudioDeviceItem item && item.DeviceNumber == deviceNumber)
+                {
+                    AudioOutputDeviceComboBox.SelectedIndex = i;
+                    return;
+                }
+            }
+            if (AudioOutputDeviceComboBox.Items.Count > 0)
+            {
+                AudioOutputDeviceComboBox.SelectedIndex = 0;
+            }
+        }
+
+        public int GetAudioOutputDeviceNumber()
+        {
+            if (AudioOutputDeviceComboBox?.SelectedItem is AudioDeviceItem item) return item.DeviceNumber;
+            return -1;
+        }
+
+        public void SetAudioOutputDeviceNumber(int deviceNumber) => SelectAudioOutputDevice(deviceNumber);
+
+        public string GetMasterMuteHotkey() => MasterMuteHotkeyTextBox?.Text?.Trim() ?? string.Empty;
+        public void SetMasterMuteHotkey(string value) { if (MasterMuteHotkeyTextBox != null) MasterMuteHotkeyTextBox.Text = value ?? string.Empty; }
+
         private void RefreshItemMusicControlsState()
         {
             bool enabled = ItemMusicEnabledCheckBox?.Checked ?? false;
@@ -3747,6 +4405,39 @@ namespace ToNRoundCounter.UI
             }
 
             return fallback;
+        }
+
+        private static double GetVolumeFromCell(object? value)
+        {
+            int percent = 100;
+            if (value is int i)
+            {
+                percent = i;
+            }
+            else if (value != null)
+            {
+                string text = Convert.ToString(value) ?? string.Empty;
+                if (int.TryParse(text, NumberStyles.Integer, CultureInfo.CurrentCulture, out int parsedInt) ||
+                    int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsedInt))
+                {
+                    percent = parsedInt;
+                }
+                else if (double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out double parsedDouble) ||
+                         double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out parsedDouble))
+                {
+                    percent = (int)Math.Round(parsedDouble);
+                }
+            }
+
+            percent = ClampVolumePercent(percent);
+            return percent / 100.0;
+        }
+
+        private static int ClampVolumePercent(int percent)
+        {
+            if (percent < 0) return 0;
+            if (percent > 100) return 100;
+            return percent;
         }
 
         private sealed class RecordingFormatOption

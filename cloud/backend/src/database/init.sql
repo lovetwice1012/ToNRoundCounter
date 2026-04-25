@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     session_token VARCHAR(255) UNIQUE NOT NULL,
     player_id VARCHAR(255) NOT NULL,
     client_version VARCHAR(50) NOT NULL,
+    client_type VARCHAR(20) NOT NULL DEFAULT 'unknown',
+    app_id VARCHAR(128),
+    app_scopes JSON,
     expires_at TIMESTAMP NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -38,7 +41,44 @@ CREATE TABLE IF NOT EXISTS sessions (
     INDEX idx_sessions_token (session_token),
     INDEX idx_sessions_expires (expires_at),
     INDEX idx_sessions_player_id (player_id),
+    INDEX idx_sessions_client_type (client_type),
+    INDEX idx_sessions_app_id (app_id),
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS client_type VARCHAR(20) NOT NULL DEFAULT 'unknown';
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS app_id VARCHAR(128);
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS app_scopes JSON;
+ALTER TABLE sessions ADD INDEX IF NOT EXISTS idx_sessions_client_type (client_type);
+ALTER TABLE sessions ADD INDEX IF NOT EXISTS idx_sessions_app_id (app_id);
+
+-- User-approved external application tokens
+CREATE TABLE IF NOT EXISTS user_app_tokens (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    app_id VARCHAR(128) NOT NULL,
+    app_token_hash VARCHAR(255) NOT NULL,
+    scopes JSON,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    revoked_at TIMESTAMP NULL,
+    UNIQUE KEY unique_user_app_token (user_id, app_id),
+    INDEX idx_user_app_tokens_user (user_id),
+    INDEX idx_user_app_tokens_app (app_id),
+    INDEX idx_user_app_tokens_active (user_id, app_id, revoked_at),
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE user_app_tokens ADD COLUMN IF NOT EXISTS scopes JSON;
+
+-- Administrator-approved privileged scopes for external APPIDs
+CREATE TABLE IF NOT EXISTS app_privileged_scopes (
+    app_id VARCHAR(128) PRIMARY KEY,
+    privileged_scopes JSON NOT NULL,
+    description TEXT,
+    created_by VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- One-Time Tokens Table (for secure web login from desktop app)

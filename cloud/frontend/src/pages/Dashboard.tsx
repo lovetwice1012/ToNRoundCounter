@@ -13,6 +13,10 @@ import { StatisticsPanel } from '../components/StatisticsPanel';
 import { CoordinatedAutoSuicidePanel } from '../components/CoordinatedAutoSuicidePanel';
 import { WishedTerrorPanel } from '../components/WishedTerrorPanel';
 import { createRestClient } from '../lib/rest-client';
+import { getApiBaseUrl, getWebSocketUrl } from '../lib/cloud-url';
+import type { LoginDevice } from '../lib/websocket-client';
+
+const ADMIN_USER_ID = 'yussy5373';
 
 export const Dashboard: React.FC = () => {
     const navigate = useNavigate();
@@ -23,6 +27,7 @@ export const Dashboard: React.FC = () => {
         currentInstance,
         sessionToken,
         playerId,
+        userId,
         setClient,
         setRestClient,
         setConnected,
@@ -37,6 +42,8 @@ export const Dashboard: React.FC = () => {
     } = useAppStore();
 
     const [activeTab, setActiveTab] = useState<'overview' | 'instances' | 'players' | 'stats' | 'settings'>('overview');
+    const [recentDevices, setRecentDevices] = useState<LoginDevice[]>([]);
+    const isAdmin = userId === ADMIN_USER_ID || playerId === ADMIN_USER_ID;
 
     // Ref so subscription callbacks can read the latest currentInstance without
     // being listed in the subscription useEffect's dependency array.  Adding
@@ -53,13 +60,15 @@ export const Dashboard: React.FC = () => {
         }
 
         const startedAt = performance.now();
-        const [instance, instances] = await Promise.all([
+        const [instance, instances, clientStatus] = await Promise.all([
             targetClient.getCurrentInstance().catch(() => null),
             targetClient.listInstances().catch(() => []),
+            targetClient.getClientStatus().catch(() => null),
         ]);
 
         setCurrentInstance(instance || null);
         setInstances(Array.isArray(instances) ? instances : []);
+        setRecentDevices(Array.isArray(clientStatus?.recent_devices) ? clientStatus.recent_devices : []);
         setWsLatencyMs(Math.round(performance.now() - startedAt));
         touchSyncTime();
     }, [setCurrentInstance, setInstances, setWsLatencyMs, touchSyncTime]);
@@ -70,12 +79,12 @@ export const Dashboard: React.FC = () => {
             const reconnect = async () => {
                 try {
                     // REST Clientの初期化
-                    const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+                    const apiUrl = getApiBaseUrl();
                     const newRestClient = createRestClient(apiUrl, sessionToken);
                     setRestClient(newRestClient);
 
                     // WebSocket Clientの初期化
-                    const wsUrl = (import.meta as any).env?.VITE_WS_URL || 'ws://localhost:8080/ws';
+                    const wsUrl = getWebSocketUrl();
                     const { ToNRoundCloudClient } = await import('../lib/websocket-client');
                     const newClient = new ToNRoundCloudClient(wsUrl);
 
@@ -174,12 +183,14 @@ export const Dashboard: React.FC = () => {
             const interval = setInterval(async () => {
                 try {
                     const startedAt = performance.now();
-                    const [instance, instances] = await Promise.all([
+                    const [instance, instances, clientStatus] = await Promise.all([
                         client.getCurrentInstance().catch(() => null),
                         client.listInstances().catch(() => []),
+                        client.getClientStatus().catch(() => null),
                     ]);
                     setCurrentInstance(instance || null);
                     setInstances(Array.isArray(instances) ? instances : []);
+                    setRecentDevices(Array.isArray(clientStatus?.recent_devices) ? clientStatus.recent_devices : []);
                     setWsLatencyMs(Math.round(performance.now() - startedAt));
                     touchSyncTime();
                 } catch (error) {
@@ -225,6 +236,15 @@ export const Dashboard: React.FC = () => {
         { key: 'settings', label: 'Preferences', desc: '希望テラー管理' },
     ];
 
+    const formatMemory = (memoryMb?: number) => {
+        if (!memoryMb || memoryMb <= 0) {
+            return '-';
+        }
+        return memoryMb >= 1024
+            ? `${Math.round(memoryMb / 102.4) / 10} GB`
+            : `${memoryMb} MB`;
+    };
+
     return (
         <div className="dashboard-page nebula-bg">
             <aside className="dashboard-sidebar glass-panel">
@@ -261,6 +281,16 @@ export const Dashboard: React.FC = () => {
                             <small>{item.desc}</small>
                         </button>
                     ))}
+                    {isAdmin && (
+                        <button
+                            className="nav-tile admin-nav-tile"
+                            onClick={() => navigate('/admin/app-privileges')}
+                            type="button"
+                        >
+                            <span>App Privileges</span>
+                            <small>特権スコープ管理</small>
+                        </button>
+                    )}
                 </nav>
 
                 <button onClick={handleLogout} className="btn-logout" type="button">
@@ -313,6 +343,55 @@ export const Dashboard: React.FC = () => {
                                 </div>
                             ) : (
                                 <p className="empty-message">インスタンスに参加していません</p>
+                            )}
+                        </section>
+
+                        <section className="overview-section">
+                            <h2>最近のログイン端末</h2>
+                            {recentDevices.length > 0 ? (
+                                <div className="device-list">
+                                    {recentDevices.map((device) => (
+                                        <article className="device-card" key={`${device.id}_${device.session_id}`}>
+                                            <div className="device-card-header">
+                                                <div>
+                                                    <strong>{device.device_name || 'Unknown device'}</strong>
+                                                    <p>{device.client_type} / v{device.client_version}</p>
+                                                </div>
+                                                <span className={`device-badge ${device.connected ? 'online' : ''}`}>
+                                                    {device.connected ? '接続中' : '履歴'}
+                                                </span>
+                                            </div>
+                                            <dl className="device-details">
+                                                <div>
+                                                    <dt>OS</dt>
+                                                    <dd>{device.os_description || '-'}</dd>
+                                                </div>
+                                                <div>
+                                                    <dt>CPU</dt>
+                                                    <dd>{device.processor_name || '-'}</dd>
+                                                </div>
+                                                <div>
+                                                    <dt>GPU</dt>
+                                                    <dd>{device.gpu_name || '-'}</dd>
+                                                </div>
+                                                <div>
+                                                    <dt>Memory</dt>
+                                                    <dd>{formatMemory(device.memory_mb)}</dd>
+                                                </div>
+                                                <div>
+                                                    <dt>IP</dt>
+                                                    <dd>{device.ip_address || '-'}</dd>
+                                                </div>
+                                                <div>
+                                                    <dt>Login</dt>
+                                                    <dd>{device.logged_in_at ? new Date(device.logged_in_at).toLocaleString() : '-'}</dd>
+                                                </div>
+                                            </dl>
+                                        </article>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="empty-message">ログイン端末の履歴はまだありません</p>
                             )}
                         </section>
 

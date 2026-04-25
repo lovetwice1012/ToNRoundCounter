@@ -49,6 +49,36 @@ export interface TerrorStat {
     difficulty: string;
 }
 
+export interface OneTimeTokenLoginResponse {
+    session_id?: string;
+    session_token: string;
+    player_id: string;
+    user_id?: string;
+    expires_at: string;
+}
+
+export interface AppAuthorizationResponse {
+    app_id: string;
+    app_token: string;
+    scopes: string[];
+    redirect_uri: string;
+}
+
+export interface AppPrivilege {
+    app_id: string;
+    privileged_scopes: string[];
+    description?: string | null;
+    created_by?: string | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+}
+
+export interface AppPrivilegeListResponse {
+    app_privileges: AppPrivilege[];
+    privileged_scopes: string[];
+    available_scopes: string[];
+}
+
 export class RestApiClient {
     private baseUrl: string;
     private sessionToken?: string;
@@ -135,6 +165,43 @@ export class RestApiClient {
 
     async deleteInstance(instanceId: string): Promise<{ success: boolean }> {
         return this.request('DELETE', `/api/v1/instances/${instanceId}`);
+    }
+
+    // Authentication
+    async loginWithOneTimeToken(token: string, clientVersion: string = '1.0.0'): Promise<OneTimeTokenLoginResponse> {
+        return this.request('POST', '/api/auth/one-time-token', {
+            token,
+            client_version: clientVersion,
+        });
+    }
+
+    async authorizeExternalApp(request: {
+        app_id: string;
+        redirect_uri: string;
+        state?: string;
+        scopes?: string[];
+        scope?: string;
+    }): Promise<AppAuthorizationResponse> {
+        return this.request('POST', '/api/v1/app-authorizations', request);
+    }
+
+    async listAppPrivileges(): Promise<AppPrivilegeListResponse> {
+        return this.request('GET', '/api/v1/admin/app-privileges');
+    }
+
+    async updateAppPrivilege(
+        appId: string,
+        privilegedScopes: string[],
+        description?: string
+    ): Promise<{ app_privilege: AppPrivilege; privileged_scopes: string[] }> {
+        return this.request('PUT', `/api/v1/admin/app-privileges/${encodeURIComponent(appId)}`, {
+            privileged_scopes: privilegedScopes,
+            description,
+        });
+    }
+
+    async deleteAppPrivilege(appId: string): Promise<{ success: boolean }> {
+        return this.request('DELETE', `/api/v1/admin/app-privileges/${encodeURIComponent(appId)}`);
     }
 
     // Profile Management

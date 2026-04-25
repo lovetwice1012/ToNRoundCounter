@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net9.0-windows</TargetFramework>
+    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <OutputType>WinExe</OutputType>
     <RootNamespace>ToNRoundCounter</RootNamespace>
     <AssemblyName>ToNRoundCounter</AssemblyName>
@@ -39,6 +40,7 @@
          each Modules/* project, causing duplicate symbol / missing dependency errors. -->
     <Compile Remove="Updater\**" />
     <Compile Remove="ToNRoundCounter.Tests\**" />
+    <Compile Remove="ToNRoundCounterSDK\**" />
     <Compile Remove="Modules\AfkJumpModule\**" />
     <Compile Remove="Modules\AfkSoundCancelModule\**" />
     <Compile Remove="Modules\OscRepeaterDisablerModule\**" />
@@ -47,6 +49,7 @@
     <Compile Remove="packages\**" />
     <EmbeddedResource Remove="Updater\**" />
     <EmbeddedResource Remove="ToNRoundCounter.Tests\**" />
+    <EmbeddedResource Remove="ToNRoundCounterSDK\**" />
     <EmbeddedResource Remove="Modules\AfkJumpModule\**" />
     <EmbeddedResource Remove="Modules\AfkSoundCancelModule\**" />
     <EmbeddedResource Remove="Modules\OscRepeaterDisablerModule\**" />
@@ -55,6 +58,7 @@
     <EmbeddedResource Remove="packages\**" />
     <None Remove="Updater\**" />
     <None Remove="ToNRoundCounter.Tests\**" />
+    <None Remove="ToNRoundCounterSDK\**" />
     <None Remove="Modules\AfkJumpModule\**" />
     <None Remove="Modules\AfkSoundCancelModule\**" />
     <None Remove="Modules\OscRepeaterDisablerModule\**" />
@@ -78,6 +82,8 @@
     <PackageReference Include="Vortice.DXGI" Version="3.5.0" />
     <PackageReference Include="Vortice.Mathematics" Version="1.7.8" />
     <PackageReference Include="System.Management" Version="9.0.0" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="YoutubeExplode" Version="6.5.7" />
   </ItemGroup>
 
   <ItemGroup>

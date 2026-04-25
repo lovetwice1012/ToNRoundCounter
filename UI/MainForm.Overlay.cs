@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Serilog.Events;
+using ToNRoundCounter.Application.Recording;
 using ToNRoundCounter.Infrastructure.Interop;
 
 namespace ToNRoundCounter.UI
@@ -815,6 +816,49 @@ namespace ToNRoundCounter.UI
                     form.SetValue(builder.ToString().Trim());
                 }
             });
+        }
+
+        /// <summary>
+        /// 現在表示中の全オーバーレイフォームをBitmap化し、ウィンドウ座標とともに返す。
+        /// </summary>
+        private List<RecordingOverlayBitmap> CaptureAllOverlayBitmaps()
+        {
+            if (IsDisposed || Disposing)
+            {
+                return new List<RecordingOverlayBitmap>();
+            }
+
+            if (InvokeRequired)
+            {
+                try
+                {
+                    return (List<RecordingOverlayBitmap>)Invoke(new Func<List<RecordingOverlayBitmap>>(CaptureAllOverlayBitmaps));
+                }
+                catch
+                {
+                    return new List<RecordingOverlayBitmap>();
+                }
+            }
+
+            var result = new List<RecordingOverlayBitmap>();
+            foreach (var kvp in overlayForms)
+            {
+                var form = kvp.Value;
+                if (form.Visible && !form.IsDisposed && form.Width > 0 && form.Height > 0)
+                {
+                    try
+                    {
+                        var bmp = new Bitmap(form.Width, form.Height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+                        form.DrawToBitmap(bmp, new Rectangle(0, 0, form.Width, form.Height));
+                        result.Add(new RecordingOverlayBitmap(bmp, form.Location));
+                    }
+                    catch
+                    {
+                        // Ignore individual overlay errors; the recorder will still capture the base frame.
+                    }
+                }
+            }
+            return result;
         }
     }
 }

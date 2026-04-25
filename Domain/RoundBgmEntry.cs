@@ -12,6 +12,11 @@ namespace ToNRoundCounter.Domain
 
         public string SoundPath { get; set; } = string.Empty;
 
+        /// <summary>
+        /// Playback volume in the range [0.0, 1.0]. Defaults to 1.0 (100%).
+        /// </summary>
+        public double Volume { get; set; } = 1.0;
+
         public RoundBgmEntry Clone()
         {
             return new RoundBgmEntry
@@ -20,6 +25,7 @@ namespace ToNRoundCounter.Domain
                 RoundType = RoundType ?? string.Empty,
                 TerrorType = TerrorType ?? string.Empty,
                 SoundPath = SoundPath ?? string.Empty,
+                Volume = Volume,
             };
         }
     }

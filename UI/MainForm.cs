@@ -25,6 +25,7 @@ using ToNRoundCounter.Properties;
 using ToNRoundCounter.Infrastructure;
 using ToNRoundCounter.Application.Services;
 using ToNRoundCounter.Application;
+using ToNRoundCounter.Application.Recording;
 using MediaPlayer = System.Windows.Media.MediaPlayer;
 using WinFormsApp = System.Windows.Forms.Application;
 using ToNRoundCounter.Infrastructure.Interop;
@@ -98,6 +99,8 @@ namespace ToNRoundCounter.UI
         private readonly IAutoSuicideCoordinator _autoSuicideCoordinator;
         private readonly ConcurrentDictionary<Guid, string> _backgroundOperations = new();
         private int _isClosing;
+        private ToNRoundCounter.Infrastructure.Interop.GlobalHotkey? _globalHotkey;
+        private int _masterMuteHotkeyId = -1;
 
         private Action<WebSocketConnected>? _wsConnectedHandler;
         private Action<WebSocketDisconnected>? _wsDisconnectedHandler;
@@ -330,6 +333,7 @@ namespace ToNRoundCounter.UI
             LogUi($"OSC repeater policies resolved: {_oscRepeaterPolicies.Count}.", LogEventLevel.Debug);
             _moduleHost = moduleHost;
             LogUi("Presenter will be attached to main form view after UI initialization.", LogEventLevel.Debug);
+            this.autoRecordingService.SetOverlaySnapshotProvider(CaptureAllOverlayBitmaps);
 
             terrorColors = new Dictionary<string, Color>();
             LoadTerrorInfo();
@@ -412,9 +416,12 @@ namespace ToNRoundCounter.UI
                     // 起動時に認証を実行
                     if (!string.IsNullOrWhiteSpace(_settings.ApiKey))
                     {
-                        string playerIdForAuth = !string.IsNullOrWhiteSpace(_settings.CloudPlayerName)
-                            ? _settings.CloudPlayerName
-                            : Environment.UserName;
+                        string playerIdForAuth = ResolveCloudPlayerName();
+                        if (string.IsNullOrWhiteSpace(playerIdForAuth))
+                        {
+                            _logger?.LogEvent("CloudAuth", "Startup authentication skipped until the local WS CONNECTED event provides the VRChat player name.");
+                            return;
+                        }
 
                         try
                         {
@@ -786,12 +793,31 @@ namespace ToNRoundCounter.UI
                 settingsForm.SettingsPanel.RoundBgmEnabledCheckBox.Checked = _settings.RoundBgmEnabled;
                 settingsForm.SettingsPanel.LoadRoundBgmEntries(_settings.RoundBgmEntries);
                 settingsForm.SettingsPanel.SetRoundBgmItemConflictBehavior(_settings.RoundBgmItemConflictBehavior);
+                settingsForm.SettingsPanel.SetNotificationSoundVolume(_settings.NotificationSoundVolume);
+                settingsForm.SettingsPanel.SetAfkSoundVolume(_settings.AfkSoundVolume);
+                settingsForm.SettingsPanel.SetPunishSoundVolume(_settings.PunishSoundVolume);
+                settingsForm.SettingsPanel.SetMasterVolume(_settings.MasterVolume);
+                settingsForm.SettingsPanel.SetMasterMuted(_settings.MasterMuted);
+                settingsForm.SettingsPanel.SetNotificationSoundMuted(_settings.NotificationSoundMuted);
+                settingsForm.SettingsPanel.SetAfkSoundMuted(_settings.AfkSoundMuted);
+                settingsForm.SettingsPanel.SetPunishSoundMuted(_settings.PunishSoundMuted);
+                settingsForm.SettingsPanel.SetItemMusicMuted(_settings.ItemMusicMuted);
+                settingsForm.SettingsPanel.SetRoundBgmMuted(_settings.RoundBgmMuted);
+                settingsForm.SettingsPanel.SetAudioOutputDeviceNumber(_settings.AudioOutputDeviceNumber);
+                settingsForm.SettingsPanel.SetMasterMuteHotkey(_settings.MasterMuteHotkey);
+                settingsForm.SettingsPanel.SetEqualizerEnabled(_settings.EqualizerEnabled);
+                settingsForm.SettingsPanel.SetEqualizerBandGains(_settings.EqualizerBandGains);
                 settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text = _settings.DiscordWebhookUrl;
+
+                EventHandler<SoundTestKind> testHandler = (_, kind) => HandleSettingsTestSound(settingsForm.SettingsPanel, kind);
+                settingsForm.SettingsPanel.TestSoundRequested += testHandler;
 
                 var openedContext = new ModuleSettingsViewLifecycleContext(settingsForm, settingsForm.SettingsPanel, _settings, ModuleSettingsViewStage.Opened, null, _moduleHost.CurrentServiceProvider);
                 _moduleHost.NotifySettingsViewOpened(openedContext);
 
                 var dialogResult = settingsForm.ShowDialog();
+
+                settingsForm.SettingsPanel.TestSoundRequested -= testHandler;
 
                 var closingContext = new ModuleSettingsViewLifecycleContext(settingsForm, settingsForm.SettingsPanel, _settings, ModuleSettingsViewStage.Closing, dialogResult, _moduleHost.CurrentServiceProvider);
                 _moduleHost.NotifySettingsViewClosing(closingContext);
@@ -893,11 +919,44 @@ namespace ToNRoundCounter.UI
                             return;
                         }
                     }
+
+                    // Windows 11 24H2 broke the Media Foundation SinkWriter AAC encoder path;
+                    // the recorder now muxes captured PCM with external ffmpeg.exe on stop. If
+                    // the user just turned auto recording on, kick off the ffmpeg download
+                    // immediately so the first real recording is not blocked on the network,
+                    // and let them know a one-time background download is happening.
+                    if (!autoRecordingPreviouslyEnabled && autoRecordingEnabledNow && !FfmpegLocator.IsAvailable())
+                    {
+                        MessageBox.Show(
+                            this,
+                            LanguageManager.Translate(
+                                "録画機能を有効にしました。音声付き録画のため FFmpeg (LGPL) をバックグラウンドでダウンロードします (~40MB)。初回録画開始前に自動的に完了していない場合、最初の録画開始時に少し時間がかかることがあります。"),
+                            LanguageManager.Translate("FFmpeg download"),
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information);
+                        _ = FfmpegLocator.EnsureAvailableInBackground();
+                    }
                     _settings.ItemMusicEnabled = settingsForm.SettingsPanel.ItemMusicEnabledCheckBox.Checked;
                     _settings.ItemMusicEntries = settingsForm.SettingsPanel.GetItemMusicEntries();
                     _settings.RoundBgmEnabled = settingsForm.SettingsPanel.RoundBgmEnabledCheckBox.Checked;
                     _settings.RoundBgmEntries = settingsForm.SettingsPanel.GetRoundBgmEntries();
                     _settings.RoundBgmItemConflictBehavior = settingsForm.SettingsPanel.GetRoundBgmItemConflictBehavior();
+                    _settings.NotificationSoundVolume = settingsForm.SettingsPanel.GetNotificationSoundVolume();
+                    _settings.AfkSoundVolume = settingsForm.SettingsPanel.GetAfkSoundVolume();
+                    _settings.PunishSoundVolume = settingsForm.SettingsPanel.GetPunishSoundVolume();
+                    _settings.MasterVolume = settingsForm.SettingsPanel.GetMasterVolume();
+                    _settings.MasterMuted = settingsForm.SettingsPanel.GetMasterMuted();
+                    _settings.NotificationSoundMuted = settingsForm.SettingsPanel.GetNotificationSoundMuted();
+                    _settings.AfkSoundMuted = settingsForm.SettingsPanel.GetAfkSoundMuted();
+                    _settings.PunishSoundMuted = settingsForm.SettingsPanel.GetPunishSoundMuted();
+                    _settings.ItemMusicMuted = settingsForm.SettingsPanel.GetItemMusicMuted();
+                    _settings.RoundBgmMuted = settingsForm.SettingsPanel.GetRoundBgmMuted();
+                    _settings.AudioOutputDeviceNumber = settingsForm.SettingsPanel.GetAudioOutputDeviceNumber();
+                    _settings.MasterMuteHotkey = settingsForm.SettingsPanel.GetMasterMuteHotkey();
+                    _settings.EqualizerEnabled = settingsForm.SettingsPanel.GetEqualizerEnabled();
+                    _settings.EqualizerBandGains = settingsForm.SettingsPanel.GetEqualizerBandGains();
+                    _soundManager.ApplyEqualizer();
+                    ApplyMasterMuteHotkey();
                     _settings.DiscordWebhookUrl = settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text.Trim();
                     _settings.ThemeKey = settingsForm.SettingsPanel.SelectedThemeKey;
                     _autoSuicideCoordinator.LoadRules();
@@ -909,6 +968,7 @@ namespace ToNRoundCounter.UI
                     _soundManager.ResetItemMusicTracking();
                     _soundManager.UpdateRoundBgmPlayer(null);
                     _soundManager.ResetRoundBgmTracking();
+                    _soundManager.ApplyNotificationVolumes();
 
                     _settings.ApiKey = settingsForm.SettingsPanel.apiKeyTextBox.Text.Trim();
                     if (string.IsNullOrEmpty(_settings.ApiKey))
@@ -927,7 +987,11 @@ namespace ToNRoundCounter.UI
                     string previousCloudPlayerName = _settings.CloudPlayerName ?? string.Empty;
 
                     _settings.CloudSyncEnabled = settingsForm.SettingsPanel.CloudSyncEnabledCheckBox.Checked;
-                    _settings.CloudPlayerName = settingsForm.SettingsPanel.CloudPlayerNameTextBox.Text?.Trim() ?? string.Empty;
+                    string localWsCloudPlayerName = ResolveCloudPlayerName();
+                    if (!string.IsNullOrWhiteSpace(localWsCloudPlayerName))
+                    {
+                        _settings.CloudPlayerName = localWsCloudPlayerName;
+                    }
                     _settings.CloudWebSocketUrl = settingsForm.SettingsPanel.CloudWebSocketUrlTextBox.Text?.Trim() ?? string.Empty;
 
                     bool cloudNeedsRestart = previousCloudEnabled != _settings.CloudSyncEnabled
@@ -1048,6 +1112,20 @@ namespace ToNRoundCounter.UI
             settingsForm.SettingsPanel.RoundBgmEnabledCheckBox.Checked = _settings.RoundBgmEnabled;
             settingsForm.SettingsPanel.LoadRoundBgmEntries(_settings.RoundBgmEntries);
             settingsForm.SettingsPanel.SetRoundBgmItemConflictBehavior(_settings.RoundBgmItemConflictBehavior);
+            settingsForm.SettingsPanel.SetNotificationSoundVolume(_settings.NotificationSoundVolume);
+            settingsForm.SettingsPanel.SetAfkSoundVolume(_settings.AfkSoundVolume);
+            settingsForm.SettingsPanel.SetPunishSoundVolume(_settings.PunishSoundVolume);
+            settingsForm.SettingsPanel.SetMasterVolume(_settings.MasterVolume);
+            settingsForm.SettingsPanel.SetMasterMuted(_settings.MasterMuted);
+            settingsForm.SettingsPanel.SetNotificationSoundMuted(_settings.NotificationSoundMuted);
+            settingsForm.SettingsPanel.SetAfkSoundMuted(_settings.AfkSoundMuted);
+            settingsForm.SettingsPanel.SetPunishSoundMuted(_settings.PunishSoundMuted);
+            settingsForm.SettingsPanel.SetItemMusicMuted(_settings.ItemMusicMuted);
+            settingsForm.SettingsPanel.SetRoundBgmMuted(_settings.RoundBgmMuted);
+            settingsForm.SettingsPanel.SetAudioOutputDeviceNumber(_settings.AudioOutputDeviceNumber);
+            settingsForm.SettingsPanel.SetMasterMuteHotkey(_settings.MasterMuteHotkey);
+            settingsForm.SettingsPanel.SetEqualizerEnabled(_settings.EqualizerEnabled);
+            settingsForm.SettingsPanel.SetEqualizerBandGains(_settings.EqualizerBandGains);
             settingsForm.SettingsPanel.DiscordWebhookUrlTextBox.Text = _settings.DiscordWebhookUrl;
         }
 
@@ -1177,7 +1255,7 @@ namespace ToNRoundCounter.UI
                 };
                 votingMenuItem.Click += (s, e) =>
                 {
-                    var votingForm = new VotingPanelForm(_cloudClient, currentInstanceId, _settings.CloudPlayerName ?? Environment.UserName);
+                    var votingForm = new VotingPanelForm(_cloudClient, currentInstanceId, ResolveCloudPlayerName());
                     activeVotingPanelForm = votingForm;
                     try
                     {
@@ -1199,7 +1277,7 @@ namespace ToNRoundCounter.UI
                 };
                 profileMenuItem.Click += (s, e) =>
                 {
-                    var profileForm = new ProfileManagerForm(_cloudClient, _settings.CloudPlayerName ?? Environment.UserName);
+                    var profileForm = new ProfileManagerForm(_cloudClient, ResolveCloudPlayerName());
                     profileForm.ShowDialog(this);
                 };
                 windowsMenuItem.DropDownItems.Add(profileMenuItem);
@@ -1210,7 +1288,7 @@ namespace ToNRoundCounter.UI
                 };
                 settingsSyncMenuItem.Click += (s, e) =>
                 {
-                    var syncForm = new SettingsSyncForm(_cloudClient, _settings.CloudPlayerName ?? Environment.UserName, _settings);
+                    var syncForm = new SettingsSyncForm(_cloudClient, ResolveCloudPlayerName(), _settings);
                     syncForm.ShowDialog(this);
                 };
                 windowsMenuItem.DropDownItems.Add(settingsSyncMenuItem);
@@ -1221,7 +1299,7 @@ namespace ToNRoundCounter.UI
                 };
                 backupMenuItem.Click += (s, e) =>
                 {
-                    var backupForm = new BackupManagerForm(_cloudClient, _settings.CloudPlayerName ?? Environment.UserName);
+                    var backupForm = new BackupManagerForm(_cloudClient, ResolveCloudPlayerName());
                     backupForm.ShowDialog(this);
                 };
                 windowsMenuItem.DropDownItems.Add(backupMenuItem);
@@ -1302,6 +1380,13 @@ namespace ToNRoundCounter.UI
             else
             {
                 LogUi("OSC repeater startup skipped by policy.", LogEventLevel.Information);
+            }
+
+            // If auto recording is already enabled from a previous session, pre-warm the
+            // ffmpeg cache in the background so a cold first-run recording does not stall.
+            if (_settings.AutoRecordingEnabled && !FfmpegLocator.IsAvailable())
+            {
+                _ = FfmpegLocator.EnsureAvailableInBackground();
             }
             // Fire the update check in the background so a slow/unreachable GitHub
             // doesn't stall the Load sequence. Errors are caught inside CheckForUpdatesAsync.
@@ -1505,6 +1590,9 @@ namespace ToNRoundCounter.UI
                 velocityTimer?.Stop();
                 velocityTimer?.Dispose();
 
+                try { _globalHotkey?.Dispose(); } catch { /* ignore */ }
+                _globalHotkey = null;
+
                 try
                 {
                     if (_cloudClient != null)
@@ -1641,14 +1729,19 @@ namespace ToNRoundCounter.UI
                 if (eventType == "CONNECTED")
                 {
                     stateService.PlayerDisplayName = json.Value<string>("DisplayName") ?? "";
+                    string connectedPlayerName = stateService.PlayerDisplayName.Trim();
+                    if (!string.IsNullOrWhiteSpace(connectedPlayerName)
+                        && !string.Equals(_settings.CloudPlayerName, connectedPlayerName, StringComparison.Ordinal))
+                    {
+                        _settings.CloudPlayerName = connectedPlayerName;
+                        _ = _settings.SaveAsync();
+                    }
 
                     // Cloud認証: CloudPlayerNameまたはVRChatプレイヤー名を使用
                     if (_settings.CloudSyncEnabled && _cloudClient != null)
                     {
                         // CloudPlayerNameが設定されていない場合はVRChatプレイヤー名を使用
-                        string playerIdForCloud = !string.IsNullOrWhiteSpace(_settings.CloudPlayerName)
-                            ? _settings.CloudPlayerName
-                            : stateService.PlayerDisplayName;
+                        string playerIdForCloud = connectedPlayerName;
 
                         if (!string.IsNullOrWhiteSpace(playerIdForCloud))
                         {
@@ -1656,8 +1749,14 @@ namespace ToNRoundCounter.UI
                             {
                                 try
                                 {
+                                    if (!await WaitForCloudClientConnectionAsync(TimeSpan.FromSeconds(10), System.Threading.CancellationToken.None).ConfigureAwait(false))
+                                    {
+                                        _logger?.LogEvent("CloudAuth", "Cloud authentication skipped because the cloud WebSocket is not connected.", LogEventLevel.Warning);
+                                        return;
+                                    }
+
                                     // APIキーが保存されているか確認
-                                    if (string.IsNullOrWhiteSpace(_settings.apikey))
+                                    if (string.IsNullOrWhiteSpace(_settings.ApiKey))
                                     {
                                         // 初回登録
                                         _logger?.LogEvent("CloudAuth", $"Registering new user: {playerIdForCloud}");
@@ -1668,7 +1767,7 @@ namespace ToNRoundCounter.UI
                                     );
 
                                         // APIキーを保存
-                                        _settings.apikey = apiKey;
+                                        _settings.ApiKey = apiKey;
                                         await _settings.SaveAsync();
                                         _logger?.LogEvent("CloudAuth", $"User registered successfully. UserId: {userId}");
                                     }
@@ -1678,7 +1777,7 @@ namespace ToNRoundCounter.UI
                                         _logger?.LogEvent("CloudAuth", $"Logging in with API key: {playerIdForCloud}");
                                         var sessionToken = await _cloudClient.LoginWithApiKeyAsync(
                                             playerIdForCloud,
-                                            _settings.apikey,
+                                            _settings.ApiKey,
                                             "1.0.0",
                                             System.Threading.CancellationToken.None
                                         );
@@ -1701,7 +1800,7 @@ namespace ToNRoundCounter.UI
                                                 System.Threading.CancellationToken.None
                                             );
 
-                                            _settings.apikey = apiKey;
+                                            _settings.ApiKey = apiKey;
                                             await _settings.SaveAsync();
                                             _logger?.LogEvent("CloudAuth", $"Re-registered successfully. UserId: {userId}");
                                         }
@@ -2232,9 +2331,7 @@ namespace ToNRoundCounter.UI
                             // Cloud instance join
                             if (_settings.CloudSyncEnabled && _cloudClient != null && _cloudClient.IsConnected)
                             {
-                                string playerIdForCloud = !string.IsNullOrWhiteSpace(_settings.CloudPlayerName)
-                                    ? _settings.CloudPlayerName
-                                    : stateService.PlayerDisplayName;
+                                string playerIdForCloud = ResolveCloudPlayerName();
 
                                 if (!string.IsNullOrWhiteSpace(playerIdForCloud))
                                 {
@@ -2276,9 +2373,7 @@ namespace ToNRoundCounter.UI
                             // Cloud instance leave
                             if (_settings.CloudSyncEnabled && _cloudClient != null && _cloudClient.IsConnected)
                             {
-                                string playerIdForCloud = !string.IsNullOrWhiteSpace(_settings.CloudPlayerName)
-                                    ? _settings.CloudPlayerName
-                                    : stateService.PlayerDisplayName;
+                                string playerIdForCloud = ResolveCloudPlayerName();
 
                                 if (!string.IsNullOrWhiteSpace(playerIdForCloud) && !string.IsNullOrWhiteSpace(previousInstanceId))
                                 {
@@ -2358,7 +2453,7 @@ namespace ToNRoundCounter.UI
                             });
                             break;
                         default:
-                            _logger.LogEvent("CustomEvent", $"Unknown custom event: {customEvent}");
+                            _logger?.LogEvent("CustomEvent", $"Unknown custom event: {customEvent}");
                             break;
                     }
 
@@ -2366,7 +2461,7 @@ namespace ToNRoundCounter.UI
             }
             catch (Exception ex)
             {
-                _logger.LogEvent(LanguageManager.Translate("ParseError"), message);
+                _logger?.LogEvent(LanguageManager.Translate("ParseError"), message);
                 LogUi($"Failed to process WebSocket payload: {ex.Message}", LogEventLevel.Error);
             }
         }
@@ -2817,6 +2912,56 @@ namespace ToNRoundCounter.UI
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
+            ApplyMasterMuteHotkey();
+        }
+
+        /// <summary>
+        /// Re-registers (or clears) the global hotkey for toggling master mute based on current settings.
+        /// </summary>
+        private void ApplyMasterMuteHotkey()
+        {
+            try
+            {
+                if (_globalHotkey == null)
+                {
+                    _globalHotkey = new ToNRoundCounter.Infrastructure.Interop.GlobalHotkey();
+                }
+                if (_masterMuteHotkeyId > 0)
+                {
+                    _globalHotkey.Unregister(_masterMuteHotkeyId);
+                    _masterMuteHotkeyId = -1;
+                }
+                string spec = _settings.MasterMuteHotkey ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(spec)) return;
+                if (!ToNRoundCounter.Infrastructure.Interop.GlobalHotkey.TryParse(spec, out var mods, out var key)) return;
+                _masterMuteHotkeyId = _globalHotkey.Register(mods, key, OnMasterMuteHotkeyPressed);
+                if (_masterMuteHotkeyId <= 0)
+                {
+                    LogUi($"Failed to register master mute hotkey '{spec}'.", LogEventLevel.Warning);
+                }
+                else
+                {
+                    LogUi($"Master mute hotkey registered: {spec}.", LogEventLevel.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogUi($"Master mute hotkey setup failed: {ex.Message}", LogEventLevel.Warning);
+            }
+        }
+
+        private void OnMasterMuteHotkeyPressed()
+        {
+            try
+            {
+                _settings.MasterMuted = !_settings.MasterMuted;
+                _soundManager?.ApplyNotificationVolumes();
+                LogUi($"Master mute toggled via hotkey: {_settings.MasterMuted}.", LogEventLevel.Information);
+            }
+            catch (Exception ex)
+            {
+                LogUi($"Master mute hotkey toggle failed: {ex.Message}", LogEventLevel.Warning);
+            }
         }
 
         private void UpdateNextRoundPrediction(string? historyStatusOverride = null, int? roundCycleForHistory = null)
@@ -4119,6 +4264,44 @@ namespace ToNRoundCounter.UI
             label.ForeColor = isConnected ? Color.Green : Color.Red;
         }
 
+        private string ResolveCloudPlayerName()
+        {
+            string playerName = stateService.PlayerDisplayName?.Trim() ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(playerName))
+            {
+                return playerName;
+            }
+
+            return _settings.CloudPlayerName?.Trim() ?? string.Empty;
+        }
+
+        private async Task<bool> WaitForCloudClientConnectionAsync(TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            if (_cloudClient == null)
+            {
+                return false;
+            }
+
+            if (_cloudClient.IsConnected)
+            {
+                return true;
+            }
+
+            DateTime deadline = DateTime.UtcNow + timeout;
+            while (!_cloudClient.IsConnected)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (DateTime.UtcNow >= deadline)
+                {
+                    return false;
+                }
+
+                await Task.Delay(150, cancellationToken).ConfigureAwait(false);
+            }
+
+            return true;
+        }
+
         /// <summary>
         /// Starts the cloud client and attempts automatic login if configured.
         /// Handles all errors internally with appropriate logging.
@@ -4135,16 +4318,17 @@ namespace ToNRoundCounter.UI
                 await _cloudClient.StartAsync().ConfigureAwait(false);
                 _logger?.LogEvent("CloudSync", "Cloud WebSocket client started successfully.");
 
-                if (!string.IsNullOrWhiteSpace(_settings.CloudPlayerName))
+                string playerName = ResolveCloudPlayerName();
+                if (!string.IsNullOrWhiteSpace(playerName))
                 {
                     try
                     {
                         await _cloudClient.LoginAsync(
-                            _settings.CloudPlayerName,
+                            playerName,
                             "1.0.0",
                             _cancellation.Token
                         ).ConfigureAwait(false);
-                        _logger?.LogEvent("CloudSync", $"Logged in as: {_settings.CloudPlayerName}");
+                        _logger?.LogEvent("CloudSync", $"Logged in as: {playerName}");
                     }
                     catch (Exception loginEx)
                     {

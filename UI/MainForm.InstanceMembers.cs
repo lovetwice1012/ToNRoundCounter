@@ -518,9 +518,7 @@ namespace ToNRoundCounter.UI
             }
             catch (InvalidOperationException ex) when (ex.Message.Contains("Access denied: not a member of this instance", StringComparison.OrdinalIgnoreCase))
             {
-                string playerIdForCloud = !string.IsNullOrWhiteSpace(_settings.CloudPlayerName)
-                    ? _settings.CloudPlayerName
-                    : stateService.PlayerDisplayName;
+                string playerIdForCloud = ResolveCloudPlayerName();
 
                 if (string.IsNullOrWhiteSpace(playerIdForCloud))
                 {
@@ -850,9 +848,7 @@ namespace ToNRoundCounter.UI
                 string currentItem = NormalizeCurrentItemText(rawItem);
 
                 // Get player name from settings
-                var playerName = string.IsNullOrWhiteSpace(_settings.CloudPlayerName)
-                    ? Environment.UserName
-                    : _settings.CloudPlayerName;
+                var playerName = ResolveCloudPlayerName();
 
                 // Create items list - empty if no item, otherwise single item
                 var items = string.IsNullOrWhiteSpace(currentItem) 

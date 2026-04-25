@@ -92,6 +92,20 @@ namespace ToNRoundCounter.Application
         string DiscordWebhookUrl { get; set; }
         string LastSaveCode { get; set; }
         bool AfkSoundCancelEnabled { get; set; }
+        double NotificationSoundVolume { get; set; }
+        double AfkSoundVolume { get; set; }
+        double PunishSoundVolume { get; set; }
+        double MasterVolume { get; set; }
+        bool MasterMuted { get; set; }
+        bool NotificationSoundMuted { get; set; }
+        bool AfkSoundMuted { get; set; }
+        bool PunishSoundMuted { get; set; }
+        bool ItemMusicMuted { get; set; }
+        bool RoundBgmMuted { get; set; }
+        int AudioOutputDeviceNumber { get; set; }
+        string MasterMuteHotkey { get; set; }
+        bool EqualizerEnabled { get; set; }
+        double[] EqualizerBandGains { get; set; }
         bool CoordinatedAutoSuicideBrainEnabled { get; set; }
         bool NetworkAnalyzerConsentGranted { get; set; }
         DateTimeOffset? NetworkAnalyzerConsentTimestamp { get; set; }
