@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using ToNRoundCounter.Application;
 using ToNRoundCounter.Domain;
@@ -67,22 +68,39 @@ namespace ToNRoundCounter.Tests
         public async Task TerrorRuleDelayReschedulesSuicide()
         {
             var service = new AutoSuicideService();
-            bool triggered = false;
+            using var originalTriggered = new ManualResetEventSlim(false);
+            using var rescheduledTriggered = new ManualResetEventSlim(false);
 
-            service.Schedule(TimeSpan.FromMilliseconds(30), true, () => triggered = true);
-            await Task.Delay(10);
+            service.Schedule(TimeSpan.FromMilliseconds(150), true, () => originalTriggered.Set());
+            await Task.Delay(30);
 
-            service.Schedule(TimeSpan.FromMilliseconds(80), false, () => triggered = true);
+            service.Schedule(TimeSpan.FromMilliseconds(500), false, () => rescheduledTriggered.Set());
 
-            await Task.Delay(50);
+            await Task.Delay(250);
 
-            Assert.False(triggered);
+            Assert.False(originalTriggered.IsSet);
+            Assert.False(rescheduledTriggered.IsSet);
             Assert.True(service.HasScheduled);
 
-            await Task.Delay(100);
+            Assert.True(rescheduledTriggered.Wait(TimeSpan.FromSeconds(3)));
+            Assert.False(originalTriggered.IsSet);
+            Assert.True(await WaitUntilAsync(() => !service.HasScheduled, TimeSpan.FromSeconds(1)));
+        }
 
-            Assert.True(triggered);
-            Assert.False(service.HasScheduled);
+        private static async Task<bool> WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            while (DateTime.UtcNow < deadline)
+            {
+                if (condition())
+                {
+                    return true;
+                }
+
+                await Task.Delay(10);
+            }
+
+            return condition();
         }
     }
 }

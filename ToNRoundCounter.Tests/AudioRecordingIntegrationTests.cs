@@ -16,7 +16,7 @@ namespace ToNRoundCounter.Tests
     [Collection("AudioIntegration")]
     public sealed class AudioRecordingIntegrationTests
     {
-        [Theory]
+        [LocalAudioHardwareTheory]
         [InlineData(997.0, 0.95f)]
         [InlineData(523.25, 0.90f)]
         [InlineData(1733.0, 1.00f)]
@@ -825,5 +825,24 @@ namespace ToNRoundCounter.Tests
     [CollectionDefinition("AudioIntegration", DisableParallelization = true)]
     public sealed class AudioIntegrationCollection : ICollectionFixture<object>
     {
+    }
+
+    public sealed class LocalAudioHardwareTheoryAttribute : TheoryAttribute
+    {
+        public LocalAudioHardwareTheoryAttribute()
+        {
+            if (IsGitHubActions())
+            {
+                Skip = "Requires a local Windows audio output device; GitHub hosted runners do not expose a WASAPI endpoint.";
+            }
+        }
+
+        private static bool IsGitHubActions()
+        {
+            return string.Equals(
+                Environment.GetEnvironmentVariable("GITHUB_ACTIONS"),
+                "true",
+                StringComparison.OrdinalIgnoreCase);
+        }
     }
 }
