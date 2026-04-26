@@ -3,86 +3,161 @@ name: Build and Release Windows
 on:
   push:
     branches:
-      - 'master'
+      - master
   workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '9.0.x'
+  CONFIGURATION: 'Release'
+  PLATFORM: 'x64'
+  RUNTIME_IDENTIFIER: 'win-x64'
+  APP_ARTIFACT_DIR: 'artifacts/ToNRoundCounter'
+  MODULE_ARTIFACT_DIR: 'artifacts/ModulesPackage'
+  SDK_ARTIFACT_DIR: 'artifacts/ToNRoundCounterSDK'
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
 
 jobs:
   build-release:
     runs-on: windows-latest
     permissions:
       contents: write
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup NuGet
-        uses: NuGet/setup-nuget@v2
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v1
-      - name: Restore NuGet packages
-        run: nuget restore ToNRoundCounter.sln -ConfigFile NuGet.config
-      - name: Build
-        run: msbuild ToNRoundCounter.sln /p:Configuration=Release /p:Platform=x64
-      - name: Include updater
-        run: Copy-Item -Path .\Updater\bin\Release\net48\* -Destination .\bin\x64\Release\ -Recurse -Force
-      - name: Include shared assets
-        run: |
-          Expand-Archive -Path share_assets.zip -DestinationPath share_assets
-          Copy-Item -Path share_assets/share_assets/* -Destination .\bin\x64\Release\ -Recurse -Force
-      - name: Collect modules
-        run: |
-          $modulePackagePath = Join-Path $PWD "ModulesPackage"
-          if (Test-Path $modulePackagePath) {
-            Remove-Item -Path $modulePackagePath -Recurse -Force
-          }
-          New-Item -ItemType Directory -Path $modulePackagePath | Out-Null
-          Get-ChildItem -Path .\Modules -Filter *.csproj -Recurse | ForEach-Object {
-            $projectDirectory = $_.DirectoryName
-            $moduleName = $_.BaseName
+      - name: Checkout
+        uses: actions/checkout@v4
 
-            $moduleDll = Get-ChildItem -Path (Join-Path $projectDirectory 'bin') -Recurse -Filter '*Module.dll' |
-              Sort-Object LastWriteTime -Descending |
-              Select-Object -First 1
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
-            if ($moduleDll) {
-              $moduleDirectory = Join-Path $modulePackagePath $moduleName
-              if (Test-Path $moduleDirectory) {
-                Remove-Item -Path $moduleDirectory -Recurse -Force
+      - name: Restore
+        shell: pwsh
+        run: |
+          dotnet restore ToNRoundCounter.Tests\ToNRoundCounter.Tests.csproj --configfile NuGet.config -p:Platform=$env:PLATFORM
+          dotnet restore Updater\Updater.csproj --configfile NuGet.config -p:Platform=$env:PLATFORM
+          dotnet restore ToNRoundCounterSDK\ToNRoundCounterSDK.csproj --configfile NuGet.config
+
+          Get-ChildItem -Path Modules -Filter *.csproj -Recurse |
+            Sort-Object FullName |
+            ForEach-Object {
+              dotnet restore $_.FullName --configfile NuGet.config -p:Platform=$env:PLATFORM
+              if ($LASTEXITCODE -ne 0) {
+                exit $LASTEXITCODE
               }
-              New-Item -ItemType Directory -Path $moduleDirectory | Out-Null
-              Copy-Item -Path $moduleDll.FullName -Destination (Join-Path $moduleDirectory $moduleDll.Name) -Force
             }
+
+          dotnet restore ToNRoundCounter.csproj --configfile NuGet.config --runtime $env:RUNTIME_IDENTIFIER -p:Platform=$env:PLATFORM
+
+      - name: Test
+        run: dotnet test ToNRoundCounter.Tests\ToNRoundCounter.Tests.csproj --configuration ${{ env.CONFIGURATION }} -p:Platform=${{ env.PLATFORM }} --no-restore --verbosity minimal
+
+      - name: Publish app
+        run: dotnet publish ToNRoundCounter.csproj --configuration ${{ env.CONFIGURATION }} --runtime ${{ env.RUNTIME_IDENTIFIER }} --self-contained false -p:Platform=${{ env.PLATFORM }} --no-restore --output ${{ env.APP_ARTIFACT_DIR }} --verbosity minimal
+
+      - name: Build updater
+        run: dotnet build Updater\Updater.csproj --configuration ${{ env.CONFIGURATION }} -p:Platform=${{ env.PLATFORM }} --no-restore --verbosity minimal
+
+      - name: Build SDK
+        run: dotnet build ToNRoundCounterSDK\ToNRoundCounterSDK.csproj --configuration ${{ env.CONFIGURATION }} --no-restore --output ${{ env.SDK_ARTIFACT_DIR }} --verbosity minimal
+
+      - name: Include updater
+        shell: pwsh
+        run: |
+          $updaterOutput = Join-Path "Updater\bin\$env:PLATFORM\$env:CONFIGURATION\net48" "*"
+          Copy-Item -Path $updaterOutput -Destination $env:APP_ARTIFACT_DIR -Recurse -Force
+
+      - name: Include shared assets
+        shell: pwsh
+        run: |
+          $assetExtractDir = Join-Path $env:RUNNER_TEMP "share_assets"
+          Expand-Archive -Path share_assets.zip -DestinationPath $assetExtractDir -Force
+          Copy-Item -Path (Join-Path $assetExtractDir "share_assets\*") -Destination $env:APP_ARTIFACT_DIR -Recurse -Force
+
+      - name: Publish modules
+        shell: pwsh
+        run: |
+          $modulePublishRoot = Join-Path $env:RUNNER_TEMP "module-publish"
+          $appModulesDir = Join-Path $env:APP_ARTIFACT_DIR "Modules"
+
+          New-Item -ItemType Directory -Path $env:MODULE_ARTIFACT_DIR -Force | Out-Null
+          New-Item -ItemType Directory -Path $appModulesDir -Force | Out-Null
+
+          $appFileNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+          Get-ChildItem -Path $env:APP_ARTIFACT_DIR -File | ForEach-Object {
+            [void]$appFileNames.Add($_.Name)
           }
+
+          Get-ChildItem -Path Modules -Filter *.csproj -Recurse |
+            Sort-Object FullName |
+            ForEach-Object {
+              $moduleName = $_.BaseName
+              $publishDir = Join-Path $modulePublishRoot $moduleName
+              $moduleDir = Join-Path $env:MODULE_ARTIFACT_DIR $moduleName
+
+              dotnet publish $_.FullName --configuration $env:CONFIGURATION -p:Platform=$env:PLATFORM --no-restore --output $publishDir --verbosity minimal
+              if ($LASTEXITCODE -ne 0) {
+                exit $LASTEXITCODE
+              }
+
+              New-Item -ItemType Directory -Path $moduleDir -Force | Out-Null
+              Get-ChildItem -Path $publishDir -File |
+                Where-Object {
+                  $_.Name -eq "$moduleName.dll" -or
+                  $_.Name -eq "$moduleName.deps.json" -or
+                  ($_.Extension -eq ".dll" -and
+                    -not $_.Name.StartsWith("ToNRoundCounter", [System.StringComparison]::OrdinalIgnoreCase) -and
+                    -not $appFileNames.Contains($_.Name))
+                } |
+                Copy-Item -Destination $moduleDir -Force
+            }
+
+          Copy-Item -Path (Join-Path $env:MODULE_ARTIFACT_DIR "*") -Destination $appModulesDir -Recurse -Force
+
       - name: Package
-        run: Compress-Archive -Path .\bin\x64\Release\* -DestinationPath ToNRoundCounter_latest.zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path (Join-Path $env:APP_ARTIFACT_DIR "*") -DestinationPath ToNRoundCounter_latest.zip -Force
+          Compress-Archive -Path (Join-Path $env:MODULE_ARTIFACT_DIR "*") -DestinationPath ToNRoundCounter_modules.zip -Force
+          Compress-Archive -Path (Join-Path $env:SDK_ARTIFACT_DIR "*") -DestinationPath ToNRoundCounterSDK_latest.zip -Force
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ToNRoundCounter-build
           path: |
             ToNRoundCounter_latest.zip
-            ModulesPackage/**/*
+            ToNRoundCounter_modules.zip
+            ToNRoundCounterSDK_latest.zip
+            ${{ env.APP_ARTIFACT_DIR }}/**/*
+            ${{ env.MODULE_ARTIFACT_DIR }}/**/*
+            ${{ env.SDK_ARTIFACT_DIR }}/**/*
+
       - name: Determine release eligibility
         if: github.event_name == 'push'
         id: release_info
-        shell: bash
+        shell: pwsh
         env:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          MESSAGE="$COMMIT_MESSAGE"
-          if [[ "$MESSAGE" =~ ^release[[:space:]]+([0-9]+(\.[0-9]+)*)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-          fi
+          if ($env:COMMIT_MESSAGE -match '^release\s+([0-9]+(\.[0-9]+)*)$') {
+            "should_release=true" >> $env:GITHUB_OUTPUT
+            "version=$($Matches[1])" >> $env:GITHUB_OUTPUT
+          } else {
+            "should_release=false" >> $env:GITHUB_OUTPUT
+          }
+
       - name: Create Release
         if: github.event_name == 'push' && steps.release_info.outputs.should_release == 'true'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release_info.outputs.version }}
           name: ${{ steps.release_info.outputs.version }}
           files: |
             ToNRoundCounter_latest.zip
-            ModulesPackage/**/*
+            ToNRoundCounter_modules.zip
+            ToNRoundCounterSDK_latest.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
