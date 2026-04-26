@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   mariadb:
     image: mariadb:11.2
@@ -11,8 +9,8 @@ services:
     volumes:
       - mariadb_data:/var/lib/mysql
       - ./backend/src/database/init.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:
-      - "3306:3306"
+    expose:
+      - "3306"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
@@ -24,11 +22,12 @@ services:
     build:
       context: .
       dockerfile: ./backend/Dockerfile
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     environment:
       NODE_ENV: production
       PORT: 3000
+      FRONTEND_URL: ${FRONTEND_URL:-https://toncloud.sprink.cloud}
       DB_HOST: mariadb
       DB_PORT: 3306
       DB_USER: ${DB_USER:-tonround}
@@ -48,10 +47,17 @@ services:
     build:
       context: .
       dockerfile: ./frontend/Dockerfile
-    ports:
-      - "8080:80"
+    expose:
+      - "80"
     depends_on:
       - backend
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TUNNEL_TOKEN:?Set CLOUDFLARED_TUNNEL_TOKEN in cloud/.env}
+    depends_on:
+      - frontend
     restart: unless-stopped
 
 volumes:
