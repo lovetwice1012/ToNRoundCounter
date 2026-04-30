@@ -75,6 +75,16 @@ public sealed class CloudStreamEventArgs : EventArgs
     public string Stream { get; }
     public JsonElement Data { get; }
     public DateTimeOffset? Timestamp { get; }
+
+    public T? GetData<T>(JsonSerializerOptions? options = null)
+    {
+        if (Data.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+        {
+            return default;
+        }
+
+        return Data.Deserialize<T>(options);
+    }
 }
 
 public sealed class CustomRpcEventArgs : EventArgs
@@ -86,9 +96,11 @@ public sealed class CustomRpcEventArgs : EventArgs
         string? fromUserId,
         string? fromPlayerId,
         string? instanceId,
-        DateTimeOffset? timestamp)
+        DateTimeOffset? timestamp,
+        string? stream = null)
     {
         Method = method;
+        Stream = stream ?? method;
         Payload = payload;
         Data = data;
         FromUserId = fromUserId;
@@ -98,6 +110,7 @@ public sealed class CustomRpcEventArgs : EventArgs
     }
 
     public string Method { get; }
+    public string Stream { get; }
     public JsonElement Payload { get; }
     public JsonElement Data { get; }
     public string? FromUserId { get; }
@@ -113,6 +126,16 @@ public sealed class CustomRpcEventArgs : EventArgs
         }
 
         return Payload.Deserialize<T>(options);
+    }
+
+    public T? GetData<T>(JsonSerializerOptions? options = null)
+    {
+        if (Data.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+        {
+            return default;
+        }
+
+        return Data.Deserialize<T>(options);
     }
 }
 

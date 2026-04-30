@@ -50,14 +50,43 @@ function normalizeKey(terrorName: string, roundKey: string): string {
     return `${terrorName.trim().toLocaleLowerCase()}::${roundKey.trim().toLocaleLowerCase()}`;
 }
 
+function isWildcardValue(value: string): boolean {
+    const normalized = value.trim().toLocaleLowerCase();
+    return !normalized
+        || normalized === '*'
+        || normalized === 'all'
+        || normalized === 'any'
+        || normalized === 'all terrors'
+        || normalized === 'all rounds'
+        || normalized === '全'
+        || normalized === '全部'
+        || normalized === '全て'
+        || normalized === 'すべて'
+        || normalized === '全テラー'
+        || normalized === '全ラウンド';
+}
+
+function normalizeTargetInput(value: string): string {
+    const trimmed = value.trim();
+    return isWildcardValue(trimmed) ? '' : trimmed;
+}
+
+function hasScopedTarget(terrorName: string, roundKey: string): boolean {
+    return !isWildcardValue(terrorName) || !isWildcardValue(roundKey);
+}
+
 function normalizeState(raw: any): CoordinatedState {
     const entries = Array.isArray(raw?.entries)
         ? raw.entries
-            .filter((entry: any) => typeof entry?.terror_name === 'string' && entry.terror_name.trim().length > 0)
+            .filter((entry: any) => {
+                const entryTerrorName = typeof entry?.terror_name === 'string' ? entry.terror_name.trim() : '';
+                const entryRoundKey = typeof entry?.round_key === 'string' ? entry.round_key.trim() : '';
+                return hasScopedTarget(entryTerrorName, entryRoundKey);
+            })
             .map((entry: any) => ({
                 id: typeof entry.id === 'string' && entry.id.trim() ? entry.id : makeId('entry'),
-                terror_name: String(entry.terror_name).trim(),
-                round_key: typeof entry.round_key === 'string' ? entry.round_key.trim() : '',
+                terror_name: normalizeTargetInput(typeof entry.terror_name === 'string' ? entry.terror_name : ''),
+                round_key: normalizeTargetInput(typeof entry.round_key === 'string' ? entry.round_key : ''),
                 created_at: typeof entry.created_at === 'string' ? entry.created_at : undefined,
                 created_by: typeof entry.created_by === 'string' ? entry.created_by : undefined,
                 source: entry.source === 'vote' ? 'vote' : 'manual',
@@ -72,10 +101,14 @@ function normalizeState(raw: any): CoordinatedState {
                 name: String(preset.name).trim(),
                 entries: Array.isArray(preset.entries)
                     ? preset.entries
-                        .filter((entry: any) => typeof entry?.terror_name === 'string' && entry.terror_name.trim().length > 0)
+                        .filter((entry: any) => {
+                            const entryTerrorName = typeof entry?.terror_name === 'string' ? entry.terror_name.trim() : '';
+                            const entryRoundKey = typeof entry?.round_key === 'string' ? entry.round_key.trim() : '';
+                            return hasScopedTarget(entryTerrorName, entryRoundKey);
+                        })
                         .map((entry: any) => ({
-                            terror_name: String(entry.terror_name).trim(),
-                            round_key: typeof entry.round_key === 'string' ? entry.round_key.trim() : '',
+                            terror_name: normalizeTargetInput(typeof entry.terror_name === 'string' ? entry.terror_name : ''),
+                            round_key: normalizeTargetInput(typeof entry.round_key === 'string' ? entry.round_key : ''),
                         }))
                     : [],
                 created_at: typeof preset.created_at === 'string' ? preset.created_at : undefined,
@@ -174,11 +207,11 @@ export const CoordinatedAutoSuicidePanel: React.FC = () => {
     const duplicateKeySet = useMemo(() => new Set(state.entries.map((entry) => normalizeKey(entry.terror_name, entry.round_key))), [state.entries]);
 
     const handleAddEntry = async () => {
-        const trimmedTerrorName = terrorName.trim();
-        const trimmedRoundKey = roundKey.trim();
+        const trimmedTerrorName = normalizeTargetInput(terrorName);
+        const trimmedRoundKey = normalizeTargetInput(roundKey);
 
-        if (!trimmedTerrorName) {
-            setError('テラー名を入力してください');
+        if (!hasScopedTarget(trimmedTerrorName, trimmedRoundKey)) {
+            setError('テラー名かラウンド名のどちらかを入力してください');
             return;
         }
 
@@ -300,7 +333,7 @@ export const CoordinatedAutoSuicidePanel: React.FC = () => {
                                 className="input-search"
                                 value={terrorName}
                                 onChange={(event) => setTerrorName(event.target.value)}
-                                placeholder="例: Ao Oni"
+                                placeholder="例: Ao Oni / 空欄なら全テラー"
                             />
                         </label>
                         <label className="field-block">
@@ -348,7 +381,7 @@ export const CoordinatedAutoSuicidePanel: React.FC = () => {
                                 <tbody>
                                     {state.entries.map((entry) => (
                                         <tr key={entry.id}>
-                                            <td>{entry.terror_name}</td>
+                                            <td>{entry.terror_name || '全テラー'}</td>
                                             <td>{entry.round_key || '全ラウンド'}</td>
                                             <td>{entry.source === 'vote' ? 'Vote' : 'Manual'}</td>
                                             <td>

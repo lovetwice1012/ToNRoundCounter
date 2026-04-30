@@ -33,6 +33,7 @@ namespace ToNRoundCounter.Application.Recording
         private readonly int _audioBitrate;
         private bool _audioCompleted;
         private bool _disposed;
+        private static readonly bool WriteDiagnosticSidecarLogs = false;
         // Seconds of leading audio to trim during the ffmpeg mux step. Used to compensate
         // for the gap between WASAPI delivering its first audio packet (very low latency,
         // typically < 30 ms after capture start) and Windows.Graphics.Capture delivering its
@@ -209,16 +210,18 @@ namespace ToNRoundCounter.Application.Recording
             catch (Exception ex)
             {
                 // Mux failed - preserve the video-only output as a fallback so the user at least
-                // gets the footage, and leave the .wav in place for manual recovery. Also drop
-                // a sibling .ffmpeg.log so the failure can be diagnosed without re-running.
-                try
+                // gets the footage, and leave the .wav in place for manual recovery.
+                if (WriteDiagnosticSidecarLogs)
                 {
-                    File.WriteAllText(
-                        _finalOutputPath + ".ffmpeg.log",
-                        ex.ToString());
-                }
-                catch
-                {
+                    try
+                    {
+                        File.WriteAllText(
+                            _finalOutputPath + ".ffmpeg.log",
+                            ex.ToString());
+                    }
+                    catch
+                    {
+                    }
                 }
 
                 SafeMove(_videoTempPath, _finalOutputPath);
@@ -287,25 +290,25 @@ namespace ToNRoundCounter.Application.Recording
             string stdout = proc.StandardOutput.ReadToEnd();
             proc.WaitForExit();
 
-            // Always drop a sibling diagnostic file so frame-rate / sync issues that only
-            // reproduce in real recordings can be inspected without re-running. The file is
-            // tiny and lives next to the produced media.
-            try
+            if (WriteDiagnosticSidecarLogs)
             {
-                long videoLen = File.Exists(_videoTempPath) ? new FileInfo(_videoTempPath).Length : -1;
-                long audioLen = File.Exists(_audioTempPath) ? new FileInfo(_audioTempPath).Length : -1;
-                File.WriteAllText(
-                    _finalOutputPath + ".ffmpeg.log",
-                    string.Format(
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        "ffmpeg: {0}\nargs: {1}\nexit: {2}\nvideo temp size: {3} bytes\naudio temp size: {4} bytes\naudio format: {5}Hz {6}ch {7}-bit {8}\nstdout:\n{9}\nstderr:\n{10}\n",
-                        ffmpegPath, args, proc.ExitCode, videoLen, audioLen,
-                        _audioFormat.SampleRate, _audioFormat.Channels, _audioFormat.BitsPerSample,
-                        _audioFormat.IsFloat ? "float" : "pcm",
-                        stdout, stderr));
-            }
-            catch
-            {
+                try
+                {
+                    long videoLen = File.Exists(_videoTempPath) ? new FileInfo(_videoTempPath).Length : -1;
+                    long audioLen = File.Exists(_audioTempPath) ? new FileInfo(_audioTempPath).Length : -1;
+                    File.WriteAllText(
+                        _finalOutputPath + ".ffmpeg.log",
+                        string.Format(
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            "ffmpeg: {0}\nargs: {1}\nexit: {2}\nvideo temp size: {3} bytes\naudio temp size: {4} bytes\naudio format: {5}Hz {6}ch {7}-bit {8}\nstdout:\n{9}\nstderr:\n{10}\n",
+                            ffmpegPath, args, proc.ExitCode, videoLen, audioLen,
+                            _audioFormat.SampleRate, _audioFormat.Channels, _audioFormat.BitsPerSample,
+                            _audioFormat.IsFloat ? "float" : "pcm",
+                            stdout, stderr));
+                }
+                catch
+                {
+                }
             }
 
             if (proc.ExitCode != 0 || !File.Exists(_finalOutputPath))

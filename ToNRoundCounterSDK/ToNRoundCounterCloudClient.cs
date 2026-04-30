@@ -23,7 +23,7 @@ public sealed class ToNRoundCounterCloudClient : IAsyncDisposable, IDisposable
 
     private readonly ToNRoundCounterCloudOptions _options;
     private readonly ConcurrentDictionary<string, TaskCompletionSource<CloudMessage>> _pending = new();
-    private readonly ConcurrentDictionary<string, ConcurrentDictionary<Guid, Func<CustomRpcEventArgs, Task>>> _customRpcHandlers = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<Guid, Func<CustomRpcEventArgs, Task>>> _eventHandlers = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private ClientWebSocket? _socket;
     private CancellationTokenSource? _connectionCts;
@@ -364,10 +364,7 @@ public sealed class ToNRoundCounterCloudClient : IAsyncDisposable, IDisposable
         bool includeSelf = false,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(method))
-        {
-            throw new ArgumentException("Custom RPC method is required.", nameof(method));
-        }
+        var normalizedMethod = NormalizeCustomRpcMethod(method);
 
         var targets = targetUserIds?
             .Where(value => !string.IsNullOrWhiteSpace(value))
@@ -379,7 +376,7 @@ public sealed class ToNRoundCounterCloudClient : IAsyncDisposable, IDisposable
             "custom.rpc.send",
             new
             {
-                method,
+                method = normalizedMethod,
                 payload,
                 target_user_ids = targets is { Length: > 0 } ? targets : null,
                 instance_id = string.IsNullOrWhiteSpace(instanceId) ? null : instanceId.Trim(),
@@ -412,14 +409,14 @@ public sealed class ToNRoundCounterCloudClient : IAsyncDisposable, IDisposable
     {
         ArgumentNullException.ThrowIfNull(handler);
 
-        var normalizedMethod = NormalizeCustomRpcMethod(method);
-        var handlers = _customRpcHandlers.GetOrAdd(
+        var normalizedMethod = NormalizeEventName(method);
+        var handlers = _eventHandlers.GetOrAdd(
             normalizedMethod,
             _ => new ConcurrentDictionary<Guid, Func<CustomRpcEventArgs, Task>>());
         var subscriptionId = Guid.NewGuid();
         handlers[subscriptionId] = handler;
 
-        return new CustomRpcHandlerSubscription(_customRpcHandlers, normalizedMethod, subscriptionId);
+        return new EventHandlerSubscription(_eventHandlers, normalizedMethod, subscriptionId);
     }
 
     public IDisposable on(string method, Action handler)
@@ -611,9 +608,31 @@ public sealed class ToNRoundCounterCloudClient : IAsyncDisposable, IDisposable
         {
             DateTimeOffset? timestamp = DateTimeOffset.TryParse(response.Timestamp, out var parsed) ? parsed : null;
             var data = response.Data.Clone();
-            StreamReceived?.Invoke(this, new CloudStreamEventArgs(response.Stream!, data, timestamp));
+            var streamEvent = new CloudStreamEventArgs(response.Stream!, data, timestamp);
+            StreamReceived?.Invoke(this, streamEvent);
+            DispatchStreamHandlers(streamEvent);
             DispatchCustomRpc(response.Stream!, data, timestamp);
         }
+    }
+
+    private void DispatchStreamHandlers(CloudStreamEventArgs streamEvent)
+    {
+        if (!_eventHandlers.TryGetValue(streamEvent.Stream, out var handlers) || handlers.IsEmpty)
+        {
+            return;
+        }
+
+        var args = new CustomRpcEventArgs(
+            streamEvent.Stream,
+            streamEvent.Data.Clone(),
+            streamEvent.Data.Clone(),
+            GetOptionalString(streamEvent.Data, "from_user_id"),
+            GetOptionalString(streamEvent.Data, "from_player_id"),
+            GetOptionalString(streamEvent.Data, "instance_id"),
+            streamEvent.Timestamp,
+            streamEvent.Stream);
+
+        DispatchEventHandlers(handlers, args);
     }
 
     private void DispatchCustomRpc(string stream, JsonElement data, DateTimeOffset? streamTimestamp)
@@ -627,7 +646,7 @@ public sealed class ToNRoundCounterCloudClient : IAsyncDisposable, IDisposable
         if (data.ValueKind != JsonValueKind.Object ||
             !data.TryGetProperty("method", out var methodElement) ||
             methodElement.GetString() is not { Length: > 0 } method ||
-            !_customRpcHandlers.TryGetValue(method, out var handlers) ||
+            !_eventHandlers.TryGetValue(method, out var handlers) ||
             handlers.IsEmpty)
         {
             return;
@@ -650,8 +669,16 @@ public sealed class ToNRoundCounterCloudClient : IAsyncDisposable, IDisposable
             GetOptionalString(data, "from_user_id"),
             GetOptionalString(data, "from_player_id"),
             GetOptionalString(data, "instance_id"),
-            timestamp);
+            timestamp,
+            stream);
 
+        DispatchEventHandlers(handlers, args);
+    }
+
+    private void DispatchEventHandlers(
+        ConcurrentDictionary<Guid, Func<CustomRpcEventArgs, Task>> handlers,
+        CustomRpcEventArgs args)
+    {
         foreach (var handler in handlers.Values)
         {
             try
@@ -700,6 +727,22 @@ public sealed class ToNRoundCounterCloudClient : IAsyncDisposable, IDisposable
         return rpc is "auth.loginWithApiKey" or "auth.loginWithOneTimeToken";
     }
 
+    private static string NormalizeEventName(string method)
+    {
+        if (string.IsNullOrWhiteSpace(method))
+        {
+            throw new ArgumentException("Event name is required.", nameof(method));
+        }
+
+        var normalized = method.Trim();
+        if (normalized.Length > 256)
+        {
+            throw new ArgumentException("Event name must be 256 characters or fewer.", nameof(method));
+        }
+
+        return normalized;
+    }
+
     private static string NormalizeCustomRpcMethod(string method)
     {
         if (string.IsNullOrWhiteSpace(method))
@@ -724,7 +767,9 @@ public sealed class ToNRoundCounterCloudClient : IAsyncDisposable, IDisposable
 
     private static string? GetOptionalString(JsonElement data, string propertyName)
     {
-        return data.TryGetProperty(propertyName, out var element) && element.ValueKind == JsonValueKind.String
+        return data.ValueKind == JsonValueKind.Object &&
+            data.TryGetProperty(propertyName, out var element) &&
+            element.ValueKind == JsonValueKind.String
             ? element.GetString()
             : null;
     }
@@ -783,14 +828,14 @@ public sealed class ToNRoundCounterCloudClient : IAsyncDisposable, IDisposable
         _connectionCts = null;
     }
 
-    private sealed class CustomRpcHandlerSubscription : IDisposable
+    private sealed class EventHandlerSubscription : IDisposable
     {
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<Guid, Func<CustomRpcEventArgs, Task>>> _handlersByMethod;
         private readonly string _method;
         private readonly Guid _subscriptionId;
         private int _disposed;
 
-        public CustomRpcHandlerSubscription(
+        public EventHandlerSubscription(
             ConcurrentDictionary<string, ConcurrentDictionary<Guid, Func<CustomRpcEventArgs, Task>>> handlersByMethod,
             string method,
             Guid subscriptionId)

@@ -37,3 +37,10 @@ sudo apt-get update && sudo apt-get install -y ca-certificates curl git gnupg op
 ```
 
 Before the final `docker compose up`, paste the tunnel token into `.env`.
+
+If `apt-get update` fails because an unrelated third-party repository is broken
+for example `download.konghq.com`, disable that source and rerun the installer:
+
+```bash
+sudo mkdir -p /root/disabled-apt-sources && for f in /etc/apt/sources.list.d/*.list; do grep -q 'download.konghq.com' "$f" && sudo mv "$f" "/root/disabled-apt-sources/$(basename "$f").disabled"; done && sudo apt-get update
+```

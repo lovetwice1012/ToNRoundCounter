@@ -23,32 +23,58 @@ function normalizeKey(value: string): string {
     return value.trim().toLocaleLowerCase();
 }
 
+function isWildcardValue(value: string): boolean {
+    const normalized = normalizeKey(value);
+    return !normalized
+        || normalized === '*'
+        || normalized === 'all'
+        || normalized === 'any'
+        || normalized === 'all terrors'
+        || normalized === 'all rounds'
+        || normalized === '全'
+        || normalized === '全部'
+        || normalized === '全て'
+        || normalized === 'すべて'
+        || normalized === '全テラー'
+        || normalized === '全ラウンド';
+}
+
+function normalizeTarget(value: string): string {
+    return isWildcardValue(value) ? '' : value;
+}
+
+function hasScopedTarget(terrorName: string, roundKey: string): boolean {
+    return !isWildcardValue(terrorName) || !isWildcardValue(roundKey);
+}
+
 function entryDuplicateKey(entry: { terror_name: string; round_key: string }): string {
     return `${normalizeKey(entry.terror_name)}::${normalizeKey(entry.round_key)}`;
 }
 
 function normalizePresetEntry(raw: any): CoordinatedAutoSuicidePresetEntry | null {
     const terrorName = normalizeText(raw?.terror_name);
-    if (!terrorName) {
+    const roundKey = normalizeText(raw?.round_key);
+    if (!hasScopedTarget(terrorName, roundKey)) {
         return null;
     }
 
     return {
-        terror_name: terrorName,
-        round_key: normalizeText(raw?.round_key),
+        terror_name: normalizeTarget(terrorName),
+        round_key: normalizeTarget(roundKey),
     };
 }
 
 function normalizeEntry(raw: any): CoordinatedAutoSuicideEntry | null {
     const terrorName = normalizeText(raw?.terror_name);
-    if (!terrorName) {
+    const roundKey = normalizeText(raw?.round_key);
+    if (!hasScopedTarget(terrorName, roundKey)) {
         return null;
     }
 
     return {
         id: normalizeText(raw?.id) || `coord_skip_${uuidv4()}`,
-        terror_name: terrorName,
-        round_key: normalizeText(raw?.round_key),
+        terror_name: normalizeTarget(terrorName),
+        round_key: normalizeTarget(roundKey),
         created_at: normalizeText(raw?.created_at) || new Date().toISOString(),
         created_by: normalizeText(raw?.created_by) || undefined,
         source: raw?.source === 'vote' ? 'vote' : 'manual',

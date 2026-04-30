@@ -136,7 +136,7 @@ namespace ToNRoundCounter.UI
 
         private string _lastSaveCode = string.Empty;
 
-        private string version = "1.15.0";
+        private string version = "1.16.0";
 
         private readonly AutoSuicideService autoSuicideService;
 
@@ -1418,13 +1418,22 @@ namespace ToNRoundCounter.UI
                         var bytes = await SharedHttpClient.GetByteArrayAsync(url);
                         File.WriteAllBytes(zipPath, bytes);
 
+                        var targetExe = WinFormsApp.ExecutablePath;
+                        if (Program.TryLaunchUpdateInstaller(zipPath, targetExe, out var selfUpdateError))
+                        {
+                            LogUi($"Launching self-updater with package '{zipPath}'.");
+                            WinFormsApp.Exit();
+                            return;
+                        }
+
+                        LogUi($"Self-updater unavailable, falling back to Updater.exe. Reason: {selfUpdateError}", LogEventLevel.Debug);
                         var updaterExe = Path.Combine(Directory.GetCurrentDirectory(), "Updater.exe");
                         if (File.Exists(updaterExe))
                         {
                             LogUi($"Launching updater from '{updaterExe}' with package '{zipPath}'.");
                             Process.Start(new ProcessStartInfo(updaterExe)
                             {
-                                Arguments = $"\"{zipPath}\" \"{WinFormsApp.ExecutablePath}\"",
+                                Arguments = $"\"{zipPath}\" \"{targetExe}\"",
                                 UseShellExecute = false
                             });
                             WinFormsApp.Exit();
@@ -1882,17 +1891,19 @@ namespace ToNRoundCounter.UI
                         PlayFromStart(tester_roundStartAlternatePlayer);
                     }
                     //issetAllSelfKillModeがtrueなら13秒後に自殺入力をする
-                    int autoAction = ShouldAutoSuicide(roundType, null, out var hasPendingDelayed);
-                    if (issetAllSelfKillMode)
+                    var sharedCoordinatedSkipScheduledAtRoundStart = TryScheduleSharedCoordinatedSkip(roundType, currentRound.TerrorKey);
+                    bool hasPendingDelayed = false;
+                    int autoAction = sharedCoordinatedSkipScheduledAtRoundStart ? 0 : ShouldAutoSuicide(roundType, null, out hasPendingDelayed);
+                    if (!sharedCoordinatedSkipScheduledAtRoundStart && issetAllSelfKillMode)
                     {
                         ScheduleAutoSuicide(TimeSpan.FromSeconds(13), true, true);
                     }
-                    else if (autoAction == 1)
+                    else if (!sharedCoordinatedSkipScheduledAtRoundStart && autoAction == 1)
                     {
                         var delay = hasPendingDelayed ? TimeSpan.FromSeconds(40) : TimeSpan.FromSeconds(13);
                         ScheduleAutoSuicide(delay, true);
                     }
-                    else if (autoAction == 2)
+                    else if (!sharedCoordinatedSkipScheduledAtRoundStart && autoAction == 2)
                     {
                         ScheduleAutoSuicide(TimeSpan.FromSeconds(40), true);
                     }

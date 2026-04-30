@@ -37,7 +37,6 @@ jobs:
         shell: pwsh
         run: |
           dotnet restore ToNRoundCounter.Tests\ToNRoundCounter.Tests.csproj --configfile NuGet.config -p:Platform=$env:PLATFORM
-          dotnet restore Updater\Updater.csproj --configfile NuGet.config -p:Platform=$env:PLATFORM
           dotnet restore ToNRoundCounterSDK\ToNRoundCounterSDK.csproj --configfile NuGet.config
 
           Get-ChildItem -Path Modules -Filter *.csproj -Recurse |
@@ -55,19 +54,19 @@ jobs:
         run: dotnet test ToNRoundCounter.Tests\ToNRoundCounter.Tests.csproj --configuration ${{ env.CONFIGURATION }} -p:Platform=${{ env.PLATFORM }} --no-restore --verbosity minimal
 
       - name: Publish app
-        run: dotnet publish ToNRoundCounter.csproj --configuration ${{ env.CONFIGURATION }} --runtime ${{ env.RUNTIME_IDENTIFIER }} --self-contained false -p:Platform=${{ env.PLATFORM }} --no-restore --output ${{ env.APP_ARTIFACT_DIR }} --verbosity minimal
+        run: dotnet publish ToNRoundCounter.csproj --configuration ${{ env.CONFIGURATION }} --runtime ${{ env.RUNTIME_IDENTIFIER }} --self-contained false -p:Platform=${{ env.PLATFORM }} -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true --no-restore --output ${{ env.APP_ARTIFACT_DIR }} --verbosity minimal
 
-      - name: Build updater
-        run: dotnet build Updater\Updater.csproj --configuration ${{ env.CONFIGURATION }} -p:Platform=${{ env.PLATFORM }} --no-restore --verbosity minimal
+      - name: Verify single-file app output
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem -Path $env:APP_ARTIFACT_DIR -File)
+          if ($files.Count -ne 1 -or $files[0].Name -ne "ToNRoundCounter.exe") {
+            $names = ($files | ForEach-Object Name) -join ", "
+            throw "Expected single-file app output containing only ToNRoundCounter.exe, got: $names"
+          }
 
       - name: Build SDK
         run: dotnet build ToNRoundCounterSDK\ToNRoundCounterSDK.csproj --configuration ${{ env.CONFIGURATION }} --no-restore --output ${{ env.SDK_ARTIFACT_DIR }} --verbosity minimal
-
-      - name: Include updater
-        shell: pwsh
-        run: |
-          $updaterOutput = Join-Path "Updater\bin\$env:PLATFORM\$env:CONFIGURATION\net48" "*"
-          Copy-Item -Path $updaterOutput -Destination $env:APP_ARTIFACT_DIR -Recurse -Force
 
       - name: Include shared assets
         shell: pwsh
@@ -80,10 +79,8 @@ jobs:
         shell: pwsh
         run: |
           $modulePublishRoot = Join-Path $env:RUNNER_TEMP "module-publish"
-          $appModulesDir = Join-Path $env:APP_ARTIFACT_DIR "Modules"
 
           New-Item -ItemType Directory -Path $env:MODULE_ARTIFACT_DIR -Force | Out-Null
-          New-Item -ItemType Directory -Path $appModulesDir -Force | Out-Null
 
           $appFileNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
           Get-ChildItem -Path $env:APP_ARTIFACT_DIR -File | ForEach-Object {
@@ -113,8 +110,6 @@ jobs:
                 } |
                 Copy-Item -Destination $moduleDir -Force
             }
-
-          Copy-Item -Path (Join-Path $env:MODULE_ARTIFACT_DIR "*") -Destination $appModulesDir -Recurse -Force
 
       - name: Package
         shell: pwsh

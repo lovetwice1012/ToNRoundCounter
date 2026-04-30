@@ -16,6 +16,9 @@ namespace ToNRoundCounter.Infrastructure
 {
     public class AppSettings : IAppSettings
     {
+        public const string DefaultCloudBaseUrl = "https://toncloud.sprink.cloud";
+        public const string DefaultCloudWebSocketUrl = "wss://toncloud.sprink.cloud/ws";
+
         private readonly string settingsFile = "appsettings.json";
         private readonly IEventLogger _logger;
         private readonly IEventBus _bus;

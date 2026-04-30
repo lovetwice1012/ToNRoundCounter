@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using Rug.Osc;
 using Serilog.Events;
+using ToNRoundCounter.Infrastructure;
 
 namespace ToNRoundCounter.UI
 {
@@ -41,7 +42,7 @@ namespace ToNRoundCounter.UI
 
             // Legacy external backend has been retired; use configured cloud endpoint if needed.
             string url = string.IsNullOrWhiteSpace(_settings.CloudWebSocketUrl)
-                ? "ws://localhost:3000/ws"
+                ? AppSettings.DefaultCloudWebSocketUrl
                 : _settings.CloudWebSocketUrl;
             var socket = new ClientWebSocket();
             var previousSocket = Interlocked.Exchange(ref instanceWsConnection, socket);

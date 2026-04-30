@@ -17,6 +17,20 @@ namespace ToNRoundCounter.UI
         private DateTime currentTerrorDetectedAtUtc = DateTime.MinValue;
         private string lastAppliedCoordinatedSkipSignature = string.Empty;
         private string lastAppliedNoWishSkipSignature = string.Empty;
+        private static readonly HashSet<string> CoordinatedWildcardValues = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "*",
+            "all",
+            "any",
+            "all terrors",
+            "all rounds",
+            "全",
+            "全部",
+            "全て",
+            "すべて",
+            "全テラー",
+            "全ラウンド"
+        };
 
         private async Task RefreshCoordinatedAutoSuicideStateAsync(bool force = false)
         {
@@ -36,6 +50,7 @@ namespace ToNRoundCounter.UI
                 var state = await _cloudClient.GetCoordinatedAutoSuicideStateAsync(currentInstanceId, _cancellation.Token).ConfigureAwait(false);
                 ApplyCoordinatedAutoSuicideState(state);
                 lastCoordinatedAutoSuicideStateFetch = now;
+                EvaluateCoordinatedAutoSuicideForCurrentRound(applyNoWishMode: false);
             }
             catch (Exception ex)
             {
@@ -80,16 +95,7 @@ namespace ToNRoundCounter.UI
                 ApplyCoordinatedAutoSuicideState(state);
                 lastCoordinatedAutoSuicideStateFetch = DateTime.UtcNow;
 
-                var currentRound = stateService.CurrentRound;
-                if (currentRound != null)
-                {
-                    if (TryScheduleSharedCoordinatedSkip(currentRound.RoundType ?? string.Empty, currentRound.TerrorKey))
-                    {
-                        return;
-                    }
-
-                    TryApplyNoSurvivalWishSkipMode(currentRound.RoundType ?? string.Empty, currentRound.TerrorKey);
-                }
+                EvaluateCoordinatedAutoSuicideForCurrentRound(applyNoWishMode: true);
             }
             catch (Exception ex)
             {
@@ -102,6 +108,25 @@ namespace ToNRoundCounter.UI
             return _settings.CoordinatedAutoSuicideBrainEnabled;
         }
 
+        private void EvaluateCoordinatedAutoSuicideForCurrentRound(bool applyNoWishMode)
+        {
+            var currentRound = stateService.CurrentRound;
+            if (currentRound == null)
+            {
+                return;
+            }
+
+            if (TryScheduleSharedCoordinatedSkip(currentRound.RoundType ?? string.Empty, currentRound.TerrorKey))
+            {
+                return;
+            }
+
+            if (applyNoWishMode)
+            {
+                TryApplyNoSurvivalWishSkipMode(currentRound.RoundType ?? string.Empty, currentRound.TerrorKey);
+            }
+        }
+
         private bool TryScheduleSharedCoordinatedSkip(string roundType, string? terrorKey)
         {
             if (!IsCoordinatedAutoSuicideEnabledForClient())
@@ -109,12 +134,12 @@ namespace ToNRoundCounter.UI
                 return false;
             }
 
-            if (!HasMatchingSharedSkipEntry(roundType, terrorKey))
+            if (!TryGetMatchingSharedSkipEntry(roundType, terrorKey, out var matchedEntry))
             {
                 return false;
             }
 
-            var signature = BuildCoordinatedSignature(roundType, terrorKey);
+            var signature = BuildCoordinatedEntrySignature(roundType, matchedEntry);
             if (string.Equals(signature, lastAppliedCoordinatedSkipSignature, StringComparison.Ordinal))
             {
                 return true;
@@ -157,37 +182,51 @@ namespace ToNRoundCounter.UI
             return true;
         }
 
-        private bool HasMatchingSharedSkipEntry(string roundType, string? terrorKey)
+        private bool TryGetMatchingSharedSkipEntry(string roundType, string? terrorKey, out CoordinatedAutoSuicideEntryInfo? matchedEntry)
         {
-            if (string.IsNullOrWhiteSpace(terrorKey) || currentCoordinatedAutoSuicideState.entries == null)
+            matchedEntry = null;
+            if (currentCoordinatedAutoSuicideState.entries == null)
             {
                 return false;
             }
 
-            return currentCoordinatedAutoSuicideState.entries.Any(entry =>
-                EntryMatchesRound(entry.round_key, roundType) && EntryMatchesTerror(entry.terror_name, terrorKey));
+            matchedEntry = currentCoordinatedAutoSuicideState.entries.FirstOrDefault(entry =>
+                entry != null
+                && EntryHasCoordinatedTarget(entry.round_key, entry.terror_name)
+                && EntryMatchesRound(entry.round_key, roundType)
+                && EntryMatchesTerror(entry.terror_name, terrorKey));
+            return matchedEntry != null;
         }
 
-        private static bool EntryMatchesRound(string? entryRoundKey, string? roundType)
+        internal static bool EntryHasCoordinatedTarget(string? entryRoundKey, string? entryTerrorName)
         {
-            var normalizedEntry = NormalizeCoordinatedValue(entryRoundKey);
-            if (string.IsNullOrEmpty(normalizedEntry))
+            return !IsCoordinatedWildcard(entryRoundKey) || !IsCoordinatedWildcard(entryTerrorName);
+        }
+
+        internal static bool EntryMatchesRound(string? entryRoundKey, string? roundType)
+        {
+            if (IsCoordinatedWildcard(entryRoundKey))
             {
                 return true;
             }
 
-            return string.Equals(normalizedEntry, NormalizeCoordinatedValue(roundType), StringComparison.Ordinal);
+            return string.Equals(NormalizeCoordinatedValue(entryRoundKey), NormalizeCoordinatedValue(roundType), StringComparison.Ordinal);
         }
 
-        private static bool EntryMatchesTerror(string? entryTerrorName, string? terrorKey)
+        internal static bool EntryMatchesTerror(string? entryTerrorName, string? terrorKey)
         {
-            var normalizedEntry = NormalizeCoordinatedValue(entryTerrorName);
+            if (IsCoordinatedWildcard(entryTerrorName))
+            {
+                return true;
+            }
+
             var normalizedTerror = NormalizeCoordinatedValue(terrorKey);
-            if (string.IsNullOrEmpty(normalizedEntry) || string.IsNullOrEmpty(normalizedTerror))
+            if (string.IsNullOrEmpty(normalizedTerror))
             {
                 return false;
             }
 
+            var normalizedEntry = NormalizeCoordinatedValue(entryTerrorName);
             if (string.Equals(normalizedEntry, normalizedTerror, StringComparison.Ordinal))
             {
                 return true;
@@ -200,7 +239,13 @@ namespace ToNRoundCounter.UI
             return terrorSegments.Any(segment => string.Equals(segment, normalizedEntry, StringComparison.Ordinal));
         }
 
-        private static string NormalizeCoordinatedValue(string? value)
+        internal static bool IsCoordinatedWildcard(string? value)
+        {
+            var normalized = NormalizeCoordinatedValue(value);
+            return string.IsNullOrEmpty(normalized) || CoordinatedWildcardValues.Contains(normalized);
+        }
+
+        internal static string NormalizeCoordinatedValue(string? value)
         {
             return (value ?? string.Empty).Trim().ToLowerInvariant();
         }
@@ -219,6 +264,17 @@ namespace ToNRoundCounter.UI
         private static string BuildCoordinatedSignature(string roundType, string? terrorKey)
         {
             return $"{NormalizeCoordinatedValue(roundType)}|{NormalizeCoordinatedValue(terrorKey)}";
+        }
+
+        private static string BuildCoordinatedEntrySignature(string roundType, CoordinatedAutoSuicideEntryInfo? matchedEntry)
+        {
+            var roundSignature = matchedEntry == null || IsCoordinatedWildcard(matchedEntry.round_key)
+                ? NormalizeCoordinatedValue(roundType)
+                : NormalizeCoordinatedValue(matchedEntry.round_key);
+            var terrorSignature = matchedEntry == null || IsCoordinatedWildcard(matchedEntry.terror_name)
+                ? "*"
+                : NormalizeCoordinatedValue(matchedEntry.terror_name);
+            return $"{roundSignature}|{terrorSignature}";
         }
 
         private void ResetCoordinatedAutoSuicideRoundState()

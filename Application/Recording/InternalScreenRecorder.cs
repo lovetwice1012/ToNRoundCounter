@@ -70,7 +70,7 @@ namespace ToNRoundCounter.Application.Recording
         private long _videoFramesQueued;
         private long _videoFramesWritten;
         // Counts capture-loop iterations that produced a frame but had to drop it because the
-        // encoder queue was full even after a brief retry. Surfaced in the .diag.log so we can
+        // encoder queue was full even after a brief retry. Kept for optional diagnostics so we can
         // tell whether the perceived "low fps / slow video" symptom comes from the encoder
         // being a bottleneck (high dropped count) or the capture itself underperforming
         // (queued count below frameRate * realDuration).
@@ -78,7 +78,7 @@ namespace ToNRoundCounter.Application.Recording
         private readonly string _outputPath = string.Empty;
         // Capture-loop instrumentation: total time spent inside the throttle Task.Delay vs
         // executing the body (capture + resize + enqueue), plus the slowest single body
-        // observation. Surfaced in .diag.log to pinpoint whether 「fps が低い」 is caused by
+        // observation. Kept for optional diagnostics to pinpoint whether 「fps が低い」 is caused by
         // (a) Task.Delay over-sleeping, (b) WGC TryAcquireFrame, (c) GDI+ resize, or
         // (d) the encoder back-pressuring TryWrite.
         private long _captureLoopIterations;
@@ -115,6 +115,7 @@ namespace ToNRoundCounter.Application.Recording
         // presentation timestamps the encoder is free to consume out of phase with capture;
         // only sustained encoder underrun beyond this depth causes drops.
         private const int VideoQueueDepth = 256;
+        private static readonly bool WriteDiagnosticSidecarLogs = false;
 
         // Zero-copy GPU→encoder pipeline. When the recorder is using a hardware-accelerated
         // MediaFoundationFrameWriter AND no on-screen overlay is being composited (overlay
@@ -609,16 +610,15 @@ namespace ToNRoundCounter.Application.Recording
             // anchors are valid) but BEFORE Dispose runs ffmpeg (where the trim takes effect).
             ApplyAudioVideoSyncOffset();
 
-            // Drop a sibling .diag.log so the user can attach actual capture/encode counters
-            // when reporting "video looks slow / fps feels low". This makes it possible to
-            // tell at a glance whether the bottleneck is capture (queued < target * duration)
-            // or the encoder (dropped > 0). Best-effort; never throws into Stop().
-            try
+            if (WriteDiagnosticSidecarLogs)
             {
-                WriteRecordingDiagnostics();
-            }
-            catch
-            {
+                try
+                {
+                    WriteRecordingDiagnostics();
+                }
+                catch
+                {
+                }
             }
         }
 

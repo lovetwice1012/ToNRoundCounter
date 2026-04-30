@@ -4,9 +4,11 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using Serilog;
+using System.Threading;
 using System.Threading.Tasks;
 using ToNRoundCounter.Application;
 using ToNRoundCounter.Application.Services;
@@ -24,6 +26,11 @@ namespace ToNRoundCounter
         [STAThread]
         static void Main(string[] args)
         {
+            if (TryRunUpdateInstallerMode(args))
+            {
+                return;
+            }
+
             if (RoundLogExportOptions.TryCreate(args, out var exportOptions, out var exportError))
             {
                 if (exportError != null)
@@ -160,7 +167,7 @@ namespace ToNRoundCounter
             services.AddSingleton<IWebSocketClient>(sp => new WebSocketClient(wsUrl, sp.GetRequiredService<IEventBus>(), sp.GetRequiredService<ICancellationProvider>(), sp.GetRequiredService<IEventLogger>()));
             
             // Cloud WebSocket Client for ToNRoundCounter Cloud integration
-            var cloudWsUrl = string.IsNullOrWhiteSpace(bootstrap.CloudWebSocketUrl) ? "ws://localhost:3000/ws" : bootstrap.CloudWebSocketUrl;
+            var cloudWsUrl = string.IsNullOrWhiteSpace(bootstrap.CloudWebSocketUrl) ? AppSettings.DefaultCloudWebSocketUrl : bootstrap.CloudWebSocketUrl;
             var cloudApiKey = bootstrap.CloudApiKey;
             var cloudPlayerName = bootstrap.CloudPlayerName;
             eventLogger.LogEvent("Bootstrap", $"Cloud WebSocket endpoint: {cloudWsUrl}");
@@ -305,6 +312,288 @@ namespace ToNRoundCounter
             (provider as IDisposable)?.Dispose();
             moduleHost.NotifyAppShutdownCompleted(new ModuleAppShutdownContext(provider));
             eventLogger.LogEvent("Bootstrap", "Application shutdown complete.");
+        }
+
+        internal static bool TryLaunchUpdateInstaller(string zipPath, string targetExe, out string? error)
+        {
+            error = null;
+
+            try
+            {
+                if (string.IsNullOrWhiteSpace(zipPath) || !File.Exists(zipPath))
+                {
+                    error = "Update package was not found.";
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(targetExe) || !File.Exists(targetExe))
+                {
+                    error = "Target executable was not found.";
+                    return false;
+                }
+
+                string currentExe = Environment.ProcessPath
+                    ?? Process.GetCurrentProcess().MainModule?.FileName
+                    ?? WinFormsApp.ExecutablePath;
+                if (string.IsNullOrWhiteSpace(currentExe) || !File.Exists(currentExe))
+                {
+                    error = "Current executable path could not be resolved.";
+                    return false;
+                }
+
+                string entryAssemblyPath = Assembly.GetEntryAssembly()?.Location ?? string.Empty;
+                if (!string.IsNullOrEmpty(entryAssemblyPath) && File.Exists(entryAssemblyPath))
+                {
+                    error = "Self-update mode requires a single-file build.";
+                    return false;
+                }
+
+                string updaterDirectory = Path.Combine(Path.GetTempPath(), "ToNRoundCounter", "updaters");
+                Directory.CreateDirectory(updaterDirectory);
+                string updaterExe = Path.Combine(updaterDirectory, $"ToNRoundCounter.Update.{Guid.NewGuid():N}.exe");
+                File.Copy(currentExe, updaterExe, overwrite: true);
+
+                var startInfo = new ProcessStartInfo(updaterExe)
+                {
+                    UseShellExecute = false,
+                    WorkingDirectory = Path.GetDirectoryName(targetExe) ?? Environment.CurrentDirectory,
+                };
+                startInfo.ArgumentList.Add("--apply-update");
+                startInfo.ArgumentList.Add(zipPath);
+                startInfo.ArgumentList.Add(targetExe);
+
+                Process.Start(startInfo);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private static bool TryRunUpdateInstallerMode(string[] args)
+        {
+            if (args.Length == 0 || !string.Equals(args[0], "--apply-update", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (args.Length < 3)
+            {
+                Console.Error.WriteLine("Usage: ToNRoundCounter --apply-update <zipPath> <targetExe>");
+                Environment.ExitCode = 1;
+                return true;
+            }
+
+            Environment.ExitCode = RunUpdateInstaller(args[1], args[2]);
+            return true;
+        }
+
+        private static int RunUpdateInstaller(string zipPath, string targetExe)
+        {
+            string targetDir = Path.GetDirectoryName(targetExe) ?? ".";
+            string targetRoot = Path.GetFullPath(targetDir);
+
+            for (int i = 0; i < 30 && IsFileLocked(targetExe); i++)
+            {
+                Thread.Sleep(1000);
+            }
+
+            var backupDirectory = Path.Combine(targetRoot, $".update-backup-{DateTime.UtcNow:yyyyMMddHHmmssfff}");
+            var backedUpEntries = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            try
+            {
+                using (var archive = ZipFile.OpenRead(zipPath))
+                {
+                    foreach (var entry in archive.Entries)
+                    {
+                        string destinationPath = ResolveUpdateEntryPath(targetRoot, entry.FullName);
+                        if (string.IsNullOrEmpty(entry.Name))
+                        {
+                            Directory.CreateDirectory(destinationPath);
+                        }
+                        else
+                        {
+                            var destinationDirectory = Path.GetDirectoryName(destinationPath);
+                            if (!string.IsNullOrEmpty(destinationDirectory))
+                            {
+                                Directory.CreateDirectory(destinationDirectory);
+                            }
+
+                            if (IsAudioEntry(entry) && File.Exists(destinationPath) && HasFileChanged(entry, destinationPath))
+                            {
+                                Console.WriteLine($"Skipping modified audio file: {entry.FullName}");
+                                continue;
+                            }
+
+                            string backupRelativePath = Path.GetRelativePath(targetRoot, destinationPath);
+                            BackupExistingFile(destinationPath, backupRelativePath, backupDirectory, backedUpEntries);
+                            entry.ExtractToFile(destinationPath, true);
+                        }
+                    }
+                }
+
+                File.Delete(zipPath);
+
+                if (Directory.Exists(backupDirectory))
+                {
+                    Directory.Delete(backupDirectory, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Update failed: " + ex.Message);
+                TryRollback(targetRoot, backupDirectory, backedUpEntries);
+                return 1;
+            }
+
+            Process.Start(new ProcessStartInfo(targetExe) { UseShellExecute = true });
+            return 0;
+        }
+
+        private static string ResolveUpdateEntryPath(string targetRoot, string entryFullName)
+        {
+            string destinationPath = Path.GetFullPath(Path.Combine(targetRoot, entryFullName));
+            string normalizedRoot = targetRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar;
+            if (!destinationPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(destinationPath, targetRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"Update package entry escapes the target directory: {entryFullName}");
+            }
+
+            return destinationPath;
+        }
+
+        private static void BackupExistingFile(string destinationPath, string relativeEntryPath, string backupDirectory, HashSet<string> backedUpEntries)
+        {
+            if (!File.Exists(destinationPath) || backedUpEntries.Contains(relativeEntryPath))
+            {
+                return;
+            }
+
+            var backupPath = Path.Combine(backupDirectory, relativeEntryPath);
+            var backupDir = Path.GetDirectoryName(backupPath);
+            if (!string.IsNullOrEmpty(backupDir))
+            {
+                Directory.CreateDirectory(backupDir);
+            }
+
+            Directory.CreateDirectory(backupDirectory);
+            File.Copy(destinationPath, backupPath, true);
+            backedUpEntries.Add(relativeEntryPath);
+        }
+
+        private static void TryRollback(string targetDir, string backupDirectory, HashSet<string> backedUpEntries)
+        {
+            if (!Directory.Exists(backupDirectory))
+            {
+                return;
+            }
+
+            try
+            {
+                foreach (var relativePath in backedUpEntries)
+                {
+                    var backupPath = Path.Combine(backupDirectory, relativePath);
+                    var restorePath = Path.Combine(targetDir, relativePath);
+                    var restoreDir = Path.GetDirectoryName(restorePath);
+
+                    if (!string.IsNullOrEmpty(restoreDir))
+                    {
+                        Directory.CreateDirectory(restoreDir);
+                    }
+
+                    if (File.Exists(backupPath))
+                    {
+                        File.Copy(backupPath, restorePath, true);
+                    }
+                }
+            }
+            catch (Exception rollbackEx)
+            {
+                Console.WriteLine("Rollback failed: " + rollbackEx.Message);
+            }
+            finally
+            {
+                try
+                {
+                    Directory.Delete(backupDirectory, true);
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private static bool IsFileLocked(string path)
+        {
+            if (!File.Exists(path))
+            {
+                return false;
+            }
+
+            try
+            {
+                using (File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                {
+                    return false;
+                }
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        private static bool IsAudioEntry(ZipArchiveEntry entry)
+        {
+            var normalizedPath = entry.FullName.Replace('\\', '/');
+            return normalizedPath.StartsWith("audio/", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool HasFileChanged(ZipArchiveEntry entry, string destinationPath)
+        {
+            try
+            {
+                using var entryStream = entry.Open();
+                using var destinationStream = File.OpenRead(destinationPath);
+
+                if (entry.Length != destinationStream.Length)
+                {
+                    return true;
+                }
+
+                const int bufferSize = 81920;
+                var entryBuffer = new byte[bufferSize];
+                var destinationBuffer = new byte[bufferSize];
+
+                int entryRead;
+                while ((entryRead = entryStream.Read(entryBuffer, 0, bufferSize)) > 0)
+                {
+                    var destinationRead = destinationStream.Read(destinationBuffer, 0, bufferSize);
+                    if (entryRead != destinationRead)
+                    {
+                        return true;
+                    }
+
+                    for (int i = 0; i < entryRead; i++)
+                    {
+                        if (entryBuffer[i] != destinationBuffer[i])
+                        {
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            }
+            catch
+            {
+                return true;
+            }
         }
 
         private static async Task<AppSettingsData> LoadBootstrapAsync()

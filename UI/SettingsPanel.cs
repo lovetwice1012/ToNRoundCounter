@@ -2196,7 +2196,7 @@ namespace ToNRoundCounter.UI
 
                     string dashboardUrl = !string.IsNullOrWhiteSpace(loginUrl)
                         ? loginUrl
-                        : "http://localhost:8080/api/auth/one-time-token";
+                        : $"{AppSettings.DefaultCloudBaseUrl}/api/auth/one-time-token";
 
                     _settings.CloudPlayerName = cloudPlayerName;
                     await _settings.SaveAsync();
@@ -2264,7 +2264,7 @@ namespace ToNRoundCounter.UI
             CloudWebSocketUrlTextBox.Width = 400;
             CloudWebSocketUrlTextBox.Location = new Point(cloudUrlLabel.Right + 10, apiInnerY - 3);
             CloudWebSocketUrlTextBox.Text = string.IsNullOrWhiteSpace(_settings.CloudWebSocketUrl)
-                ? "ws://localhost:3000/ws"
+                ? AppSettings.DefaultCloudWebSocketUrl
                 : _settings.CloudWebSocketUrl;
             grpApiKey.Controls.Add(CloudWebSocketUrlTextBox);
             apiInnerY += CloudWebSocketUrlTextBox.Height + 10;
